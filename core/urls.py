@@ -21,4 +21,5 @@ urlpatterns = [
     # Rotas do seu App de Usuários (Registro, Detalhes)
     # ----------------------------------------------------
     path('api/users/', include('users.urls')),
+    path('api/upload/', include('upload.urls'))
 ]
