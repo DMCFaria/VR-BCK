@@ -1,60 +1,44 @@
 from django.db import models
-# Certifique-se de que a importação do seu modelo de usuário está correta
-# Se o CustomUser estiver em outro app, use from <seu_app>.models import CustomUser
-from users.models import CustomUser
-
+from users.models import CustomUser # Import do seu modelo de usuário
 
 class FileUpload(models.Model):
+    STATUS_CHOICES = (
+        ('PENDING', 'Pendente de Processamento'),
+        ('PARSED', 'Dados Extraídos, Pendente de Confirmação'),
+        ('COMPLETED', 'Processamento Finalizado'),
+        ('FAILED', 'Falha no Processamento')
+    )
+
+    file = models.FileField(upload_to='docs/') 
     
-    STATUS_CHOICES = [
-        ("PENDING", "Pendente"),
-        ("VALIDATED", "Validado"),  # Correção ortográfica de VALITED para VALIDATED
-        ("FAILED", "Falhou")
-    ]
+    # CORREÇÃO: Campo 'uploaded_by' adicionado
+    uploaded_by = models.ForeignKey(CustomUser, on_delete=models.CASCADE,default=1, verbose_name="Enviado por") 
     
-    TYPE_CHOICES = [
-        ("RB", "Modelo da RB"),
-        # Adicione outros tipos de layout aqui se necessário
-    ]
-    
-    # Armazena o arquivo
-    file = models.FileField(upload_to='docs/')
-    
-    # Usuário que enviou (Relacionamento Foreign Key)
-    uploaded_by = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
-    
-    # Data de upload
     uploaded_at = models.DateTimeField(auto_now_add=True)
-    
-    # Status atual do processamento
     process_status = models.CharField(
+        max_length=10, 
         choices=STATUS_CHOICES, 
-        default="PENDING", 
-        max_length=10
+        default='PENDING',
+        verbose_name="Status do Processamento"
     )
-    
-    # Tipo de layout (Modelo da RB, por exemplo)
-    file_type = models.CharField(
-        choices=TYPE_CHOICES, 
-        max_length=10, # Alterado para 10, que é suficiente para "RB"
-        default="RB"
-    )
+    summary_data = models.JSONField(blank=True, null=True) 
 
-    # Campo para armazenar o resumo (Número de condomínios, Valor total) antes da confirmação
-    summary_data = models.JSONField(default=dict, blank=True)
+    class Meta:
+        verbose_name = "Upload de Arquivo"
+        verbose_name_plural = "Uploads de Arquivos"
 
     def __str__(self):
-        return f"{self.file.name} - Status: {self.process_status}"
-    
-    
+        return f"Arquivo {self.file.name} - Status: {self.get_process_status_display()}"
+
+# --- MODELO DE RASTREAMENTO DE PROCESSAMENTO ---
 class ProcessedFile(models.Model):
+    file = models.ForeignKey(FileUpload, on_delete=models.CASCADE, verbose_name="Arquivo Original")
+    processed_at = models.DateTimeField(auto_now_add=True, verbose_name="Processado em")
+    processed_by = models.ForeignKey(CustomUser, on_delete=models.CASCADE, verbose_name="Processado por")
     
-    
-    file = models.ForeignKey(FileUpload, on_delete=models.CASCADE)
-    processed_at = models.DateTimeField(auto_now_add=True)
-    processed_by = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
-    
+    class Meta:
+        verbose_name = "Arquivo Processado"
+        verbose_name_plural = "Arquivos Processados"
 
-    
     def __str__(self):
-        return f"Processado: {self.file.file.name}"
+        return f"Processamento de {self.file.id} por {self.processed_by.email}"

@@ -1,10 +1,13 @@
 from django.urls import path
-from .views import UploadView
+from .views import UploadView, ConfirmationView
+from .confirmed import ConfirmedUploadsListView
+
 
 urlpatterns = [
     
     path('', UploadView.as_view(), name='file-upload'),
     
     
-   # path('<int:pk>/confirm/', ConfirmUploadView.as_view(), name='file-confirm'),
+    path('confirm/', ConfirmationView.as_view(), name='confirm_data'),
+    path('confirmed/', ConfirmedUploadsListView.as_view(), name='get_data')
 ]

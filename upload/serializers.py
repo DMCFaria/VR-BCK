@@ -1,155 +1,150 @@
 from rest_framework import serializers
 from django.db import transaction
-
-# Importa os modelos dos novos apps
 from entidades.models import Condominio, Funcionario
 from beneficios.models import Produto, MovimentacaoBeneficio
-from .models import FileUpload # O modelo de rastreio do upload
+from .models import FileUpload, ProcessedFile
 
-# --- SERIALIZERS DE ENTIDADES BASE (Para criação/atualização) ---
-
-class CondominioSerializer(serializers.ModelSerializer):
-    """
-    Serializer para o modelo Condominio (Entidade CNPJ).
-    Usado para garantir que o CNPJ seja criado ou atualizado antes da movimentação.
-    """
-    class Meta:
-        model = Condominio
-        # Campos que podem vir do JSON (Header ou Produtos/Funcionario)
-        fields = ['cnpj', 'nome', 'tipo_local', 'endereco', 'numero', 'complemento', 'bairro', 'cidade', 'estado', 'cep']
-
-class FuncionarioSerializer(serializers.ModelSerializer):
-    """
-    Serializer para o modelo Funcionario (Entidade CPF).
-    Usado para garantir que o CPF seja criado ou atualizado.
-    """
-    # A data de nascimento deve vir no formato YYYY-MM-DD para ser salva,
-    # mas o parser precisa garantir que o formato DDMMAAAA do TXT seja convertido antes de ser passado ao serializer.
-    data_nascimento = serializers.DateField(format="%Y%m%d", input_formats=["%Y%m%d"]) 
-
-    class Meta:
-        model = Funcionario
-        # O CNPJ virá do contexto da Movimentação/Condomínio
-        fields = [
-            'cpf', 'matricula', 'nome', 'funcao', 'data_nascimento', 
-            'sexo', 'mae', 'cep', 'endereco_rua', 'endereco_numero', 
-            'endereco_complemento', 'endereco_bairro'
-        ]
-
-class ProdutoSerializer(serializers.ModelSerializer):
-    """
-    Serializer para o catálogo de Produto (Entidade Código).
-    """
-    class Meta:
-        model = Produto
-        fields = ['codigo_produto', 'nome']
-
-# --- SERIALIZER DE TRANSAÇÃO (O FATO) ---
-
-class MovimentacaoBeneficioSerializer(serializers.ModelSerializer):
-    """
-    Serializer principal para a Movimentação.
-    Contém a lógica de 'upsert' (cria ou atualiza) para entidades relacionadas.
-    """
-    # Define os campos de FKs como CharFields no input, pois virão como strings (CNPJ, CPF, Codigo)
-    empresa_cnpj = serializers.CharField(source='empresa_cnpj_id', max_length=14)
-    funcionario_cpf = serializers.CharField(source='funcionario_cpf_id', max_length=11)
-    produto_codigo = serializers.CharField(source='produto_codigo_id', max_length=15)
-    
-    # A data de competência é crucial e virá do header do arquivo.
-    data_competencia = serializers.DateField(format="%Y%m%d", input_formats=["%Y%m%d"]) 
-
-    class Meta:
-        model = MovimentacaoBeneficio
-        fields = [
-            'empresa_cnpj', 'funcionario_cpf', 'produto_codigo', 'data_competencia', 
-            'valor_beneficio', 'quantidade_dias'
-        ]
-
-    def validate_data_competencia(self, value):
-        # Garante que a data de competência é o primeiro dia do mês.
-        if value.day != 1:
-            raise serializers.ValidationError("A data de competência deve ser o primeiro dia do mês (Ex: 2025-09-01).")
-        return value
-
-# --- SERIALIZER DO ARQUIVO DE UPLOAD (Existente) ---
+# --- SERIALIZER DO ARQUIVO DE UPLOAD ---
 
 class FileUploadSerializer(serializers.ModelSerializer):
-    """
-    Serializer para rastrear o objeto FileUpload (o arquivo em si e o status).
-    """
     class Meta:
         model = FileUpload
-        fields = ['id', 'file', 'uploaded_at', 'process_status', 'summary_data']
-        read_only_fields = ['uploaded_at', 'process_status', 'summary_data']
+        # CORREÇÃO: Adicionamos uploaded_by aos fields
+        fields = ['id', 'file', 'uploaded_at', 'process_status', 'summary_data', 'uploaded_by']
+        # CORREÇÃO: Marcamos uploaded_at, process_status e uploaded_by como read_only
+        read_only_fields = ['uploaded_at', 'process_status', 'summary_data', 'uploaded_by']
 
-# --- LÓGICA DE PERSISTÊNCIA COMPLEXA (Salvando todas as entidades) ---
+
+# --- SERIALIZERS DE PROCESSAMENTO ---
+
+class MovimentacaoDetalhadaSerializer(serializers.Serializer):
+    cpf_func = serializers.CharField(max_length=14)
+    nome_func = serializers.CharField(max_length=255)
+    
+    produto_codigo = serializers.CharField(max_length=20)
+    produto = serializers.CharField(max_length=255) 
+
+    cnpj = serializers.CharField(max_length=20)
+    departamento = serializers.CharField(max_length=255)
+    
+    valor_recarga_bene = serializers.DecimalField(max_digits=10, decimal_places=2)
+    quantidade = serializers.IntegerField()
+    vencimento = serializers.DateField(format="%Y-%m-%d")
+    
+    endereco = serializers.CharField(required=False, allow_blank=True)
+    bairro = serializers.CharField(required=False, allow_blank=True)
+    cidade = serializers.CharField(required=False, allow_blank=True)
+    uf = serializers.CharField(required=False, allow_blank=True)
+    cep = serializers.CharField(required=False, allow_blank=True)
+    matricula = serializers.CharField(required=False, allow_blank=True)
+    funcao = serializers.CharField(required=False, allow_blank=True)
+    
+    data_nascimento = serializers.DateField(format="%Y-%m-%d", required=False, allow_null=True)
+    
+    beneficio_nome = serializers.CharField(required=False)
+    valor_unitario = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+    repasse_vt = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+    taxa = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+    periodos = serializers.CharField(required=False)
+    periodo2 = serializers.CharField(required=False)
+
 
 class ProcessamentoFinalSerializer(serializers.Serializer):
-    """
-    Serializer customizado para orquestrar o salvamento em todas as tabelas.
-    Usado no endpoint de Confirmação (POST /confirm/).
-    """
-    movimentacoes = MovimentacaoBeneficioSerializer(many=True, required=True)
-    condominios = CondominioSerializer(many=True, required=True)
-    funcionarios = FuncionarioSerializer(many=True, required=True)
-    produtos = ProdutoSerializer(many=True, required=True)
-    
-    # O ID do FileUpload original para rastreabilidade
-    file_upload_id = serializers.IntegerField(write_only=True) 
+    movimentacoes_detalhada = MovimentacaoDetalhadaSerializer(many=True)
+    file_upload_id = serializers.IntegerField()
+    novos_registros = serializers.JSONField(required=False)
 
     def create(self, validated_data):
-        """
-        Salva todos os Condomínios, Funcionários, Produtos e Movimentações
-        dentro de uma única transação de banco de dados (atomicidade).
-        """
-        # A transação garante que, se qualquer save falhar, tudo é revertido.
+        rows = validated_data.get('movimentacoes_detalhada', [])
+        file_upload_id = validated_data.get('file_upload_id')
+        
+        processed_by_user = validated_data.get('processed_by')
+
+        condominios_cache = {}
+        funcionarios_cache = {}
+        produtos_cache = {}
+
         with transaction.atomic():
+            count_movimentacoes = 0
             
-            # 1. UPSERT de Condomínios (Base: CNPJ)
-            for data in validated_data.pop('condominios'):
-                Condominio.objects.update_or_create(
-                    cnpj=data['cnpj'],
-                    defaults=data
-                )
+            for row in rows:
+                # 1. CONDOMÍNIO
+                cnpj = row['cnpj']
+                if cnpj not in condominios_cache:
+                    condominio, _ = Condominio.objects.update_or_create(
+                        cnpj=cnpj,
+                        defaults={
+                            'nome': row['departamento'],
+                            'endereco': row.get('endereco', ''),
+                            'bairro': row.get('bairro', ''),
+                            'cidade': row.get('cidade', ''),
+                            'estado': row.get('uf', ''),
+                            'cep': row.get('cep', ''),
+                            'tipo_local': 'CONDOMINIO'
+                        }
+                    )
+                    condominios_cache[cnpj] = condominio
+                else:
+                    condominio = condominios_cache[cnpj]
 
-            # 2. UPSERT de Produtos (Base: codigo_produto)
-            for data in validated_data.pop('produtos'):
-                Produto.objects.update_or_create(
-                    codigo_produto=data['codigo_produto'],
-                    defaults=data
-                )
-
-            # 3. UPSERT de Funcionários (Base: CPF)
-            for data in validated_data.pop('funcionarios'):
-                # Note: O campo 'matricula' é UNIQUE mas não PK, então usamos update_or_create
-                # baseado no CPF (PK)
-                Funcionario.objects.update_or_create(
-                    cpf=data['cpf'],
-                    defaults=data
-                )
-
-            # 4. Criação das Movimentações (Base: Chave Composta)
-            movimentacoes_criadas = []
-            for data in validated_data.pop('movimentacoes'):
-                # Aqui, estamos usando a restrição unique_together para garantir que
-                # não se crie registros duplicados para a mesma competência.
+                # 2. FUNCIONÁRIO
+                cpf = row['cpf_func']
+                if cpf not in funcionarios_cache:
+                    funcionario, _ = Funcionario.objects.update_or_create(
+                        cpf=cpf,
+                        defaults={
+                            'nome': row['nome_func'],
+                            'matricula': row.get('matricula', ''),
+                            'funcao': row.get('funcao', ''),
+                            'data_nascimento': row.get('data_nascimento'), 
+                            'departamento': row['departamento']
+                        } 
+                    )
+                    funcionarios_cache[cpf] = funcionario
+                else:
+                    funcionario = funcionarios_cache[cpf]
                 
-                movimentacao, created = MovimentacaoBeneficio.objects.update_or_create(
-                    empresa_cnpj_id=data['empresa_cnpj_id'],
-                    funcionario_cpf_id=data['funcionario_cpf_id'],
-                    produto_codigo_id=data['produto_codigo_id'],
-                    data_competencia=data['data_competencia'],
+                # 3. PRODUTO
+                produto_codigo = row['produto_codigo']
+                if produto_codigo not in produtos_cache:
+                    produto, _ = Produto.objects.update_or_create(
+                        codigo_produto=produto_codigo,
+                        defaults={'nome': row['produto']}
+                    )
+                    produtos_cache[produto_codigo] = produto
+                else:
+                    produto = produtos_cache[produto_codigo]
+
+                # 4. MOVIMENTAÇÃO
+                MovimentacaoBeneficio.objects.update_or_create(
+                    empresa_cnpj=condominio,
+                    funcionario_cpf=funcionario,
+                    produto_codigo=produto,
+                    data_competencia=row['vencimento'],
                     defaults={
-                        'valor_beneficio': data['valor_beneficio'],
-                        'quantidade_dias': data['quantidade_dias'],
+                        'valor_beneficio': row['valor_recarga_bene'],
+                        'quantidade_dias': row['quantidade']
                     }
                 )
-                movimentacoes_criadas.append(movimentacao)
-                
-            # 5. Marca o FileUpload como 'PROCESSADO' (ou COMPLETED)
-            file_upload_instance = FileUpload.objects.get(pk=validated_data['file_upload_id'])
-            file_upload_instance.process_status = 'COMPLETED'
-            file_upload_instance.save()
-            
-            return {"count": len(movimentacoes_criadas), "status": file_upload_instance.process_status}
+                count_movimentacoes += 1
+
+            # 5. ATUALIZA STATUS E CRIA REGISTRO EM PROCESSED FILE
+            if file_upload_id:
+                try:
+                    f = FileUpload.objects.get(id=file_upload_id)
+                    f.process_status = 'COMPLETED'
+                    f.save()
+                    
+                    if processed_by_user:
+                        ProcessedFile.objects.create(
+                            file=f,
+                            processed_by=processed_by_user
+                        )
+                        
+                except FileUpload.DoesNotExist:
+                    pass
+
+            return {
+                "count": count_movimentacoes, 
+                "status": "COMPLETED"
+            }

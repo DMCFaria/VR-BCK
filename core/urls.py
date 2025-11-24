@@ -8,6 +8,7 @@ from rest_framework_simplejwt.views import (
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    
 
     # ----------------------------------------------------
     # Rotas de Autenticação JWT (Endpoint para Login/Token)
@@ -21,5 +22,7 @@ urlpatterns = [
     # Rotas do seu App de Usuários (Registro, Detalhes)
     # ----------------------------------------------------
     path('api/users/', include('users.urls')),
-    path('api/upload/', include('upload.urls'))
+    path('api/upload/', include('upload.urls')),
+    path('api/entidades/', include('entidades.urls')), 
+    path('api/beneficios/', include('beneficios.urls'))
 ]

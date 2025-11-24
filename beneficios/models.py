@@ -1,12 +1,10 @@
 from django.db import models
-from django.core.validators import MinLengthValidator
-from entidades.models import Condominio, Funcionario # Importa os modelos de entidades
+from entidades.models import Condominio, Funcionario
 
-# Modelo PRODUTO (Catálogo de Benefícios - Chave Principal: Codigo do Produto)
+# Modelo PRODUTO (Catálogo de Benefícios)
 class Produto(models.Model):
-    # PK: codigo_produto (usado como chave primária)
     codigo_produto = models.CharField(
-        max_length=15, 
+        max_length=50, # Aumentado por segurança
         primary_key=True, 
         verbose_name="Código do Produto"
     )
@@ -22,41 +20,37 @@ class Produto(models.Model):
 
 # Modelo MOVIMENTACAO_BENEFICIO (Tabela de Fatos)
 class MovimentacaoBeneficio(models.Model):
-    # FKs: Chaves Estrangeiras para as entidades
+    # Relacionamentos
     empresa_cnpj = models.ForeignKey(
         Condominio, 
         on_delete=models.CASCADE, 
-        db_column='empresa_cnpj', 
-        verbose_name="Condomínio CNPJ"
+        verbose_name="Condomínio"
     )
     funcionario_cpf = models.ForeignKey(
         Funcionario, 
         on_delete=models.CASCADE, 
-        db_column='funcionario_cpf', 
-        verbose_name="Funcionário CPF"
+        verbose_name="Funcionário"
     )
     produto_codigo = models.ForeignKey(
         Produto, 
-        on_delete=models.CASCADE, 
-        db_column='produto_codigo',
-        verbose_name="Produto Código"
+        on_delete=models.CASCADE,
+        verbose_name="Produto"
     )
 
     # Dados da Transação
-    data_competencia = models.DateField(verbose_name="Data de Competência (MM/AAAA)")
+    data_competencia = models.DateField(verbose_name="Data de Competência")
     valor_beneficio = models.DecimalField(
-        max_digits=10, 
+        max_digits=12, 
         decimal_places=2, 
         verbose_name="Valor do Benefício"
     )
-    quantidade_dias = models.IntegerField(verbose_name="Quantidade de Dias/Unidades")
+    quantidade_dias = models.IntegerField(verbose_name="Quantidade", default=0)
 
     class Meta:
         verbose_name = "Movimentação de Benefício"
         verbose_name_plural = "Movimentações de Benefício"
         
-        # Restrição de Unicidade Composta:
-        # Garante que um registro seja único para a mesma empresa, funcionário, produto, na mesma competência.
+        # Unicidade para não duplicar lançamento no mesmo mês
         unique_together = (
             'empresa_cnpj', 
             'funcionario_cpf', 
@@ -65,4 +59,4 @@ class MovimentacaoBeneficio(models.Model):
         )
 
     def __str__(self):
-        return f"Movimentação de {self.produto_codigo} para {self.funcionario_cpf} ({self.data_competencia})"
+        return f"{self.produto_codigo} - {self.funcionario_cpf} ({self.data_competencia})"
