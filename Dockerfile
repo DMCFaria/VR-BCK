@@ -20,4 +20,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copie o restante do código do projeto
 COPY . .
 
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "seu_projeto.wsgi:application"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "core.wsgi:application"]
