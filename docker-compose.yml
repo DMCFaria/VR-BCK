@@ -6,7 +6,7 @@ services:
     build: .
     # Mapear a porta 8000 do contêiner para a porta 8000 da sua máquina local
     ports:
-      - "8000:8000"
+      - "8080:8080"
     # Montar o volume para que as alterações no seu código local sejam refletidas no contêiner
     # sem precisar reconstruir a imagem toda hora. Útil para desenvolvimento.
     volumes:
