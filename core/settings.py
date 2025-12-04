@@ -9,7 +9,7 @@ SECRET_KEY = config('SECRET_KEY')
 
 DEBUG = True
 
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = ["vr-beneficios-backend-fedcorp-y5bg8.ondigitalocean.app"]
 
 
 
@@ -132,8 +132,8 @@ SIMPLE_JWT = {
     'USER_ID_CLAIM': 'user_id',
 }
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
 ]
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_METHODS = [
