@@ -1,9 +1,11 @@
 import os
 from pathlib import Path
 from datetime import timedelta
+from decouple import config
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = 'django-insecure-o#b+^3(1)7=a@&8i#t0c-!*7j80v^o^n*^m#9z9i6e0+y'
+SECRET_KEY = config('SECRET_KEY')
+
 
 DEBUG = True
 
@@ -69,12 +71,13 @@ WSGI_APPLICATION = 'core.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',  
-        'NAME': 'benefits',
-        'USER': 'postgres',           
-        'PASSWORD': 'masterkey',  
-        'HOST': 'localhost',                    
-        'PORT': '5432',                         
+        'NAME': config('DB_NAME'),
+        'USER': config('DB_USER'),           
+        'PASSWORD':config('DB_PASSWORD'),  
+        'HOST': config('DB_HOST'),                    
+        'PORT': config('DB_PORT'),                         
     }
+    
 }
 
 

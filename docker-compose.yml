@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  web:
+    # Construir a imagem a partir do Dockerfile no diretório atual
+    build: .
+    # Mapear a porta 8000 do contêiner para a porta 8000 da sua máquina local
+    ports:
+      - "8000:8000"
+    # Montar o volume para que as alterações no seu código local sejam refletidas no contêiner
+    # sem precisar reconstruir a imagem toda hora. Útil para desenvolvimento.
+    volumes:
+      - .:/usr/src/app
+    # Depende do banco de dados estar pronto
+    depends_on:
+      - db
+    # Variáveis de ambiente que sua aplicação Django precisará
+    env_file:
+      - .env
+  db:
+    # Usar a imagem oficial do Postgres
+    image: postgres:latest
+    # Reiniciar sempre que sair
+    restart: always
+    # Variáveis de ambiente para configurar o banco de dados
+    environment:
+      - POSTGRES_DB=django_db
+      - POSTGRES_USER=django_user
+      - POSTGRES_PASSWORD=minhasenha
+    # Persistir os dados do banco de dados
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+
+# Definição dos volumes para persistência de dados
+volumes:
+  postgres_data:
