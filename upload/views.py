@@ -19,12 +19,23 @@ def _convert_decimals_to_json_safe(data):
     """
     Recursivamente converte objetos Decimal para strings para serialização JSON.
     """
-    if isinstance(data, decimal.Decimal):
-        return str(data)
     if isinstance(data, dict):
-        return {k: _convert_decimals_to_json_safe(v) for k, v in data.items()}
-    if isinstance(data, list):
-        return [_convert_decimals_to_json_safe(item) for item in data]
+        # Percorre o dicionário
+        return {
+            key: _convert_decimals_to_json_safe(value) 
+            for key, value in data.items()
+        }
+    elif isinstance(data, list):
+        # Percorre a lista
+        return [
+            _convert_decimals_to_json_safe(element) 
+            for element in data
+        ]
+    elif isinstance(data, decimal.Decimal):
+        # CONVERSÃO PRINCIPAL: Decimal para string
+        return str(data) 
+    
+    # Se for outro tipo, retorna o valor inalterado
     return data
 
 def _get_beneficiary_summary(parsed_data):
