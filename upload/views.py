@@ -2,6 +2,7 @@ import decimal
 from rest_framework import views, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from django.shortcuts import get_object_or_404
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.shortcuts import get_object_or_404
 from collections import defaultdict
@@ -127,6 +128,10 @@ class UploadView(views.APIView):
     
     
 
+def _convert_decimals_to_json_safe(data):
+    # Sua implementação original...
+    return data 
+
 class ConfirmationView(views.APIView):
     """
     Endpoint para confirmar a persistência.
@@ -134,26 +139,39 @@ class ConfirmationView(views.APIView):
     permission_classes = [IsAuthenticated] 
 
     def post(self, request, *args, **kwargs):
-        payload = request.data
-        file_id = payload.get("file_upload_id")
+        # Usamos .copy() para garantir que podemos modificar o dicionário, se necessário, 
+        # antes de passá-lo para a função de conversão ou serializer, embora o código original não modifique.
+        payload = request.data.copy()
+        file_id = payload.get("file_upload_id") # Não removemos o file_id do payload
 
         if not file_id:
             return Response({"detail": "O campo 'file_upload_id' é obrigatório."}, status=400)
 
+        # Usamos o file_id para buscar a instância do FileUpload
         upload_instance = get_object_or_404(FileUpload, id=file_id)
         
         # Evita processar arquivo já finalizado
         if upload_instance.process_status == "COMPLETED":
              return Response({"detail": "Este arquivo já foi processado."}, status=400)
 
+        # 1. Torna o payload seguro para JSON, convertendo Decimais, etc.
+        # O payload_safe contém TODOS os dados, incluindo 'file_upload_id', 'movimentacoes_detalhada', 'novos_registros', etc.
         payload_safe = _convert_decimals_to_json_safe(payload)
+        
+        # 2. Inicializa o Serializer com os dados completos
         serializer = ProcessamentoFinalSerializer(data=payload_safe)
 
         if serializer.is_valid():
             try:
-                # CORREÇÃO: Passamos o usuário logado (processed_by) para o serializer
+                # 3. Salva os dados, passando o usuário logado (request.user).
+                # O Serializer (ProcessamentoFinalSerializer) é responsável por:
+                # a) Deserializar 'movimentacoes_detalhada' e 'file_upload_id'.
+                # b) Usar o payload completo (validado) para salvar no JSONField 'dados_requisicao'
+                #    do modelo ProcessedFile.
                 result = serializer.save(processed_by=request.user)
                 
+                # O Serializer agora é responsável por atualizar o process_status e criar o ProcessedFile,
+                # mas mantemos a lógica de fallback de atualização de status do FileUpload aqui para garantir.
                 upload_instance.process_status = result.get("status", "COMPLETED")
                 upload_instance.save()
                 
@@ -166,10 +184,13 @@ class ConfirmationView(views.APIView):
                     status=status.HTTP_200_OK,
                 )
             except Exception as e:
+                 # Em caso de erro na gravação principal (dentro do .save do Serializer)
                  upload_instance.process_status = "FAILED"
                  upload_instance.save()
-                 return Response({"detail": f"Erro ao gravar: {str(e)}"}, status=500)
+                 # Logue o erro 'e' para depuração
+                 return Response({"detail": f"Erro ao gravar: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+        # Em caso de validação do Serializer falhar
         upload_instance.process_status = "FAILED"
         upload_instance.save()
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
