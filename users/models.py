@@ -40,7 +40,8 @@ class CustomUser(AbstractUser):
         ("dev", "Desenvolvedor"),
         ("fin", "Financeiro"),
         ("fat", "Faturista"),
-        ("adm", "Administrador")
+        ("adm", "Administrador"),
+        ("cli", "Client"),
     ]
     
 
