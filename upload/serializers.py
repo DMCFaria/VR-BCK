@@ -20,22 +20,20 @@ class FileUploadSerializer(serializers.ModelSerializer):
 class MovimentacaoDetalhadaSerializer(serializers.Serializer):
     cpf_func = serializers.CharField(max_length=14)
     nome_func = serializers.CharField(max_length=255)
-    
-    produto_codigo = serializers.CharField(max_length=20)
+    produto_codigo = serializers.CharField(max_length=50)
     produto = serializers.CharField(max_length=255) 
-
     cnpj = serializers.CharField(max_length=20)
     departamento = serializers.CharField(max_length=255)
     
-    valor_recarga_bene = serializers.DecimalField(max_digits=10, decimal_places=2)
+    vencimento = serializers.DateField(input_formats=['%d/%m/%Y', '%Y-%m-%d'])
+    valor_recarga_bene = serializers.DecimalField(max_digits=12, decimal_places=2)
     quantidade = serializers.IntegerField()
-    vencimento = serializers.DateField(format="%Y-%m-%d")
     
-    endereco = serializers.CharField(required=False, allow_blank=True)
-    bairro = serializers.CharField(required=False, allow_blank=True)
-    cidade = serializers.CharField(required=False, allow_blank=True)
-    uf = serializers.CharField(required=False, allow_blank=True)
-    cep = serializers.CharField(required=False, allow_blank=True)
+    endereco = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    bairro = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    cidade = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    uf = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    cep = serializers.CharField(required=False, allow_blank=True, allow_null=True)   
     matricula = serializers.CharField(required=False, allow_blank=True)
     funcao = serializers.CharField(required=False, allow_blank=True)
     
@@ -56,45 +54,39 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
 
     def create(self, validated_data):
         rows = validated_data.get('movimentacoes_detalhada', [])
+        print(f"DEBUG: Recebi {len(rows)} linhas validadas")
         file_upload_id = validated_data.get('file_upload_id')
-        
-        # O usuário logado é passado da View, não está nos fields do Serializer
         processed_by_user = validated_data.get('processed_by')
-
-        # Dados completos da requisição para salvar no JSONField (excluindo 'processed_by')
-        # Utilizamos validated_data.copy() e removemos o user, que é um objeto complexo.
+        
         dados_da_requisicao = validated_data.copy()
         dados_da_requisicao.pop('processed_by', None) 
-        
+
         condominios_cache = {}
         funcionarios_cache = {}
         produtos_cache = {}
+        
+        # Lista para acumular objetos para o bulk_create
+        movimentacoes_para_inserir = []
 
-        file_upload_instance = None
-        try:
-            file_upload_instance = FileUpload.objects.get(id=file_upload_id)
-        except FileUpload.DoesNotExist:
-            # Continua o processamento, mas sem atualizar o FileUpload se não encontrado
-            pass 
-
+        # Usamos select_for_update para travar a linha do FileUpload durante a transação
         with transaction.atomic():
-            count_movimentacoes = 0
-            
-            # 1. CRIA O REGISTRO DE PROCESSAMENTO (Novo passo)
-            # Salvamos os dados dinâmicos aqui. Assumimos que ProcessedFile agora tem o JSONField.
-            processamento_final_instance = None
-            if processed_by_user and file_upload_instance:
-                 # Cria o registro mestre antes de iniciar o loop de gravação
-                processamento_final_instance = ProcessedFile.objects.create(
-                    file=file_upload_instance,
-                    processed_by=processed_by_user,
-                    # SALVANDO O PAYLOAD COMPLETO AQUI
-                    dados_requisicao=dados_da_requisicao 
-                )
+            try:
+                file_upload_instance = FileUpload.objects.select_for_update().get(id=file_upload_id)
+            except FileUpload.DoesNotExist:
+                raise serializers.ValidationError({"file_upload_id": "Upload não encontrado."})
 
-            # --- INÍCIO DO LOOP DE GRAVAÇÃO DAS MOVIMENTAÇÕES ---
+            if file_upload_instance.process_status == 'COMPLETED':
+                raise serializers.ValidationError({"detail": "Este arquivo já foi processado anteriormente."})
+
+            # Registro mestre
+            processamento_final_instance = ProcessedFile.objects.create(
+                file=file_upload_instance,
+                processed_by=processed_by_user,
+                dados_requisicao=dados_da_requisicao 
+            )
+
             for row in rows:
-                # 2. CONDOMÍNIO (Lógica inalterada)
+                # 1. Condomínio (Mantemos update_or_create pois são poucos registros e há dependência)
                 cnpj = row['cnpj']
                 if cnpj not in condominios_cache:
                     condominio, _ = Condominio.objects.update_or_create(
@@ -113,7 +105,7 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 else:
                     condominio = condominios_cache[cnpj]
 
-                # 3. FUNCIONÁRIO (Lógica inalterada)
+                # 2. Funcionário
                 cpf = row['cpf_func']
                 if cpf not in funcionarios_cache:
                     funcionario, _ = Funcionario.objects.update_or_create(
@@ -129,8 +121,8 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                     funcionarios_cache[cpf] = funcionario
                 else:
                     funcionario = funcionarios_cache[cpf]
-                
-                # 4. PRODUTO (Lógica inalterada)
+
+                # 3. Produto
                 produto_codigo = row['produto_codigo']
                 if produto_codigo not in produtos_cache:
                     produto, _ = Produto.objects.update_or_create(
@@ -141,27 +133,26 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 else:
                     produto = produtos_cache[produto_codigo]
 
-                # 5. MOVIMENTAÇÃO (Lógica inalterada)
-                MovimentacaoBeneficio.objects.update_or_create(
-                    empresa_cnpj=condominio,
-                    funcionario_cpf=funcionario,
-                    produto_codigo=produto,
-                    data_competencia=row['vencimento'],
-                    defaults={
-                        'valor_beneficio': row['valor_recarga_bene'],
-                        'quantidade_dias': row['quantidade']
-                    }
+                # 4. Preparação para o Bulk Insert (Não salva no banco ainda)
+                movimentacoes_para_inserir.append(
+                    MovimentacaoBeneficio(
+                        empresa_cnpj=condominio,
+                        funcionario_cpf=funcionario,
+                        produto_codigo=produto,
+                        data_competencia=row['vencimento'],
+                        valor_beneficio=row['valor_recarga_bene'],
+                        quantidade_dias=row['quantidade']
+                    )
                 )
-                count_movimentacoes += 1
-            # --- FIM DO LOOP ---
 
-            # 6. ATUALIZA STATUS NO FILEUPLOAD
-            if file_upload_instance:
-                file_upload_instance.process_status = 'COMPLETED'
-                file_upload_instance.save()
+            # Executa a inserção de todas as movimentações em uma única query
+            MovimentacaoBeneficio.objects.bulk_create(movimentacoes_para_inserir, ignore_conflicts=True)
+
+            # Atualiza status final
+            file_upload_instance.process_status = 'COMPLETED'
+            file_upload_instance.save()
             
-            # 7. Retorna o resultado esperado pela View
             return {
-                "count": count_movimentacoes, 
+                "count": len(movimentacoes_para_inserir), 
                 "status": "COMPLETED"
             }
