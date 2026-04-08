@@ -86,7 +86,7 @@ class UserCRUDTests(TestCase):
     """
     def setUp(self):
         self.client = Client()
-        self.register_url = reverse('register')
+        self.register_url = reverse('user-register')
 
         self.admin_user = CustomUser.objects.create_superuser(
             username='admin', email='admin@a.com', password='p', tipo='adm'
