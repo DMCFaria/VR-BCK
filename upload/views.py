@@ -137,7 +137,7 @@ class UploadView(views.APIView):
 class ConfirmationView(views.APIView):
     permission_classes = [IsAuthenticated] 
     authentication_classes = [JWTAuthentication]
-
+    #teste PUSH
     def post(self, request, *args, **kwargs):
         payload = request.data # Removido .copy() se não houver mutação manual necessária
         file_id = payload.get("file_upload_id")
