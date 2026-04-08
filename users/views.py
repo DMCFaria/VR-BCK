@@ -44,7 +44,7 @@ class UserListView(generics.ListAPIView):
     """
     queryset = CustomUser.objects.all()
     serializer_class = CustomUserSerializer
-    permission_classes = [permissions.IsAdminUser] # Ou sua lógica de 'adm'
+    permission_classes = [IsAdminUserType] # Ou sua lógica de 'adm'
 
 class UserDetailUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
     """
