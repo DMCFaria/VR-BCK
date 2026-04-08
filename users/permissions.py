@@ -1,6 +1,6 @@
 from rest_framework import permissions
 
-class CreateUserPermission(permissions.BasePermission):
+class IsAdminUserType(permissions.BasePermission):
     """
     Permissão customizada para permitir acesso apenas a usuários com o campo 
     'tipo' igual a 'dev' (Desenvolvedor) ou 'fin' (Financeiro).

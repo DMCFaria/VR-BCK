@@ -1,12 +1,12 @@
 from django.urls import path
-from .views import UserRegistrationAPIView, CurrentUserView, LoginApiView
+from .views import UserRegistrationAPIView, CurrentUserView, LoginApiView, UserListView, UserDetailUpdateDeleteView
 
 urlpatterns = [
     path('login/', LoginApiView.as_view(), name='user-login'),
-    # Rota para registro de novos usuários
     path('register/', UserRegistrationAPIView.as_view(), name='user-register'),
-    
-    # Rota para obter/atualizar dados do usuário logado
     path('me/', CurrentUserView.as_view(), name='current-user'),
-    
+
+    # As rotas abaixo parecem estar faltando no seu urls.py:
+    path('list/', UserListView.as_view(), name='user_list'),
+    path('<int:pk>/', UserDetailUpdateDeleteView.as_view(), name='user_detail')
 ]
