@@ -61,3 +61,5 @@ def _get_beneficiary_summary(parsed_data):
             "condominio": departamentos_por_cpf.get(cpf)
         })
     return summary_list
+
+

@@ -9,7 +9,7 @@ class FileUpload(models.Model):
         ('FAILED', 'Falha no Processamento')
     )
 
-    file = models.FileField(upload_to='docs/') 
+    file = models.FileField() 
     
     # CORREÇÃO: Campo 'uploaded_by' adicionado
     uploaded_by = models.ForeignKey(CustomUser, on_delete=models.CASCADE,default=1, verbose_name="Enviado por") 
