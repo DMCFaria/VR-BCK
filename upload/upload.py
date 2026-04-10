@@ -10,6 +10,7 @@ from .utils import _get_beneficiary_summary, _convert_decimals_to_json_safe
 
 # Aqui você importará os parsers conforme sua estrutura de pastas
 from .RB.parsers import parse_rb_layout
+from .EXCEL.reader import parse_excel_layout
 # from .excel.parsers import parse_excel_layout
 
 class UploadView(views.APIView):
@@ -38,7 +39,7 @@ class UploadView(views.APIView):
             
             elif extension in ['.xlsx', '.xls', '.csv']:
                 # Quando o diretor decidir o modelo, implementamos aqui
-                return self._handle_error(upload_instance, "Parser de Excel/CSV ainda não configurado.")
+                parsed_data = parse_excel_layout(file_path, upload_instance.id)
             
             else:
                 return self._handle_error(upload_instance, f"Extensão {extension} não permitida.")
