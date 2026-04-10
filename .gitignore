@@ -1,4 +1,10 @@
 VRTXT.txt
+run_test.cmd
+VR-DOCS.TXT
+.docs
+documento*
+*.txt
+
 
 # Django-specific files
 *.log
