@@ -39,16 +39,10 @@ def extrair_cpf_estrito(line):
     """Pega o CPF na posição 183-195 ou recusa se inválido."""
     raw = re.sub(r'\D', '', line[COL_FUNCIONARIO_CPF].strip())
 
-    # Se falhar a posição fixa, busca dinâmica
     if not raw:
-        match = re.search(r'(\d{11,12})', line)
-        raw = match.group(1) if match else ""
+        return None
 
-    # 2. Tratativa de 12 dígitos (RB/Ticket)
-    # Se vier com 12, tentamos validar os 11 primeiros
-    if len(raw) == 12:
-        cpf_candidato = raw[:11]
-    elif len(raw) == 11:
+    if len(raw) == 11:
         cpf_candidato = raw
     else:
         return None
@@ -57,13 +51,6 @@ def extrair_cpf_estrito(line):
     if cpf_valido_matematicamente(cpf_candidato):
         return cpf_candidato
 
-    # Se o CPF de 12 dígitos da RB falhou pegando os 11 primeiros, 
-    # pode ser que o dígito extra estivesse no INÍCIO (raro, mas possível).
-    # Tentamos validar os últimos 11 apenas por desencargo:
-    if len(raw) == 12:
-        cpf_candidato_v2 = raw[1:]
-        if cpf_valido_matematicamente(cpf_candidato_v2):
-            return cpf_candidato_v2
 
     return None
 

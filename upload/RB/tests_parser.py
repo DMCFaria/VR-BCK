@@ -85,7 +85,6 @@ class RBParserTestCase(TestCase):
         self.assertEqual(result['summary']['total_movimentacoes'], 1)
 
         v_calculado = result['movimentacoes_detalhada'][0]['valor_recarga_bene']
-        print(f"DEBUG VALOR: {v_calculado}")
 
         # 22 * 50.00 = 1100.00
         self.assertEqual(v_calculado, Decimal('1100.00'))
