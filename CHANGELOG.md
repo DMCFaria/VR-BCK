@@ -1,8 +1,9 @@
-*   [NOVIDADE] Implementada nova API de upload com roteamento dinâmico de parsers e sumarização inicil de dados para revisão.
-*   [NOVIDADE] Adicionada API de confirmação para processamento seguro de arquivos, garantindo transações atômicas e prevenção de duplicação.
-*   [NOVIDADE] Introduzidas APIs para listar, visualizar, atualizar e deletar usuários, com controle de acesso para perfis administrativos.
-*   [MELHORIA] Refatorada a arquitetura do módulo de upload, separando parsers, views e utilitários para maior modularidade.
-*   [MELHORIA] Adicionados testes abrangentes para o parser de arquivos e funcionalidades de upload, aumentando a robustez e confiabilidade.
-*   [MELHORIA] Aprimorada a nomenclatura de permissões de usuário para maior clareza e organização do controle de acesso.
-*   [MELHORIA] Atualizadas as rotas da API de upload e gerenciamento de usuários para padronização.
-*   [CORREÇÃO] Ajustada a URL de registro de usuário nos testes para refletir a nova rota padronizada.
+## [10/04/2026]
+*   [MELHORIA] Aprimorada a arquitetura do parser RB para extração de dados, garantindo maior modularidade e robustez.
+*   [MELHORIA] Reforçada a validação de CPF no parser RB com verificação matemática, aumentando a precisão dos dados de funcionário.
+*   [MELHORIA] Implementada verificação para prevenir o reprocessamento de arquivos de upload, garantindo a integridade e unicidade dos dados.
+*   [CORREÇÃO] Ajustada a manipulação de erros na confirmação de uploads para feedback mais preciso ao usuário.
+*   [MELHORIA] Padronizadas as URLs da API de upload e gerenciamento de usuários para maior consistência e organização.
+*   [MELHORIA] Atualizadas as permissões de acesso às APIs de gerenciamento de usuários, refinando o controle de quem pode listar, ver e modificar.
+*   [MELHORIA] Refatorados os testes internos do parser e das APIs de usuário, melhorando a cobertura e a estabilidade do código.
+
