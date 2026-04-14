@@ -1,5 +1,4 @@
 from django.db import models
-from django.core.validators import MinLengthValidator
 
 
 class Administradora(models.Model):
@@ -18,6 +17,23 @@ class Administradora(models.Model):
         return f"{self.nome} ({self.cnpj})"
 
 
+class Gerente(models.Model):
+    nome = models.CharField(max_length=255, verbose_name="Nome Completo")
+    email = models.EmailField(verbose_name="E-mail", blank=True, null=True)
+    telefone = models.CharField(max_length=20, verbose_name="Telefone", blank=True, null=True)
+    ativo = models.BooleanField(default=True, verbose_name="Ativo")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Gerente"
+        verbose_name_plural = "Gerentes"
+        ordering = ['nome']
+
+    def __str__(self):
+        return self.nome
+
+
 class VinculoCondominio(models.Model):
     administradora = models.ForeignKey(
         Administradora,
@@ -28,6 +44,12 @@ class VinculoCondominio(models.Model):
         'Condominio',
         on_delete=models.CASCADE,
         verbose_name="Condomínio"
+    )
+    gerentes = models.ManyToManyField(
+        Gerente,
+        blank=True,
+        verbose_name="Gerentes",
+        related_name='vinculos'
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
