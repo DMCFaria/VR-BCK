@@ -12,5 +12,5 @@ urlpatterns = [
     path('list-confirmed/', ConfirmedUploadsListView.as_view(), name='get_data'),
     
     #EXCEL ROUTE
-    path('download-template/', baixar_template_excel, name='download_template'),
+    path('download-excel-template/', baixar_template_excel, name='download_template'),
 ]
