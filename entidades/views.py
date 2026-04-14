@@ -3,12 +3,13 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from .models import Condominio, Funcionario, Administradora, VinculoCondominio
+from .models import Condominio, Funcionario, Administradora, VinculoCondominio, Gerente
 from .serializers import (
     CondominioSerializer,
     FuncionarioSerializer,
     AdministradoraSerializer,
-    VinculoCondominioSerializer
+    VinculoCondominioSerializer,
+    GerenteSerializer
 )
 
 
@@ -17,6 +18,15 @@ class CondominioViewSet(viewsets.ModelViewSet):
     serializer_class = CondominioSerializer
     permission_classes = [IsAuthenticated]
     lookup_field = 'cnpj'
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        administradora_id = self.request.query_params.get('administradora')
+        if administradora_id:
+            queryset = queryset.filter(
+                vinculocondominio__administradora_id=administradora_id
+            ).distinct()
+        return queryset
 
 
 class FuncionarioViewSet(viewsets.ModelViewSet):
@@ -46,6 +56,19 @@ class AdministradoraViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
+class GerenteViewSet(viewsets.ModelViewSet):
+    queryset = Gerente.objects.all()
+    serializer_class = GerenteSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        ativo = self.request.query_params.get('ativo')
+        if ativo is not None:
+            queryset = queryset.filter(ativo=ativo.lower() == 'true')
+        return queryset
+
+
 class VinculoCondominioViewSet(viewsets.ModelViewSet):
     queryset = VinculoCondominio.objects.all()
     serializer_class = VinculoCondominioSerializer
@@ -55,8 +78,11 @@ class VinculoCondominioViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
         admin_id = self.request.query_params.get('administradora')
         condominio_cnpj = self.request.query_params.get('condominio')
+        gerente_id = self.request.query_params.get('gerente')
         if admin_id:
             queryset = queryset.filter(administradora_id=admin_id)
         if condominio_cnpj:
-            queryset = queryset.filter(condominio_id=condominio_cnpj)
+            queryset = queryset.filter(condominio__cnpj=condominio_cnpj)
+        if gerente_id:
+            queryset = queryset.filter(gerentes__id=gerente_id)
         return queryset

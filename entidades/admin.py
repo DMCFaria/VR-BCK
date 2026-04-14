@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Condominio, Funcionario, Administradora, VinculoCondominio
+from .models import Condominio, Funcionario, Administradora, VinculoCondominio, Gerente
 
 
 @admin.register(Administradora)
@@ -10,11 +10,20 @@ class AdministradoraAdmin(admin.ModelAdmin):
     ordering = ['nome']
 
 
+@admin.register(Gerente)
+class GerenteAdmin(admin.ModelAdmin):
+    list_display = ['nome', 'email', 'telefone', 'ativo', 'created_at']
+    list_filter = ['ativo']
+    search_fields = ['nome', 'email']
+    ordering = ['nome']
+
+
 @admin.register(VinculoCondominio)
 class VinculoCondominioAdmin(admin.ModelAdmin):
     list_display = ['administradora', 'condominio', 'created_at']
     list_filter = ['administradora']
     search_fields = ['condominio__nome', 'condominio__cnpj', 'administradora__nome']
+    filter_horizontal = ['gerentes']
 
 
 @admin.register(Condominio)
