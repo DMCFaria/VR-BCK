@@ -19,6 +19,15 @@ class CondominioViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     lookup_field = 'cnpj'
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        administradora_id = self.request.query_params.get('administradora')
+        if administradora_id:
+            queryset = queryset.filter(
+                vinculocondominio__administradora_id=administradora_id
+            ).distinct()
+        return queryset
+
 
 class FuncionarioViewSet(viewsets.ModelViewSet):
     queryset = Funcionario.objects.all()
@@ -73,7 +82,7 @@ class VinculoCondominioViewSet(viewsets.ModelViewSet):
         if admin_id:
             queryset = queryset.filter(administradora_id=admin_id)
         if condominio_cnpj:
-            queryset = queryset.filter(condominio_id=condominio_cnpj)
+            queryset = queryset.filter(condominio__cnpj=condominio_cnpj)
         if gerente_id:
             queryset = queryset.filter(gerentes__id=gerente_id)
         return queryset

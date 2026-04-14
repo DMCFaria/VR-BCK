@@ -305,3 +305,68 @@ class VinculoCondominioAPITest(APITestCase):
         url = reverse("vinculocondominio-list")
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class CondominioAPITest(APITestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin_user = User.objects.create_superuser(
+            username="admin",
+            email="admin@teste.com",
+            password="senhateste123"
+        )
+        self.client.force_authenticate(user=self.admin_user)
+        
+        self.admin = Administradora.objects.create(
+            cnpj="12345678000100",
+            nome="Admin Teste",
+            ativo=True
+        )
+        self.admin2 = Administradora.objects.create(
+            cnpj="11111111000100",
+            nome="Admin 2",
+            ativo=True
+        )
+        self.condominio1 = Condominio.objects.create(
+            cnpj="98765432000199",
+            nome="Condominio 1"
+        )
+        self.condominio2 = Condominio.objects.create(
+            cnpj="98765432000200",
+            nome="Condominio 2"
+        )
+        VinculoCondominio.objects.create(
+            administradora=self.admin,
+            condominio=self.condominio1
+        )
+        VinculoCondominio.objects.create(
+            administradora=self.admin2,
+            condominio=self.condominio1
+        )
+        VinculoCondominio.objects.create(
+            administradora=self.admin,
+            condominio=self.condominio2
+        )
+
+    def test_listar_condominios(self):
+        url = reverse("condominio-list")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        results = response.data if isinstance(response.data, list) else response.data.get('results', response.data)
+        self.assertGreaterEqual(len(results), 2)
+
+    def test_filtro_condominio_por_administradora(self):
+        url = reverse("condominio-list")
+        response = self.client.get(url, {"administradora": self.admin.id})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        results = response.data if isinstance(response.data, list) else response.data.get('results', response.data)
+        self.assertEqual(len(results), 2)
+        for item in results:
+            cnpjs = [self.condominio1.cnpj, self.condominio2.cnpj]
+            self.assertIn(item["cnpj"], cnpjs)
+
+    def test_condominio_detail(self):
+        url = reverse("condominio-detail", kwargs={"cnpj": self.condominio1.cnpj})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["nome"], "Condominio 1")
