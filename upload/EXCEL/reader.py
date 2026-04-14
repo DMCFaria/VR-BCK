@@ -1,7 +1,7 @@
 import pandas as pd
 import re
 from decimal import Decimal, InvalidOperation
-from RB.parsers import cpf_valido_matematicamente
+from ..RB.parsers import cpf_valido_matematicamente
 
 
 
