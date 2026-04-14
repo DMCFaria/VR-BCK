@@ -1,21 +1,16 @@
 from rest_framework import serializers
 from django.db import transaction
-from entidades.models import Condominio, Funcionario
+from entidades.models import Condominio, Funcionario, VinculoCondominio
 from beneficios.models import Produto, MovimentacaoBeneficio
 from .models import FileUpload, ProcessedFile
 
-# --- SERIALIZER DO ARQUIVO DE UPLOAD ---
 
 class FileUploadSerializer(serializers.ModelSerializer):
     class Meta:
         model = FileUpload
-        # CORREÇÃO: Adicionamos uploaded_by aos fields
         fields = ['id', 'file', 'uploaded_at', 'process_status', 'summary_data', 'uploaded_by']
-        # CORREÇÃO: Marcamos uploaded_at, process_status e uploaded_by como read_only
         read_only_fields = ['uploaded_at', 'process_status', 'summary_data', 'uploaded_by']
 
-
-# --- SERIALIZERS DE PROCESSAMENTO ---
 
 class MovimentacaoDetalhadaSerializer(serializers.Serializer):
     cpf_func = serializers.CharField(max_length=14)
@@ -52,9 +47,15 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
     file_upload_id = serializers.IntegerField()
     novos_registros = serializers.JSONField(required=False)
 
+    def _get_ou_criar_vinculo(self, condominio, administradora):
+        vinculo, created = VinculoCondominio.objects.get_or_create(
+            condominio=condominio,
+            administradora=administradora
+        )
+        return vinculo
+
     def create(self, validated_data):
         rows = validated_data.get('movimentacoes_detalhada', [])
-        print(f"DEBUG: Recebi {len(rows)} linhas validadas")
         file_upload_id = validated_data.get('file_upload_id')
         processed_by_user = validated_data.get('processed_by')
         
@@ -64,11 +65,16 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         condominios_cache = {}
         funcionarios_cache = {}
         produtos_cache = {}
+        vinculos_cache = {}
         
-        # Lista para acumular objetos para o bulk_create
+        administradora = getattr(processed_by_user, 'administradora', None)
+        if not administradora:
+            raise serializers.ValidationError({
+                "detail": "Usuário não possui administradora vinculada."
+            })
+        
         movimentacoes_para_inserir = []
 
-        # Usamos select_for_update para travar a linha do FileUpload durante a transação
         with transaction.atomic():
             try:
                 file_upload_instance = FileUpload.objects.select_for_update().get(id=file_upload_id)
@@ -78,7 +84,6 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
             if file_upload_instance.process_status == 'COMPLETED':
                 raise serializers.ValidationError({"detail": "Este arquivo já foi processado anteriormente."})
 
-            # Registro mestre
             processamento_final_instance = ProcessedFile.objects.create(
                 file=file_upload_instance,
                 processed_by=processed_by_user,
@@ -86,10 +91,10 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
             )
 
             for row in rows:
-                # 1. Condomínio (Mantemos update_or_create pois são poucos registros e há dependência)
                 cnpj = row['cnpj']
+                
                 if cnpj not in condominios_cache:
-                    condominio, _ = Condominio.objects.update_or_create(
+                    condominio, created = Condominio.objects.update_or_create(
                         cnpj=cnpj,
                         defaults={
                             'nome': row['departamento'],
@@ -104,8 +109,13 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                     condominios_cache[cnpj] = condominio
                 else:
                     condominio = condominios_cache[cnpj]
+                
+                if cnpj not in vinculos_cache:
+                    vinculo = self._get_ou_criar_vinculo(condominio, administradora)
+                    vinculos_cache[cnpj] = vinculo
+                else:
+                    vinculo = vinculos_cache[cnpj]
 
-                # 2. Funcionário
                 cpf = row['cpf_func']
                 if cpf not in funcionarios_cache:
                     funcionario, _ = Funcionario.objects.update_or_create(
@@ -122,7 +132,6 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 else:
                     funcionario = funcionarios_cache[cpf]
 
-                # 3. Produto
                 produto_codigo = row['produto_codigo']
                 if produto_codigo not in produtos_cache:
                     produto, _ = Produto.objects.update_or_create(
@@ -133,7 +142,6 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 else:
                     produto = produtos_cache[produto_codigo]
 
-                # 4. Preparação para o Bulk Insert (Não salva no banco ainda)
                 movimentacoes_para_inserir.append(
                     MovimentacaoBeneficio(
                         empresa_cnpj=condominio,
@@ -145,10 +153,8 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                     )
                 )
 
-            # Executa a inserção de todas as movimentações em uma única query
             MovimentacaoBeneficio.objects.bulk_create(movimentacoes_para_inserir, ignore_conflicts=True)
 
-            # Atualiza status final
             file_upload_instance.process_status = 'COMPLETED'
             file_upload_instance.save()
             

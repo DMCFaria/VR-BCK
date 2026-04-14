@@ -3,10 +3,6 @@ from django.contrib.auth.models import AbstractUser, BaseUserManager
 
 
 class CustomUserManager(BaseUserManager):
-    """
-    Gerenciador de usuários customizado. Garante que todos os campos customizados
-    são tratados corretamente durante a criação.
-    """
     def create_user(self, email, password=None, **extra_fields):
         if not email:
             raise ValueError('O email deve ser fornecido')
@@ -43,17 +39,21 @@ class CustomUser(AbstractUser):
         ("adm", "Administrador"),
         ("cli", "Client"),
     ]
-    
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     email = models.EmailField(unique=True) 
 
-
     empresa = models.CharField(max_length=100, blank=True)
     tipo = models.CharField(max_length=3, choices=TYPE_CHOICES, default="adm")
-    
+    administradora = models.ForeignKey(
+        'entidades.Administradora',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Administradora"
+    )
 
     objects = CustomUserManager() 
     
