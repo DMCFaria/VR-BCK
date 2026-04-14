@@ -162,3 +162,25 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 "count": len(movimentacoes_para_inserir), 
                 "status": "COMPLETED"
             }
+
+
+class FaturamentoExportSerializer(serializers.Serializer):
+    CPF = serializers.CharField()
+    NOME_FUNC = serializers.CharField()
+    PRODUTO = serializers.CharField()
+    BENEFICIO = serializers.CharField()
+    VALOR_UNITARIO = serializers.DecimalField(max_digits=10, decimal_places=2)
+    QUANTIDADE = serializers.IntegerField()
+    VALOR_RECARGA_BENE = serializers.DecimalField(max_digits=12, decimal_places=2)
+    REPASSE_VT = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
+    DEPARTAMENTO = serializers.CharField()
+    CNPJ = serializers.CharField()
+    ENDERECO = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    BAIRRO = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    CIDADE = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    UF = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    CEP = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    TAXA = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
+    vencimento = serializers.DateField(required=False, allow_null=True)
+    periodos = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    periodo2 = serializers.CharField(required=False, allow_blank=True, allow_null=True)
