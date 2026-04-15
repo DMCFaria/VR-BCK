@@ -2,7 +2,7 @@ from django.urls import path
 from .confirmed import ConfirmedUploadsListView,ConfirmationView
 from .upload import UploadView
 from .EXCEL.template import baixar_template_excel
-
+from .export import ExportTxtCompraView, ExportFaturamentoView
 
 
 urlpatterns = [
@@ -13,4 +13,8 @@ urlpatterns = [
     
     #EXCEL ROUTE
     path('download-excel-template/', baixar_template_excel, name='download_template'),
+    
+    # EXPORT ROUTES
+    path('export/txt-compra/', ExportTxtCompraView.as_view(), name='export_txt_compra'),
+    path('export/faturamento/', ExportFaturamentoView.as_view(), name='export_faturamento'),
 ]

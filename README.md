@@ -15,35 +15,35 @@ API REST para gestão de benefícios de funcionários (Vale Refeição).
 ```
 VR-BCK/
 ├── core/           # Configurações Django (settings, urls, wsgi, asgi)
-├── users/          # Autenticação e gestão de usuários
-├── entidades/      # Cadastro de condomínios e funcionários
-├── beneficios/     # Catálogo de produtos e movimentações
-├── upload/         # Upload e processamento de arquivos Excel
-├── docs/           # Documentação
+├── users/         # Autenticação e gestão de usuários
+├── entidades/     # Cadastro de administradoras, condomínios e funcionários
+├── beneficios/   # Catálogo de produtos e movimentações
+├── upload/        # Upload, processamento de Excel e exports
 ├── manage.py
 ├── requirements.txt
 ├── Dockerfile
 └── docker-compose.yml
 ```
 
-## Apps
+## Modelos
 
 ### Users
-- Modelo CustomUser com tipos: Desenvolvedor, Financeiro, Faturista, Administrador, Cliente
-- Autenticação via JWT com refresh tokens
+- **CustomUser:** Usuário com tipos (Desenvolvedor, Financeiro, Faturista, Administrador, Cliente), linked to Administradora
 
 ### Entidades
+- **Administradora:** Empresas administradoras de benefícios (CNPJ como chave)
+- **Gerente:** Gerentes responsáveis por vínculos
+- **VinculoCondominio:** Relacionamento N:N entre Administradora, Condomínio e Gerentes
 - **Condominio:** Entidade principal (CNPJ como chave)
 - **Funcionario:** Cadastro de funcionários (CPF como chave)
 
 ### Benefícios
 - **Produto:** Catálogo de benefícios
-- **MovimentacaoBeneficio:** Registro de transações (evita duplicidade por competência)
+- **MovimentacaoBeneficio:** Registro de transações (unique por competência)
 
 ### Upload
-- Upload de arquivos Excel
-- Pipeline de processamento: PENDING → PARSED → COMPLETED
-- Rastreamento de arquivos processados
+- **FileUpload:** Arquivos enviados com status (PENDING → PARSED → COMPLETED)
+- **ProcessedFile:** Rastreamento de processamentos confirmados
 
 ## Configuração
 
@@ -61,21 +61,12 @@ SECRET_KEY=sua_chave_secreta
 ### Instalação
 
 ```bash
-# Criar ambiente virtual
 python -m venv venv
-source venv/bin/activate  # Linux/Mac
-venv\Scripts\activate     # Windows
+source venv/bin/activate
 
-# Instalar dependências
 pip install -r requirements.txt
-
-# Executar migrations
 python manage.py migrate
-
-# Criar superusuário
 python manage.py createsuperuser
-
-# Executar servidor
 python manage.py runserver
 ```
 
@@ -98,8 +89,11 @@ docker-compose up --build
 - `GET /api/users/{id}/` - Detalhes do usuário
 
 ### Entidades
+- `GET /api/entidades/administradoras/` - Listar administradoras
 - `GET /api/entidades/condominios/` - Listar condomínios
 - `GET /api/entidades/funcionarios/` - Listar funcionários
+- `GET /api/entidades/gerentes/` - Listar gerentes
+- `GET /api/entidades/vinculos/` - Listar vínculos
 
 ### Benefícios
 - `GET /api/beneficios/produtos/` - Listar produtos
@@ -107,8 +101,11 @@ docker-compose up --build
 
 ### Upload
 - `POST /api/upload/` - Upload de arquivo Excel
-- `GET /api/upload/files/` - Listar uploads
-- `GET /api/upload/processed/` - Listar arquivos processados
+- `POST /api/upload/confirm/` - Confirmar dados processados
+- `GET /api/upload/list-confirmed/` - Listar confirmações
+- `GET /api/upload/download-excel-template/` - Baixar template Excel
+- `GET /api/upload/export/txt-compra/` - Exportar TXT de compra
+- `GET /api/upload/export/faturamento/` - Exportar planilha faturamento
 
 ## Requisitos
 
