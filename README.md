@@ -84,34 +84,102 @@ docker-compose up --build
 - `POST /api/auth/token/verify/` - Verificar token
 
 ### Usuários
-- `GET /api/users/` - Listar usuários
-- `POST /api/users/` - Criar usuário
-- `GET /api/users/{id}/` - Detalhes do usuário
+- `POST /api/users/login/` - Login de usuário
+- `POST /api/users/register/` - Registrar usuário
+- `GET /api/users/me/` - Usuário atual
+- `GET /api/users/list/` - Listar usuários (requer autenticação)
+- `GET/PUT/DELETE /api/users/{id}/` - Detalhes do usuário
 
 ### Entidades
-- `GET /api/entidades/administradoras/` - Listar administradoras
-- `GET /api/entidades/condominios/` - Listar condomínios
-- `GET /api/entidades/funcionarios/` - Listar funcionários
-- `GET /api/entidades/gerentes/` - Listar gerentes
-- `GET /api/entidades/vinculos/` - Listar vínculos
+- `GET /api/entidades/administradoras/` - Listar/Criar administradoras
+- `GET/PUT/DELETE /api/entidades/administradoras/{id}/` - Detalhe da administradora
+- `GET /api/entidades/condominios/` - Listar/Criar condomínios
+- `GET/PUT/DELETE /api/entidades/condominios/{cnpj}/` - Detalhe do condomínio
+- `GET /api/entidades/funcionarios/` - Listar/Criar funcionários
+- `GET/PUT/DELETE /api/entidades/funcionarios/{cpf}/` - Detalhe do funcionário
+- `GET /api/entidades/gerentes/` - Listar/Criar gerentes
+- `GET/PUT/DELETE /api/entidades/gerentes/{id}/` - Detalhe do gerente
+- `GET /api/entidades/vinculos/` - Listar/Criar vínculos
+- `GET/PUT/DELETE /api/entidades/vinculos/{id}/` - Detalhe do vínculo
 
 ### Benefícios
-- `GET /api/beneficios/produtos/` - Listar produtos
-- `GET /api/beneficios/movimentacoes/` - Listar movimentações
+- `GET /api/beneficios/produtos/` - Listar/Criar produtos
+- `GET/PUT/DELETE /api/beneficios/produtos/{codigo}/` - Detalhe do produto
+- `GET /api/beneficios/movimentacoes/` - Listar/Criar movimentações
+- `GET/PUT/DELETE /api/beneficios/movimentacoes/{id}/` - Detalhe da movimentação
 
 ### Upload
 - `POST /api/upload/` - Upload de arquivo Excel
 - `POST /api/upload/confirm/` - Confirmar dados processados
 - `GET /api/upload/list-confirmed/` - Listar confirmações
 - `GET /api/upload/download-excel-template/` - Baixar template Excel
-- `GET /api/upload/export/txt-compra/` - Exportar TXT de compra
+- `POST /api/upload/export/txt-compra/` - Exportar TXT de compra
 - `GET /api/upload/export/faturamento/` - Exportar planilha faturamento
+
+## Payload de Confirmação (upload/confirm/)
+
+O endpoint `/api/upload/confirm/` espera o seguinte formato de payload:
+
+```json
+{
+    "file_upload_id": 100,
+    "condominios": [
+        {
+            "nome": "CONDOMINIO EDIFICIO X",
+            "cnpj": "0346804400013",
+            "valor_condo": "3473.13",
+            "funcionarios": [
+                {
+                    "nome": "NOME DO FUNCIONÁRIO",
+                    "cpf": "71823131468",
+                    "matricula": "9000200000900",
+                    "departamento": "CONDOMINIO",
+                    "funcao": "ZELADOR",
+                    "data_nascimento": "1970-08-17",
+                    "valor_bene": "569.98",
+                    "movimentacoes": [
+                        {
+                            "produto": "VALE REFEICAO - TICKET",
+                            "valor": "17.9"
+                        },
+                        {
+                            "produto": "VALE ALIMENTACAO - TICKET",
+                            "valor": "552.08"
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}
+```
+
+### Validações do Payload
+- `file_upload_id`: Obrigatório - ID do arquivo enviado
+- `condominios`: Lista obrigatória - ao menos um condomínio
+- `cnpj`: Obrigatório e único
+- `cpf`: Obrigatório e único por funcionário
+- `data_nascimento`: Opcional - datas inválidas são ignoradas
+- `data_competencia`: Se não informada, usa a primeira data_nascimento válida ou data atual
+
+### Datas Inválidas Tratadas
+As seguintes datas são automaticamente convertidas para `null`:
+- `0000-00-00`
+- `0001-01-01`
+- `0020-00-00`
+- `1900-01-01`
 
 ## Requisitos
 
 - Python 3.10+
 - PostgreSQL 12+
 - Docker (opcional)
+
+## Testes
+
+```bash
+python manage.py test
+```
 
 ## Licença
 

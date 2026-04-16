@@ -1,6 +1,6 @@
 import io
 import re
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from decimal import Decimal
 
 import pandas as pd
@@ -121,9 +121,9 @@ def gerar_faturamento(data_inicio=None, data_fim=None, administradora_cnpj=None,
             'NOME_FUNC': func.nome,
             'PRODUTO': prod.codigo_produto,
             'BENEFICIO': prod.nome,
-            'VALOR_UNITARIO': valor_unitario,
+            'VALOR_UNITARIO': float(valor_unitario),
             'QUANTIDADE': mov.quantidade_dias,
-            'VALOR_RECARGA_BENE': mov.valor_beneficio,
+            'VALOR_RECARGA_BENE': float(mov.valor_beneficio),
             'REPASSE_VT': None,
             'DEPARTAMENTO': cond.nome,
             'CNPJ': cond.cnpj,

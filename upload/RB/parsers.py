@@ -4,62 +4,66 @@ from decimal import Decimal, InvalidOperation
 from datetime import datetime
 
 
-
-# --- SUAS CONSTANTES DE MAPEAMENTO ---
 COL_SEQUENCIAL = slice(0, 5)
-COL_TIPO_REGISTRO_WIDER = slice(5,6) # Contém o tipo (ex: "3 ", "4 ")
+COL_TIPO_REGISTRO_WIDER = slice(5, 6)
 COL_CNPJ = slice(6, 19)
 
-# Tipo 1: CONDOMÍNIO
 COL_CONDOMINIO_RAZAO_SOCIAL = slice(20, 60)
 
-# Tipo 3: FUNCIONÁRIO
 COL_FUNCIONARIO_MATRICULA = slice(19, 32)
-COL_FUNCIONARIO_NOME = slice(32, 80)
+COL_FUNCIONARIO_NOME = slice(32, 72)
+COL_FUNCIONARIO_DEPARTAMENTO = slice(92, 102)
+COL_FUNCIONARIO_FUNCAO = slice(132, 139)
+COL_FUNCIONARIO_DATA_NASC = slice(172, 180)
 COL_FUNCIONARIO_CPF = slice(183, 194)
 
-# Tipo 4: BENEFÍCIO
 COL_BENEFICIO_MATRICULA = slice(19, 32)
-COL_BENEFICIO_NUM_DIAS = slice(104, 108)
-COL_BENEFICIO_VALOR = slice(108, 116)
+COL_BENEFICIO_NUM_DIAS = slice(100, 104)
+COL_BENEFICIO_VALOR = slice(109, 116)
+COL_BENEFICIO_PRODUTO = slice(44, 88)
 
-# --- FUNÇÕES DE LIMPEZA ---
 
 def format_valor_rb(text):
-    """Garante que '000110000' vire Decimal('1100.00')"""
-    if not text: return Decimal('0.00')
+    if not text:
+        return Decimal('0.00')
     digits = re.sub(r'\D', '', text.strip())
-    if not digits: return Decimal('0.00')
+    if not digits:
+        return Decimal('0.00')
     try:
         return Decimal(digits) / Decimal('100.00')
     except:
         return Decimal('0.00')
 
-def extrair_cpf_estrito(line):
-    """Pega o CPF na posição 183-195 ou recusa se inválido."""
-    raw = re.sub(r'\D', '', line[COL_FUNCIONARIO_CPF].strip())
 
-    if not raw:
+def parse_data_nascimento(text):
+    if not text or len(text.strip()) < 8:
         return None
-
-    if len(raw) == 11:
-        cpf_candidato = raw
-    else:
-        return None
-
-    # 3. VALIDAÇÃO MATEMÁTICA
-    if cpf_valido_matematicamente(cpf_candidato):
-        return cpf_candidato
-
-
+    raw = re.sub(r'\D', '', text.strip()[:8])
+    if len(raw) == 8 and raw.isdigit():
+        try:
+            dia = int(raw[0:2])
+            mes = int(raw[2:4])
+            ano = int(raw[4:8])
+            if 1900 <= ano <= 2100 and 1 <= mes <= 12 and 1 <= dia <= 31:
+                return f"{ano}-{mes:02d}-{dia:02d}"
+        except:
+            pass
     return None
 
-# --- PARSER ---
+
+def extrair_cpf_estrito(line):
+    raw = re.sub(r'\D', '', line[COL_FUNCIONARIO_CPF].strip())
+    if not raw or len(raw) != 11:
+        return None
+    if cpf_valido_matematicamente(raw):
+        return raw
+    return None
+
 
 def parse_rb_layout(file_path, file_upload_id):
     result = {
         "file_upload_id": file_upload_id,
-        "movimentacoes_detalhada": [],
+        "condominios": [],
         "errors": [],
         "summary": {
             "total_condominios": 0,
@@ -76,81 +80,118 @@ def parse_rb_layout(file_path, file_upload_id):
         return result
 
     try:
-        funcs_cache = {} 
-        cnpjs_vistos = []
-        cpfs_vistos = set()
+        condominios_data = {}
         current_cnpj = None
+        data_competencia = None
 
         with open(file_path, 'r', encoding='latin-1') as f:
             for i, line in enumerate(f):
-                if len(line.strip()) < 10: continue
+                if len(line.strip()) < 10:
+                    continue
                 line_num = i + 1
-                
-                # O tipo está na posição 5, mas sua constante pega 5:7
+
                 tipo = line[COL_TIPO_REGISTRO_WIDER].strip()
-                # TIPO 0: HEADER
+
                 if tipo == '0':
                     match = re.search(r'(\d{8})', line)
                     if match:
                         d = match.group(1)
-                        # Salva a data para o sumário e para as movimentações
-                        result['summary']['data_competencia_arquivo'] = f"{d[0:4]}-{d[4:6]}-{d[6:8]}" if d.startswith('20') else f"{d[4:8]}-{d[2:4]}-{d[0:2]}"
+                        if d.startswith('20'):
+                            data_competencia = f"{d[0:4]}-{d[4:6]}-{d[6:8]}"
+                        else:
+                            data_competencia = f"{d[4:8]}-{d[2:4]}-{d[0:2]}"
+                        result['summary']['data_competencia_arquivo'] = data_competencia
 
-                # TIPO 1: CONDOMÍNIO
                 elif tipo == '1':
                     cnpj = re.sub(r'\D', '', line[COL_CNPJ].strip())
                     if cnpj:
                         current_cnpj = cnpj
-                        if cnpj not in cnpjs_vistos: cnpjs_vistos.append(cnpj)
+                        nome_condo = line[COL_CONDOMINIO_RAZAO_SOCIAL].strip()
+                        if cnpj not in condominios_data:
+                            condominios_data[cnpj] = {
+                                "nome": nome_condo,
+                                "cnpj": cnpj,
+                                "valor_condo": Decimal('0.00'),
+                                "funcionarios": {}
+                            }
 
-                # TIPO 3: FUNCIONÁRIO
                 elif tipo == '3':
                     mat = line[COL_FUNCIONARIO_MATRICULA].strip()
                     nome = line[COL_FUNCIONARIO_NOME].strip()
                     cpf = extrair_cpf_estrito(line)
-                    
-                    if not cpf:
-                        # REGRA: Se o CPF for inválido, gera erro para recusar o TXT
-                        result['errors'].append(f"Linha {line_num}: CPF inválido.")
-                        # Cacheamos com '000' para evitar erro de "matrícula não encontrada" no Tipo 4
-                        continue
-                    else:
-                        funcs_cache[mat] = {"cpf": cpf, "nome": nome}
-                        cpfs_vistos.add(cpf)
+                    departamento = line[COL_FUNCIONARIO_DEPARTAMENTO].strip()
+                    funcao = line[COL_FUNCIONARIO_FUNCAO].strip()
+                    data_nasc = parse_data_nascimento(line[COL_FUNCIONARIO_DATA_NASC])
 
-                # TIPO 4: BENEFÍCIO
+                    if not cpf:
+                        result['errors'].append(f"Linha {line_num}: CPF inválido.")
+                        continue
+
+                    if current_cnpj and current_cnpj in condominios_data:
+                        if mat not in condominios_data[current_cnpj]["funcionarios"]:
+                            condominios_data[current_cnpj]["funcionarios"][mat] = {
+                                "cpf": cpf,
+                                "nome": nome,
+                                "matricula": mat,
+                                "departamento": departamento,
+                                "funcao": funcao,
+                                "data_nascimento": data_nasc,
+                                "valor_bene": Decimal('0.00'),
+                                "movimentacoes": []
+                            }
+
                 elif tipo == '4':
                     mat = line[COL_BENEFICIO_MATRICULA].strip()
-                    f_data = funcs_cache.get(mat)
-                    
-                    if not f_data:
+                    if not current_cnpj or current_cnpj not in condominios_data:
+                        result['errors'].append(f"Linha {line_num}: CNPJ não encontrado.")
+                        continue
+                    if mat not in condominios_data[current_cnpj]["funcionarios"]:
                         result['errors'].append(f"Linha {line_num}: Matrícula {mat} não encontrada.")
                         continue
 
-                    # Valor e Dias usando suas fatias
                     v_unit = format_valor_rb(line[COL_BENEFICIO_VALOR])
-                    
                     qtd_raw = re.sub(r'\D', '', line[COL_BENEFICIO_NUM_DIAS].strip())
                     qtd = int(qtd_raw) if (qtd_raw and int(qtd_raw) > 0) else 1
-                    
-                    # Cálculo final
                     v_total = v_unit * qtd
+                    produto = line[COL_BENEFICIO_PRODUTO].strip()
 
-                    result['movimentacoes_detalhada'].append({
-                        "cpf_func": f_data['cpf'],
-                        "nome_func": f_data['nome'],
-                        "valor_recarga_bene": v_total,
-                        "cnpj": current_cnpj,
-                        "vencimento": result['summary'].get('data_competencia_arquivo')
+                    func_data = condominios_data[current_cnpj]["funcionarios"][mat]
+                    func_data["movimentacoes"].append({
+                        "produto": produto,
+                        "valor": v_total
                     })
-                    
+                    func_data["valor_bene"] += v_total
+                    condominios_data[current_cnpj]["valor_condo"] += v_total
+
                     result['summary']['valor_total_beneficios'] += v_total
                     result['summary']['total_movimentacoes'] += 1
 
-        result['summary']['total_condominios'] = len(cnpjs_vistos)
-        result['summary']['total_funcionarios'] = len(cpfs_vistos)
-        if cnpjs_vistos:
-            result['summary']['primeiro_cnpj_processado'] = cnpjs_vistos[0]
+        for cnpj, condo_data in condominios_data.items():
+            lista_funcionarios = []
+            for mat, func in condo_data["funcionarios"].items():
+                lista_funcionarios.append({
+                    "nome": func["nome"],
+                    "cpf": func["cpf"],
+                    "matricula": func["matricula"],
+                    "departamento": func["departamento"],
+                    "funcao": func["funcao"],
+                    "data_nascimento": func["data_nascimento"],
+                    "valor_bene": func["valor_bene"],
+                    "movimentacoes": func["movimentacoes"]
+                })
+
+            result["condominios"].append({
+                "nome": condo_data["nome"],
+                "cnpj": condo_data["cnpj"],
+                "valor_condo": condo_data["valor_condo"],
+                "funcionarios": lista_funcionarios
+            })
+
+            result['summary']['total_funcionarios'] += len(lista_funcionarios)
+
+        result['summary']['total_condominios'] = len(condominios_data)
+        if condominios_data:
+            result['summary']['primeiro_cnpj_processado'] = list(condominios_data.keys())[0]
 
     except Exception as e:
         result['errors'].append(f"Erro fatal: {str(e)}")
