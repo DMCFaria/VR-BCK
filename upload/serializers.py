@@ -42,9 +42,41 @@ class MovimentacaoDetalhadaSerializer(serializers.Serializer):
     periodo2 = serializers.CharField(required=False)
 
 
-class ProcessamentoFinalSerializer(serializers.Serializer):
-    movimentacoes_detalhada = MovimentacaoDetalhadaSerializer(many=True)
+class MovimentacaoSerializer(serializers.Serializer):
+    produto = serializers.CharField(max_length=255)
+    valor = serializers.DecimalField(max_digits=12, decimal_places=2)
+
+
+class FuncionarioSerializer(serializers.Serializer):
+    nome = serializers.CharField(max_length=255)
+    cpf = serializers.CharField(max_length=14)
+    matricula = serializers.CharField(max_length=50)
+    departamento = serializers.CharField(max_length=255)
+    funcao = serializers.CharField(max_length=100)
+    data_nascimento = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    valor_bene = serializers.DecimalField(max_digits=12, decimal_places=2)
+    movimentacoes = MovimentacaoSerializer(many=True)
+
+
+class CondominioSerializer(serializers.Serializer):
+    nome = serializers.CharField(max_length=255)
+    cnpj = serializers.CharField(max_length=20)
+    valor_condo = serializers.DecimalField(max_digits=12, decimal_places=2)
+    funcionarios = FuncionarioSerializer(many=True)
+
+
+class CondominiosDataSerializer(serializers.Serializer):
+    condominios = CondominioSerializer(many=True)
     file_upload_id = serializers.IntegerField()
+    errors = serializers.ListField(child=serializers.CharField(), required=False)
+    summary = serializers.DictField(required=False)
+
+
+class ProcessamentoFinalSerializer(serializers.Serializer):
+    condominios = CondominioSerializer(many=True)
+    file_upload_id = serializers.IntegerField()
+    errors = serializers.ListField(child=serializers.CharField(), required=False)
+    summary = serializers.DictField(required=False)
     novos_registros = serializers.JSONField(required=False)
 
     def _get_ou_criar_vinculo(self, condominio, administradora):
@@ -55,17 +87,43 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         return vinculo
 
     def create(self, validated_data):
-        rows = validated_data.get('movimentacoes_detalhada', [])
+        from django.db.models import Q
+        
+        condominios_data = validated_data.get('condominios', [])
         file_upload_id = validated_data.get('file_upload_id')
         processed_by_user = validated_data.get('processed_by')
         
         dados_da_requisicao = validated_data.copy()
-        dados_da_requisicao.pop('processed_by', None) 
-
-        condominios_cache = {}
-        funcionarios_cache = {}
-        produtos_cache = {}
-        vinculos_cache = {}
+        dados_da_requisicao.pop('processed_by', None)
+        
+        def _normalize_date(val):
+            if val is None:
+                return None
+            val_str = str(val)
+            invalid_dates = {'0001-01-01', '0000-00-00', '0020-00-00', '1900-01-01'}
+            if val_str in invalid_dates or val_str.startswith('000') or val_str == '00-00-0000':
+                return None
+            return val
+        
+        def _convert_decimals(obj):
+            if isinstance(obj, dict):
+                return {k: _convert_decimals(v) for k, v in obj.items()}
+            elif isinstance(obj, (list, tuple)):
+                return [_convert_decimals(item) for item in obj]
+            elif hasattr(obj, '__float__'):
+                return float(obj)
+            return obj
+        
+        def _sanitize_data(obj):
+            if isinstance(obj, dict):
+                return {k: _sanitize_data(v) for k, v in obj.items()}
+            elif isinstance(obj, (list, tuple)):
+                return [_sanitize_data(item) for item in obj]
+            elif isinstance(obj, str) and obj in {'0001-01-01', '0000-00-00', '0020-00-00', '1900-01-01'}:
+                return None
+            return obj
+        
+        dados_da_requisicao = _convert_decimals(_sanitize_data(dados_da_requisicao)) 
         
         administradora = getattr(processed_by_user, 'administradora', None)
         if not administradora:
@@ -73,8 +131,119 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 "detail": "Usuário não possui administradora vinculada."
             })
         
-        movimentacoes_para_inserir = []
-
+        raw_data_comp = validated_data.get('summary', {}).get('data_competencia_arquivo')
+        data_competencia = None
+        if raw_data_comp:
+            data_competencia = _normalize_date(raw_data_comp)
+        
+        if not data_competencia:
+            for c in condominios_data:
+                for f in c.get('funcionarios', []):
+                    dt = _normalize_date(f.get('data_nascimento'))
+                    if dt:
+                        data_competencia = dt
+                        break
+                if data_competencia:
+                    break
+        
+        if not data_competencia:
+            from datetime import date
+            data_competencia = str(date.today())
+        
+        cnpj_list = [c['cnpj'] for c in condominios_data]
+        cpf_list = list(set(f['cpf'] for c in condominios_data for f in c.get('funcionarios', [])))
+        produtos_raw = [(m['produto'][:50] if m.get('produto') else 'SEM_PRODUTO', m.get('produto', '')) 
+                        for c in condominios_data for f in c.get('funcionarios', []) for m in f.get('movimentacoes', [])]
+        prod_key_list = list(set(k for k, _ in produtos_raw))
+        
+        existing_condos = {c.cnpj: c for c in Condominio.objects.filter(cnpj__in=cnpj_list)}
+        existing_funcs = {f.cpf: f for f in Funcionario.objects.filter(cpf__in=cpf_list)}
+        existing_prods = {p.codigo_produto: p for p in Produto.objects.filter(codigo_produto__in=prod_key_list)}
+        
+        condos_to_create = []
+        funcs_to_create = []
+        prods_to_create = []
+        
+        for condo in condominios_data:
+            if condo['cnpj'] not in existing_condos:
+                condos_to_create.append(Condominio(
+                    cnpj=condo['cnpj'],
+                    nome=condo['nome'],
+                    tipo_local='CONDOMINIO'
+                ))
+        
+        for c in condominios_data:
+            for f in c.get('funcionarios', []):
+                if f['cpf'] not in existing_funcs:
+                    funcs_to_create.append(Funcionario(
+                        cpf=f['cpf'],
+                        nome=f['nome'],
+                        matricula=f.get('matricula', ''),
+                        funcao=f.get('funcao', ''),
+                        data_nascimento=_normalize_date(f.get('data_nascimento')),
+                        departamento=f.get('departamento', '')
+                    ))
+        
+        prod_map = {}
+        for key, nome in produtos_raw:
+            if key not in prod_map:
+                prod_map[key] = nome
+        
+        for key, nome in prod_map.items():
+            if key not in existing_prods:
+                prods_to_create.append(Produto(codigo_produto=key, nome=nome))
+        
+        Condominio.objects.bulk_create(condos_to_create, ignore_conflicts=True)
+        Funcionario.objects.bulk_create(funcs_to_create, ignore_conflicts=True)
+        Produto.objects.bulk_create(prods_to_create, ignore_conflicts=True)
+        
+        existing_condos = {c.cnpj: c for c in Condominio.objects.filter(cnpj__in=cnpj_list)}
+        existing_funcs = {f.cpf: f for f in Funcionario.objects.filter(cpf__in=cpf_list)}
+        existing_prods = {p.codigo_produto: p for p in Produto.objects.filter(codigo_produto__in=prod_key_list)}
+        
+        condos_to_vinc = [c for c in cnpj_list if not VinculoCondominio.objects.filter(
+            administradora=administradora, condominio_id=c).exists()]
+        if condos_to_vinc:
+            vinculos = [VinculoCondominio(administradora=administradora, condominio_id=c) for c in condos_to_vinc]
+            VinculoCondominio.objects.bulk_create(vinculos, ignore_conflicts=True)
+        
+        collection_keys = []
+        for condo in condominios_data:
+            condo_obj = existing_condos[condo['cnpj']]
+            for func in condo.get('funcionarios', []):
+                func_obj = existing_funcs[func['cpf']]
+                for mov in func.get('movimentacoes', []):
+                    prod_key = (mov.get('produto') or '')[:50] or 'SEM_PRODUTO'
+                    prod_obj = existing_prods.get(prod_key)
+                    if prod_obj:
+                        collection_keys.append((
+                            condo_obj.pk, func_obj.pk, prod_obj.pk, data_competencia, mov.get('valor', 0)
+                        ))
+        
+        if collection_keys:
+            existing_movs = set(
+                MovimentacaoBeneficio.objects.filter(
+                    empresa_cnpj_id__in=[k[0] for k in collection_keys],
+                    funcionario_cpf_id__in=[k[1] for k in collection_keys],
+                    produto_codigo_id__in=[k[2] for k in collection_keys],
+                    data_competencia=data_competencia
+                ).values_list('empresa_cnpj_id', 'funcionario_cpf_id', 'produto_codigo_id', 'data_competencia')
+            )
+            
+            novos_registros = [
+                MovimentacaoBeneficio(
+                    empresa_cnpj_id=cnpj_pk, funcionario_cpf_id=cpf_pk,
+                    produto_codigo_id=prod_pk, data_competencia=dt_comp,
+                    valor_beneficio=valor, quantidade_dias=1
+                )
+                for cnpj_pk, cpf_pk, prod_pk, dt_comp, valor in collection_keys
+                if (cnpj_pk, cpf_pk, prod_pk, dt_comp) not in existing_movs
+            ]
+            
+            MovimentacaoBeneficio.objects.bulk_create(novos_registros, ignore_conflicts=True)
+        else:
+            novos_registros = []
+        
         with transaction.atomic():
             try:
                 file_upload_instance = FileUpload.objects.select_for_update().get(id=file_upload_id)
@@ -84,84 +253,16 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
             if file_upload_instance.process_status == 'COMPLETED':
                 raise serializers.ValidationError({"detail": "Este arquivo já foi processado anteriormente."})
 
-            processamento_final_instance = ProcessedFile.objects.create(
+            ProcessedFile.objects.create(
                 file=file_upload_instance,
                 processed_by=processed_by_user,
                 dados_requisicao=dados_da_requisicao 
             )
 
-            for row in rows:
-                cnpj = row['cnpj']
-                
-                if cnpj not in condominios_cache:
-                    condominio, created = Condominio.objects.update_or_create(
-                        cnpj=cnpj,
-                        defaults={
-                            'nome': row['departamento'],
-                            'endereco': row.get('endereco', ''),
-                            'bairro': row.get('bairro', ''),
-                            'cidade': row.get('cidade', ''),
-                            'estado': row.get('uf', ''),
-                            'cep': row.get('cep', ''),
-                            'tipo_local': 'CONDOMINIO'
-                        }
-                    )
-                    condominios_cache[cnpj] = condominio
-                else:
-                    condominio = condominios_cache[cnpj]
-                
-                if cnpj not in vinculos_cache:
-                    vinculo = self._get_ou_criar_vinculo(condominio, administradora)
-                    vinculos_cache[cnpj] = vinculo
-                else:
-                    vinculo = vinculos_cache[cnpj]
-
-                cpf = row['cpf_func']
-                if cpf not in funcionarios_cache:
-                    funcionario, _ = Funcionario.objects.update_or_create(
-                        cpf=cpf,
-                        defaults={
-                            'nome': row['nome_func'],
-                            'matricula': row.get('matricula', ''),
-                            'funcao': row.get('funcao', ''),
-                            'data_nascimento': row.get('data_nascimento'), 
-                            'departamento': row['departamento']
-                        } 
-                    )
-                    funcionarios_cache[cpf] = funcionario
-                else:
-                    funcionario = funcionarios_cache[cpf]
-
-                produto_codigo = row['produto_codigo']
-                if produto_codigo not in produtos_cache:
-                    produto, _ = Produto.objects.update_or_create(
-                        codigo_produto=produto_codigo,
-                        defaults={'nome': row['produto']}
-                    )
-                    produtos_cache[produto_codigo] = produto
-                else:
-                    produto = produtos_cache[produto_codigo]
-
-                movimentacoes_para_inserir.append(
-                    MovimentacaoBeneficio(
-                        empresa_cnpj=condominio,
-                        funcionario_cpf=funcionario,
-                        produto_codigo=produto,
-                        data_competencia=row['vencimento'],
-                        valor_beneficio=row['valor_recarga_bene'],
-                        quantidade_dias=row['quantidade']
-                    )
-                )
-
-            MovimentacaoBeneficio.objects.bulk_create(movimentacoes_para_inserir, ignore_conflicts=True)
-
             file_upload_instance.process_status = 'COMPLETED'
             file_upload_instance.save()
-            
-            return {
-                "count": len(movimentacoes_para_inserir), 
-                "status": "COMPLETED"
-            }
+        
+        return {"count": len(novos_registros), "status": "COMPLETED"}
 
 
 class FaturamentoExportSerializer(serializers.Serializer):

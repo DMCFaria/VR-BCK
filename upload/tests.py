@@ -16,25 +16,49 @@ class GeneralUploadIntegrationTest(TestCase):
         self.user = User.objects.create_user(email="test@admin.com", password="password")
         self.client.force_authenticate(user=self.user)
         
-        # Mock de dados para o utilitário de sumário
         self.mock_parsed_data = {
-            'movimentacoes_detalhada': [
+            'condominios': [
                 {
-                    'cpf_func': '111', 'nome_func': 'User A', 
-                    'valor_recarga_bene': decimal.Decimal('150.50'), 'departamento': 'Condo X'
+                    'nome': 'Condo X',
+                    'cnpj': '12345678901234',
+                    'valor_condo': decimal.Decimal('200.50'),
+                    'funcionarios': [
+                        {
+                            'nome': 'User A',
+                            'cpf': '11122233344',
+                            'matricula': '123',
+                            'departamento': 'CONDOMINIO',
+                            'funcao': 'Porteiro',
+                            'data_nascimento': '1990-01-01',
+                            'valor_bene': decimal.Decimal('200.50'),
+                            'movimentacoes': [
+                                {'produto': 'VR ALIMENTACAO', 'valor': decimal.Decimal('150.50')},
+                                {'produto': 'TRANSPORTE', 'valor': decimal.Decimal('50.00')}
+                            ]
+                        }
+                    ]
                 },
                 {
-                    'cpf_func': '111', 'nome_func': 'User A', 
-                    'valor_recarga_bene': decimal.Decimal('50.00'), 'departamento': 'Condo X'
-                },
-                {
-                    'cpf_func': '222', 'nome_func': 'User B', 
-                    'valor_recarga_bene': decimal.Decimal('300.00'), 'departamento': 'Condo Y'
+                    'nome': 'Condo Y',
+                    'cnpj': '98765432109876',
+                    'valor_condo': decimal.Decimal('300.00'),
+                    'funcionarios': [
+                        {
+                            'nome': 'User B',
+                            'cpf': '55566677788',
+                            'matricula': '456',
+                            'departamento': 'CONDOMINIO',
+                            'funcao': 'Zelador',
+                            'data_nascimento': '1985-05-15',
+                            'valor_bene': decimal.Decimal('300.00'),
+                            'movimentacoes': [
+                                {'produto': 'VR ALIMENTACAO', 'valor': decimal.Decimal('300.00')}
+                            ]
+                        }
+                    ]
                 }
             ]
         }
-
-    # --- TESTES DE FUNÇÕES AUXILIARES (UTILS) ---
 
     def test_utils_decimal_conversion(self):
         """Testa se a conversão de Decimal para String para JSON funciona em estruturas profundas"""
@@ -53,20 +77,9 @@ class GeneralUploadIntegrationTest(TestCase):
         """Testa se o sumário agrupa corretamente valores por CPF"""
         summary = _get_beneficiary_summary(self.mock_parsed_data)
         
-        # User A (111) deve ter 200.50 (150.50 + 50.00)
-        user_a = next(item for item in summary if item["cpf"] == "111")
+        user_a = next(item for item in summary if item["cpf"] == "11122233344")
         self.assertEqual(user_a["valor_total"], "200.50")
-        self.assertEqual(len(summary), 2) # Apenas 2 funcionários únicos
-
-    # --- TESTES DAS VIEWS (UPLOAD & CONFIRM) ---
-
-    #def test_upload_view_invalid_extension(self):
-    #    """Tenta fazer upload de um arquivo .pdf (não suportado)"""
-    #    file = SimpleUploadedFile("documento.pdf", b"conteudo_fake", content_type="application/pdf")
-    #    response = self.client.post('/api/upload/', {'file': file}, format='multipart')
-    #    
-    #    self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-    #    self.assertIn("não permitida", response.data['detail'])
+        self.assertEqual(len(summary), 2)
 
     def test_full_flow_confirmation_failure(self):
         """Testa tentativa de confirmação sem o ID do upload (Erro de Payload)"""
@@ -75,24 +88,20 @@ class GeneralUploadIntegrationTest(TestCase):
 
     def test_confirmation_view_lock_prevent_double_process(self):
         """Testa se o sistema impede processar o mesmo arquivo duas vezes (Status COMPLETED)"""
-        # 1. Cria um upload já finalizado no banco
         upload = FileUpload.objects.create(
             uploaded_by=self.user,
             process_status='COMPLETED',
             file='docs/test.txt'
         )
         
-        # 2. Tenta confirmar novamente
         payload = {
             "file_upload_id": upload.id,
-            "movimentacoes_detalhada": []
+            "condominios": []
         }
         response = self.client.post('/api/upload/confirm/', payload, format='json')
         
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("já foi processado", response.data['detail'])
-
-    # --- TESTES DE LISTAGEM (CONFIRMED) ---
 
     def test_list_confirmed_uploads_access(self):
         """Testa se a listagem de confirmados está protegida por autenticação"""
