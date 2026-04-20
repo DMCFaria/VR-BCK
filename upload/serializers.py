@@ -62,6 +62,13 @@ class CondominioSerializer(serializers.Serializer):
     nome = serializers.CharField(max_length=255)
     cnpj = serializers.CharField(max_length=20)
     valor_condo = serializers.DecimalField(max_digits=12, decimal_places=2)
+    rua = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    numero = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    complemento = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    bairro = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    cidade = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    estado = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    cep = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     funcionarios = FuncionarioSerializer(many=True)
 
 
@@ -164,13 +171,31 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         funcs_to_create = []
         prods_to_create = []
         
+        condos_to_update = []
         for condo in condominios_data:
             if condo['cnpj'] not in existing_condos:
                 condos_to_create.append(Condominio(
                     cnpj=condo['cnpj'],
                     nome=condo['nome'],
-                    tipo_local='CONDOMINIO'
+                    tipo_local='CONDOMINIO',
+                    endereco=condo.get('rua'),
+                    numero=condo.get('numero'),
+                    complemento=condo.get('complemento'),
+                    bairro=condo.get('bairro'),
+                    cidade=condo.get('cidade'),
+                    estado=condo.get('estado'),
+                    cep=condo.get('cep')
                 ))
+            else:
+                condo_obj = existing_condos[condo['cnpj']]
+                condo_obj.endereco = condo.get('rua') or condo_obj.endereco
+                condo_obj.numero = condo.get('numero') or condo_obj.numero
+                condo_obj.complemento = condo.get('complemento') or condo_obj.complemento
+                condo_obj.bairro = condo.get('bairro') or condo_obj.bairro
+                condo_obj.cidade = condo.get('cidade') or condo_obj.cidade
+                condo_obj.estado = condo.get('estado') or condo_obj.estado
+                condo_obj.cep = condo.get('cep') or condo_obj.cep
+                condos_to_update.append(condo_obj)
         
         for c in condominios_data:
             for f in c.get('funcionarios', []):
@@ -194,6 +219,11 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 prods_to_create.append(Produto(codigo_produto=key, nome=nome))
         
         Condominio.objects.bulk_create(condos_to_create, ignore_conflicts=True)
+        if condos_to_update:
+            Condominio.objects.bulk_update(
+                condos_to_update,
+                ['endereco', 'numero', 'complemento', 'bairro', 'cidade', 'estado', 'cep']
+            )
         Funcionario.objects.bulk_create(funcs_to_create, ignore_conflicts=True)
         Produto.objects.bulk_create(prods_to_create, ignore_conflicts=True)
         

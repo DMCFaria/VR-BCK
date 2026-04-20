@@ -5,8 +5,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from .serializers import FileUploadSerializer
 from .utils import _get_beneficiary_summary, _convert_decimals_to_json_safe
-
-
+from datetime import datetime
+import boto3    
 
 # Aqui você importará os parsers conforme sua estrutura de pastas
 from .RB.parsers import parse_rb_layout
@@ -30,7 +30,16 @@ class UploadView(views.APIView):
         
         file_path = upload_instance.file.path
         extension = os.path.splitext(file_path)[1].lower()
+        file_type = request.POST.get('file_type', 'UNKNOWN')
+        file_obj = request.FILES.get('file')
 
+        s3 = boto3.client(
+            's3',
+            aws_access_key_id="",
+            aws_secret_access_key="",
+            region_name='us-east-2'
+        )
+        
         try:
             # 2. Roteamento Dinâmico
             if extension == '.txt':
@@ -71,6 +80,22 @@ class UploadView(views.APIView):
             upload_instance.process_status = "PARSED"
             upload_instance.summary_data = frontend_summary_safe
             upload_instance.save()
+
+            if file_obj:
+                # 3. Extrair o nome original (070426001.txt)
+                original_name = file_obj.name.split('.')[0]
+                user = request.user
+                admin_nome_completo = str(user.administradora)
+                duas_primeiras = " ".join(admin_nome_completo.split()[:2])
+                ext = file_obj.name.split('.')[1]
+                # 4. Gerar o timestamp (ex: 20260417-1230)
+                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                
+                # 5. Montar o novo nome: RB-070426001.txt-20260417-1230
+                # Dica: se quiser manter a extensão no final, a lógica muda um pouco
+                new_file_name = f"{duas_primeiras}-{file_type}-{original_name}-{timestamp}.{ext}"
+                
+               # s3.upload_fileobj(file_obj, "fedcorp-prod", f"VR - DOCS/importacoes/{new_file_name}")
 
             return Response(
                 {

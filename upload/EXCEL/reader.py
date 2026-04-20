@@ -2,7 +2,7 @@ import pandas as pd
 import re
 from decimal import Decimal, InvalidOperation
 from ..RB.parsers import cpf_valido_matematicamente
-
+import openpyxl
 
 def parse_excel_layout(file_path, file_upload_id):
     result = {
@@ -74,6 +74,13 @@ def parse_excel_layout(file_path, file_upload_id):
                     "nome": str(row.get('nome_condominio', '')).strip(),
                     "cnpj": raw_cnpj,
                     "valor_condo": Decimal('0.00'),
+                    "rua": str(row.get('endereco_condominio', '')).strip(),
+                    "numero": str(row.get('numero_condominio', '')).strip(),
+                    "complemento": str(row.get('complemento_condominio', '')).strip(),
+                    "bairro": str(row.get('bairro_condominio', '')).strip(),
+                    "cidade": str(row.get('cidade_condominio', '')).strip(),
+                    "estado": str(row.get('estado_condominio', '')).strip(),
+                    "cep": str(row.get('cep_condominio', '')).strip(),
                     "funcionarios": {}
                 }
 
@@ -121,6 +128,12 @@ def parse_excel_layout(file_path, file_upload_id):
                 "nome": condo_data["nome"],
                 "cnpj": condo_data["cnpj"],
                 "valor_condo": condo_data["valor_condo"],
+                "rua": condo_data.get("rua"),
+                "numero": condo_data.get("numero"),
+                "bairro": condo_data.get("bairro"),
+                "cidade": condo_data.get("cidade"),
+                "estado": condo_data.get("estado"),
+                "cep": condo_data.get("cep"),
                 "funcionarios": lista_funcionarios
             })
 
