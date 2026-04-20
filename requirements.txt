@@ -17,3 +17,4 @@ six==1.17.0
 sqlparse==0.5.3
 tzdata==2025.2
 xlsxwriter==3.2.9
+openpyxl>=3.0.0

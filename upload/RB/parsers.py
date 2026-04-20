@@ -10,6 +10,16 @@ COL_CNPJ = slice(6, 19)
 
 COL_CONDOMINIO_RAZAO_SOCIAL = slice(20, 60)
 
+COL_ENDERECO_RUA = slice(31, 85)
+COL_ENDERECO_NUMERO = slice(91, 105)
+COL_ENDERECO_COMPLEMENTO = slice(106, 130)
+COL_ENDERECO_BAIRRO = slice(130, 150)
+COL_ENDERECO_CIDADE = slice(170, 190)
+COL_ENDERECO_ESTADO = slice(211, 213)
+COL_ENDERECO_CEP = slice(23, 30)
+
+
+
 COL_FUNCIONARIO_MATRICULA = slice(19, 32)
 COL_FUNCIONARIO_NOME = slice(32, 72)
 COL_FUNCIONARIO_DEPARTAMENTO = slice(92, 102)
@@ -114,6 +124,17 @@ def parse_rb_layout(file_path, file_upload_id):
                                 "valor_condo": Decimal('0.00'),
                                 "funcionarios": {}
                             }
+                #CAPTURAR O ENDERECO DO CONDOMINIO
+                elif tipo == '2':
+                    cnpj = re.sub(r'\D', '', line[COL_CNPJ].strip())
+                    if cnpj and cnpj in condominios_data:
+                        condominios_data[cnpj]["endereco"] = line[COL_ENDERECO_RUA].strip()
+                        condominios_data[cnpj]["numero"] = line[COL_ENDERECO_NUMERO].strip()
+                        condominios_data[cnpj]["complemento"] = line[COL_ENDERECO_COMPLEMENTO].strip()
+                        condominios_data[cnpj]["bairro"] = line[COL_ENDERECO_BAIRRO].strip()
+                        condominios_data[cnpj]["cidade"] = line[COL_ENDERECO_CIDADE].strip()
+                        condominios_data[cnpj]["estado"] = line[COL_ENDERECO_ESTADO].strip()
+                        condominios_data[cnpj]["cep"] = line[COL_ENDERECO_CEP].strip()
 
                 elif tipo == '3':
                     mat = line[COL_FUNCIONARIO_MATRICULA].strip()
@@ -180,12 +201,20 @@ def parse_rb_layout(file_path, file_upload_id):
                     "movimentacoes": func["movimentacoes"]
                 })
 
-            result["condominios"].append({
+            condo_entry = {
                 "nome": condo_data["nome"],
                 "cnpj": condo_data["cnpj"],
                 "valor_condo": condo_data["valor_condo"],
+                "rua": condo_data.get("endereco"),
+                "numero": condo_data.get("numero"),
+                "complemento": condo_data.get("complemento"),
+                "bairro": condo_data.get("bairro"),
+                "cidade": condo_data.get("cidade"),
+                "estado": condo_data.get("estado"),
+                "cep": condo_data.get("cep"),
                 "funcionarios": lista_funcionarios
-            })
+            }
+            result["condominios"].append(condo_entry)
 
             result['summary']['total_funcionarios'] += len(lista_funcionarios)
 
