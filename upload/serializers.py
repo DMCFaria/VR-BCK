@@ -3,6 +3,8 @@ from django.db import transaction
 from entidades.models import Condominio, Funcionario, VinculoCondominio
 from beneficios.models import Produto, MovimentacaoBeneficio
 from .models import FileUpload, ProcessedFile
+from .RB.parsers import cpf_valido_matematicamente
+import re
 
 
 class FileUploadSerializer(serializers.ModelSerializer):
@@ -44,6 +46,7 @@ class MovimentacaoDetalhadaSerializer(serializers.Serializer):
 
 class MovimentacaoSerializer(serializers.Serializer):
     produto = serializers.CharField(max_length=255)
+    codigo_produto = serializers.CharField(max_length=50, required=False, allow_blank=True, allow_null=True)
     valor = serializers.DecimalField(max_digits=12, decimal_places=2)
 
 
@@ -85,23 +88,39 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
     errors = serializers.ListField(child=serializers.CharField(), required=False)
     summary = serializers.DictField(required=False)
     novos_registros = serializers.JSONField(required=False)
-
-    def _get_ou_criar_vinculo(self, condominio, administradora):
-        vinculo, created = VinculoCondominio.objects.get_or_create(
-            condominio=condominio,
-            administradora=administradora
-        )
-        return vinculo
+    linhas_com_erro = serializers.ListField(required=False, allow_empty=True)
 
     def create(self, validated_data):
         from django.db.models import Q
+        from decimal import Decimal
         
         condominios_data = validated_data.get('condominios', [])
         file_upload_id = validated_data.get('file_upload_id')
         processed_by_user = validated_data.get('processed_by')
+        linhas_com_erro = validated_data.get('linhas_com_erro', [])
+        
+        for erro in linhas_com_erro:
+            tipo = erro.get('tipo_erro')
+            dados = erro.get('dados', {})
+            if tipo == 'CPF_INVALIDO' and dados.get('cpf'):
+                cpf_corrigido = re.sub(r'\D', '', dados['cpf'])
+                if len(cpf_corrigido) == 11 and cpf_valido_matematicamente(cpf_corrigido):
+                    dados['cpf'] = cpf_corrigido
+            if tipo == 'CNPJ_INVALIDO' and dados.get('cnpj'):
+                cnpj_corrigido = re.sub(r'\D', '', dados['cnpj'])
+                if len(cnpj_corrigido) == 14:
+                    dados['cnpj'] = cnpj_corrigido
+            if tipo == 'VALOR_EXCEDIDO' and dados.get('valor_total'):
+                try:
+                    valor = Decimal(str(dados['valor_total']).replace(',', '.'))
+                    if valor <= Decimal('2499.99'):
+                        dados['_corrigido'] = True
+                except:
+                    pass
         
         dados_da_requisicao = validated_data.copy()
         dados_da_requisicao.pop('processed_by', None)
+        dados_da_requisicao.pop('linhas_com_erro', None)
         
         def _normalize_date(val):
             if val is None:
@@ -159,8 +178,19 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         
         cnpj_list = [c['cnpj'] for c in condominios_data]
         cpf_list = list(set(f['cpf'] for c in condominios_data for f in c.get('funcionarios', [])))
-        produtos_raw = [(m['produto'][:50] if m.get('produto') else 'SEM_PRODUTO', m.get('produto', '')) 
-                        for c in condominios_data for f in c.get('funcionarios', []) for m in f.get('movimentacoes', [])]
+        produtos_raw = []
+        for c in condominios_data:
+            for f in c.get('funcionarios', []):
+                for m in f.get('movimentacoes', []):
+                    codigo = m.get('codigo_produto') or ''
+                    produto = m.get('produto') or ''
+                    if codigo:
+                        key = codigo.strip()[:50]
+                    elif produto:
+                        key = produto.strip()[:50]
+                    else:
+                        key = 'SEM_PRODUTO'
+                    produtos_raw.append((key, produto if produto else key))
         prod_key_list = list(set(k for k, _ in produtos_raw))
         
         existing_condos = {c.cnpj: c for c in Condominio.objects.filter(cnpj__in=cnpj_list)}
@@ -243,7 +273,14 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
             for func in condo.get('funcionarios', []):
                 func_obj = existing_funcs[func['cpf']]
                 for mov in func.get('movimentacoes', []):
-                    prod_key = (mov.get('produto') or '')[:50] or 'SEM_PRODUTO'
+                    codigo = mov.get('codigo_produto') or ''
+                    produto = mov.get('produto') or ''
+                    if codigo:
+                        prod_key = codigo.strip()[:50]
+                    elif produto:
+                        prod_key = produto.strip()[:50]
+                    else:
+                        prod_key = 'SEM_PRODUTO'
                     prod_obj = existing_prods.get(prod_key)
                     if prod_obj:
                         collection_keys.append((

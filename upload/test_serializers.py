@@ -4,6 +4,9 @@ from django.test import TestCase
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 from rest_framework import status
+from io import StringIO
+import tempfile
+import os
 
 from .models import FileUpload, ProcessedFile
 from .serializers import ProcessamentoFinalSerializer, CondominioSerializer, FuncionarioSerializer

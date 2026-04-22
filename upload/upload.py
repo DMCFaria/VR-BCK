@@ -103,6 +103,7 @@ class UploadView(views.APIView):
                     "status": "PARSED",
                     "summary": frontend_summary_safe,
                     "data_to_backend": data_to_backend_safe,
+                    "linhas_com_erro": parsed_data.get("linhas_com_erro", []),
                     "detail": "Arquivo processado. Confirme os dados para gravação."
                 },
                 status=status.HTTP_202_ACCEPTED,

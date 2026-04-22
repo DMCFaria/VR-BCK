@@ -6,7 +6,7 @@ from datetime import datetime
 
 COL_SEQUENCIAL = slice(0, 5)
 COL_TIPO_REGISTRO_WIDER = slice(5, 6)
-COL_CNPJ = slice(6, 19)
+COL_CNPJ = slice(6, 20)
 
 COL_CONDOMINIO_RAZAO_SOCIAL = slice(20, 60)
 
@@ -31,6 +31,7 @@ COL_BENEFICIO_MATRICULA = slice(19, 32)
 COL_BENEFICIO_NUM_DIAS = slice(100, 104)
 COL_BENEFICIO_VALOR = slice(109, 116)
 COL_BENEFICIO_PRODUTO = slice(44, 88)
+COL_CODIGO_PRODUTO = slice(40, 45)
 
 
 def format_valor_rb(text):
@@ -47,7 +48,7 @@ def format_valor_rb(text):
 
 def parse_data_nascimento(text):
     if not text or len(text.strip()) < 8:
-        return None
+        return None, "DATA_NASCIMENTO_INVALIDA"
     raw = re.sub(r'\D', '', text.strip()[:8])
     if len(raw) == 8 and raw.isdigit():
         try:
@@ -55,10 +56,11 @@ def parse_data_nascimento(text):
             mes = int(raw[2:4])
             ano = int(raw[4:8])
             if 1900 <= ano <= 2100 and 1 <= mes <= 12 and 1 <= dia <= 31:
-                return f"{ano}-{mes:02d}-{dia:02d}"
+                return f"{ano}-{mes:02d}-{dia:02d}", None
+            return None, "DATA_NASCIMENTO_INVALIDA"
         except:
-            pass
-    return None
+            return None, "DATA_NASCIMENTO_INVALIDA"
+    return None, "DATA_NASCIMENTO_INVALIDA"
 
 
 def extrair_cpf_estrito(line):
@@ -75,6 +77,7 @@ def parse_rb_layout(file_path, file_upload_id):
         "file_upload_id": file_upload_id,
         "condominios": [],
         "errors": [],
+        "linhas_com_erro": [],
         "summary": {
             "total_condominios": 0,
             "total_funcionarios": 0,
@@ -114,7 +117,18 @@ def parse_rb_layout(file_path, file_upload_id):
 
                 elif tipo == '1':
                     cnpj = re.sub(r'\D', '', line[COL_CNPJ].strip())
-                    if cnpj:
+                    if cnpj and len(cnpj) != 14:
+                        result['errors'].append(f"Linha {line_num}: CNPJ com tamanho inválido ({len(cnpj)} dígitos).")
+                        result['linhas_com_erro'].append({
+                            "tipo_erro": "CNPJ_TAMANHO_INVALIDO",
+                            "linha": line_num,
+                            "dados": {
+                                "nome": line[COL_CONDOMINIO_RAZAO_SOCIAL].strip()
+                            }
+                        })
+                        current_cnpj = None
+                        continue
+                    elif cnpj:
                         current_cnpj = cnpj
                         nome_condo = line[COL_CONDOMINIO_RAZAO_SOCIAL].strip()
                         if cnpj not in condominios_data:
@@ -124,6 +138,17 @@ def parse_rb_layout(file_path, file_upload_id):
                                 "valor_condo": Decimal('0.00'),
                                 "funcionarios": {}
                             }
+                    else:
+                        result['errors'].append(f"Linha {line_num}: CNPJ ausente/inválido.")
+                        result['linhas_com_erro'].append({
+                            "tipo_erro": "CNPJ_INVALIDO",
+                            "linha": line_num,
+                            "dados": {
+                                "nome": line[COL_CONDOMINIO_RAZAO_SOCIAL].strip()
+                            }
+                        })
+                        current_cnpj = None
+                        continue
                 #CAPTURAR O ENDERECO DO CONDOMINIO
                 elif tipo == '2':
                     cnpj = re.sub(r'\D', '', line[COL_CNPJ].strip())
@@ -142,10 +167,19 @@ def parse_rb_layout(file_path, file_upload_id):
                     cpf = extrair_cpf_estrito(line)
                     departamento = line[COL_FUNCIONARIO_DEPARTAMENTO].strip()
                     funcao = line[COL_FUNCIONARIO_FUNCAO].strip()
-                    data_nasc = parse_data_nascimento(line[COL_FUNCIONARIO_DATA_NASC])
+                    data_nasc, erro_data = parse_data_nascimento(line[COL_FUNCIONARIO_DATA_NASC])
 
                     if not cpf:
                         result['errors'].append(f"Linha {line_num}: CPF inválido.")
+                        result['linhas_com_erro'].append({
+                            "tipo_erro": "CPF_INVALIDO",
+                            "linha": line_num,
+                            "dados": {
+                                "cnpj": current_cnpj,
+                                "matricula": mat,
+                                "nome": nome
+                            }
+                        })
                         continue
 
                     if current_cnpj and current_cnpj in condominios_data:
@@ -160,11 +194,41 @@ def parse_rb_layout(file_path, file_upload_id):
                                 "valor_bene": Decimal('0.00'),
                                 "movimentacoes": []
                             }
+                            
+                            if erro_data:
+                                result['errors'].append(f"Linha {line_num}: Data de nascimento inválida.")
+                                result['linhas_com_erro'].append({
+                                    "tipo_erro": "DATA_NASCIMENTO_INVALIDA",
+                                    "linha": line_num,
+                                    "dados": {
+                                        "cpf": cpf,
+                                        "nome": nome,
+                                        "matricula": mat
+                                    }
+                                })
+                    else:
+                        result['errors'].append(f"Linha {line_num}: CNPJ não encontrado.")
+                        result['linhas_com_erro'].append({
+                            "tipo_erro": "CNPJ_NAO_CADASTRADO",
+                            "linha": line_num,
+                            "dados": {
+                                "cpf": cpf,
+                                "nome": nome,
+                                "matricula": mat
+                            }
+                        })
 
                 elif tipo == '4':
                     mat = line[COL_BENEFICIO_MATRICULA].strip()
                     if not current_cnpj or current_cnpj not in condominios_data:
                         result['errors'].append(f"Linha {line_num}: CNPJ não encontrado.")
+                        result['linhas_com_erro'].append({
+                            "tipo_erro": "CNPJ_NAO_CADASTRADO",
+                            "linha": line_num,
+                            "dados": {
+                                "matricula": mat
+                            }
+                        })
                         continue
                     if mat not in condominios_data[current_cnpj]["funcionarios"]:
                         result['errors'].append(f"Linha {line_num}: Matrícula {mat} não encontrada.")
@@ -175,10 +239,13 @@ def parse_rb_layout(file_path, file_upload_id):
                     qtd = int(qtd_raw) if (qtd_raw and int(qtd_raw) > 0) else 1
                     v_total = v_unit * qtd
                     produto = line[COL_BENEFICIO_PRODUTO].strip()
+                    codigo_produto = line[COL_CODIGO_PRODUTO].strip()
 
                     func_data = condominios_data[current_cnpj]["funcionarios"][mat]
+                    func_cpf = func_data.get("cpf", "")
                     func_data["movimentacoes"].append({
                         "produto": produto,
+                        "codigo_produto": codigo_produto,
                         "valor": v_total
                     })
                     func_data["valor_bene"] += v_total
@@ -186,6 +253,19 @@ def parse_rb_layout(file_path, file_upload_id):
 
                     result['summary']['valor_total_beneficios'] += v_total
                     result['summary']['total_movimentacoes'] += 1
+                    
+                    if func_data["valor_bene"] > Decimal('2499.99'):
+                        result['errors'].append(f"Linha {line_num}: Valor total do funcionário R$ {func_data['valor_bene']} excede limite de R$ 2499,99.")
+                        result['linhas_com_erro'].append({
+                            "tipo_erro": "VALOR_EXCEDIDO",
+                            "linha": line_num,
+                            "dados": {
+                                "cpf": func_cpf,
+                                "nome": func_data["nome"],
+                                "matricula": mat,
+                                "valor_total": str(func_data["valor_bene"])
+                            }
+                        })
 
         for cnpj, condo_data in condominios_data.items():
             lista_funcionarios = []

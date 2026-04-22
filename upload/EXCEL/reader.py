@@ -9,6 +9,7 @@ def parse_excel_layout(file_path, file_upload_id):
         "file_upload_id": file_upload_id,
         "condominios": [],
         "errors": [],
+        "linhas_com_erro": [],
         "summary": {
             "total_condominios": 0,
             "total_funcionarios": 0,
@@ -37,13 +38,55 @@ def parse_excel_layout(file_path, file_upload_id):
             line_num = index + 2
 
             raw_cpf = re.sub(r'\D', '', str(row.get('cpf_funcionario', '')))
-            if not raw_cpf or len(raw_cpf) != 11 or not cpf_valido_matematicamente(raw_cpf):
+            if raw_cpf and len(raw_cpf) != 11:
+                result['errors'].append(f"Linha {line_num}: CPF com tamanho inválido ({len(raw_cpf)} dígitos).")
+                result['linhas_com_erro'].append({
+                    "tipo_erro": "CPF_TAMANHO_INVALIDO",
+                    "linha": line_num,
+                    "dados": {
+                        "cpf": str(row.get('cpf_funcionario', '')),
+                        "cnpj": str(row.get('cnpj_condominio', '')),
+                        "nome_funcionario": str(row.get('nome_funcionario', '')),
+                        "matricula": str(row.get('matricula_funcionario', ''))
+                    }
+                })
+                continue
+            elif not raw_cpf or not cpf_valido_matematicamente(raw_cpf):
                 result['errors'].append(f"Linha {line_num}: CPF '{raw_cpf}' inválido.")
+                result['linhas_com_erro'].append({
+                    "tipo_erro": "CPF_INVALIDO",
+                    "linha": line_num,
+                    "dados": {
+                        "cnpj": str(row.get('cnpj_condominio', '')),
+                        "nome_funcionario": str(row.get('nome_funcionario', '')),
+                        "matricula": str(row.get('matricula_funcionario', ''))
+                    }
+                })
                 continue
 
             raw_cnpj = re.sub(r'\D', '', str(row.get('cnpj_condominio', '')))
             if not raw_cnpj:
                 result['errors'].append(f"Linha {line_num}: CNPJ do condomínio ausente.")
+                result['linhas_com_erro'].append({
+                    "tipo_erro": "CNPJ_INVALIDO",
+                    "linha": line_num,
+                    "dados": {
+                        "nome_condominio": str(row.get('nome_condominio', '')),
+                        "nome_funcionario": str(row.get('nome_funcionario', ''))
+                    }
+                })
+                continue
+            
+            if len(raw_cnpj) != 14:
+                result['errors'].append(f"Linha {line_num}: CNPJ com tamanho inválido ({len(raw_cnpj)} dígitos).")
+                result['linhas_com_erro'].append({
+                    "tipo_erro": "CNPJ_TAMANHO_INVALIDO",
+                    "linha": line_num,
+                    "dados": {
+                        "cnpj": str(row.get('cnpj_condominio', '')),
+                        "nome_condominio": str(row.get('nome_condominio', ''))
+                    }
+                })
                 continue
 
             try:
@@ -63,11 +106,26 @@ def parse_excel_layout(file_path, file_upload_id):
             departamento = str(row.get('tipo_local_condominio', '')).strip()
             funcao = str(row.get('funcao_funcionario', '')).strip()
             data_nasc = row.get('data_nascimento_funcionario')
-            if isinstance(data_nasc, pd.Timestamp):
-                data_nasc = data_nasc.strftime('%Y-%m-%d')
+            if data_nasc is None or str(data_nasc).strip() in ['', 'None', 'nan']:
+                data_nasc_validada = None
+            elif isinstance(data_nasc, pd.Timestamp):
+                data_nasc_validada = data_nasc.strftime('%Y-%m-%d')
             else:
-                data_nasc = str(data_nasc) if data_nasc else None
+                data_nasc_str = str(data_nasc).strip()
+                try:
+                    from datetime import datetime
+                    parsed = datetime.strptime(data_nasc_str, '%Y-%m-%d')
+                    data_nasc_validada = parsed.strftime('%Y-%m-%d')
+                except:
+                    try:
+                        from datetime import datetime
+                        parsed = datetime.strptime(data_nasc_str, '%d/%m/%Y')
+                        data_nasc_validada = parsed.strftime('%Y-%m-%d')
+                    except:
+                        data_nasc_validada = None
+            
             produto = str(row.get('nome_produto', '')).strip()
+            codigo_produto = str(row.get('codigo_produto', '')).strip() or None
 
             if raw_cnpj not in condominios_data:
                 condominios_data[raw_cnpj] = {
@@ -86,19 +144,34 @@ def parse_excel_layout(file_path, file_upload_id):
 
             func_key = f"{raw_cnpj}_{matricula}"
             if func_key not in condominios_data[raw_cnpj]["funcionarios"]:
-                condominios_data[raw_cnpj]["funcionarios"][func_key] = {
+                func_data = {
                     "cpf": raw_cpf,
                     "nome": nome_func,
                     "matricula": matricula,
                     "departamento": departamento,
                     "funcao": funcao,
-                    "data_nascimento": data_nasc,
+                    "data_nascimento": data_nasc_validada,
                     "valor_bene": Decimal('0.00'),
                     "movimentacoes": []
                 }
+                
+                if data_nasc_validada is None:
+                    result['errors'].append(f"Linha {line_num}: Data de nascimento inválida.")
+                    result['linhas_com_erro'].append({
+                        "tipo_erro": "DATA_NASCIMENTO_INVALIDA",
+                        "linha": line_num,
+                        "dados": {
+                            "cpf": raw_cpf,
+                            "nome_funcionario": nome_func,
+                            "matricula": matricula
+                        }
+                    })
+                
+                condominios_data[raw_cnpj]["funcionarios"][func_key] = func_data
 
             condominios_data[raw_cnpj]["funcionarios"][func_key]["movimentacoes"].append({
                 "produto": produto,
+                "codigo_produto": codigo_produto,
                 "valor": v_total
             })
             condominios_data[raw_cnpj]["funcionarios"][func_key]["valor_bene"] += v_total
@@ -106,6 +179,19 @@ def parse_excel_layout(file_path, file_upload_id):
 
             result['summary']['valor_total_beneficios'] += v_total
             result['summary']['total_movimentacoes'] += 1
+            
+            if condominios_data[raw_cnpj]["funcionarios"][func_key]["valor_bene"] > Decimal('2499.99'):
+                result['errors'].append(f"Linha {line_num}: Valor total do funcionário R$ {condominios_data[raw_cnpj]['funcionarios'][func_key]['valor_bene']} excede limite de R$ 2499,99.")
+                result['linhas_com_erro'].append({
+                    "tipo_erro": "VALOR_EXCEDIDO",
+                    "linha": line_num,
+                    "dados": {
+                        "cpf": raw_cpf,
+                        "nome_funcionario": nome_func,
+                        "matricula": matricula,
+                        "valor_total": str(condominios_data[raw_cnpj]["funcionarios"][func_key]["valor_bene"])
+                    }
+                })
 
             if not result['summary']['data_competencia_arquivo']:
                 result['summary']['data_competencia_arquivo'] = data_iso
