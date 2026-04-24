@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.db import transaction
 from entidades.models import Condominio, Funcionario, VinculoCondominio
-from beneficios.models import Produto, MovimentacaoBeneficio
+from beneficios.models import Produto, MovimentacaoBeneficio, Importacao
 from .models import FileUpload, ProcessedFile
 from .RB.parsers import cpf_valido_matematicamente
 import re
@@ -268,6 +268,13 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
             VinculoCondominio.objects.bulk_create(vinculos, ignore_conflicts=True)
         
         collection_keys = []
+        importacao = Importacao.objects.create(
+            file_upload_id=file_upload_id,
+            usuario=processed_by_user,
+            status='PROCESSING',
+            total_registros=0
+        )
+        
         for condo in condominios_data:
             condo_obj = existing_condos[condo['cnpj']]
             for func in condo.get('funcionarios', []):
@@ -301,13 +308,15 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 MovimentacaoBeneficio(
                     empresa_cnpj_id=cnpj_pk, funcionario_cpf_id=cpf_pk,
                     produto_codigo_id=prod_pk, data_competencia=dt_comp,
-                    valor_beneficio=valor, quantidade_dias=1
+                    valor_beneficio=valor, quantidade_dias=1,
+                    importacao=importacao
                 )
                 for cnpj_pk, cpf_pk, prod_pk, dt_comp, valor in collection_keys
                 if (cnpj_pk, cpf_pk, prod_pk, dt_comp) not in existing_movs
             ]
             
             MovimentacaoBeneficio.objects.bulk_create(novos_registros, ignore_conflicts=True)
+            importacao.registros_processados = len(novos_registros)
         else:
             novos_registros = []
         
@@ -328,8 +337,11 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
 
             file_upload_instance.process_status = 'COMPLETED'
             file_upload_instance.save()
+            
+            importacao.status = 'COMPLETED'
+            importacao.save()
         
-        return {"count": len(novos_registros), "status": "COMPLETED"}
+        return {"count": len(novos_registros), "status": "COMPLETED", "importacao_id": importacao.id}
 
 
 class FaturamentoExportSerializer(serializers.Serializer):

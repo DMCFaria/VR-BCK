@@ -1,5 +1,57 @@
 from django.db import models
 from entidades.models import Condominio, Funcionario
+from django.conf import settings
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
+
+class Importacao(models.Model):
+    STATUS_CHOICES = [
+        ('PENDING', 'Pendente'),
+        ('PROCESSING', 'Processando'),
+        ('COMPLETED', 'Concluída'),
+        ('FAILED', 'Falhou'),
+    ]
+
+    id = models.AutoField(primary_key=True, verbose_name="ID")
+    file_upload = models.ForeignKey(
+        'upload.FileUpload',
+        on_delete=models.CASCADE,
+        verbose_name="Arquivo Carregado",
+        null=True,
+        blank=True
+    )
+    usuario = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        verbose_name="Usuário",
+        null=True,
+        blank=True
+    )
+    data_importacao = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Data da Importação"
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='PENDING',
+        verbose_name="Status"
+    )
+    total_registros = models.IntegerField(default=0, verbose_name="Total de Registros")
+    registros_processados = models.IntegerField(default=0, verbose_name="Registros Processados")
+    erros = models.JSONField(default=list, verbose_name="Erros")
+    url = models.URLField(max_length=500, verbose_name="URL", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Importação"
+        verbose_name_plural = "Importações"
+        ordering = ['-data_importacao']
+
+    def __str__(self):
+        return f"Importação #{self.id} - {self.data_importacao.strftime('%d/%m/%Y %H:%M')}"
+
 
 # Modelo PRODUTO (Catálogo de Benefícios)
 class Produto(models.Model):
@@ -35,6 +87,14 @@ class MovimentacaoBeneficio(models.Model):
         Produto, 
         on_delete=models.CASCADE,
         verbose_name="Produto"
+    )
+    importacao = models.ForeignKey(
+        Importacao,
+        on_delete=models.SET_NULL,
+        verbose_name="Importação",
+        null=True,
+        blank=True,
+        related_name='movimentacoes'
     )
 
     # Dados da Transação

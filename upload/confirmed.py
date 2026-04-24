@@ -8,6 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from .serializers import ProcessamentoFinalSerializer
 from .models import FileUpload
+from beneficios.models import Importacao
 
 class ConfirmedUploadsSerializer(serializers.ModelSerializer):
     """
@@ -54,11 +55,12 @@ class ConfirmationView(views.APIView):
                 return Response({
                     "detail": "Dados gravados com sucesso.",
                     "registros_processados": result.get("count"),
+                    "importacao_id": result.get("importacao_id"),
                     "status": "COMPLETED"
                 }, status=status.HTTP_200_OK)
             except Exception as e:
                 FileUpload.objects.filter(id=file_id).update(process_status="FAILED")
-                # Se for um erro de validação/lógica, você pode mudar para 400 aqui também
+                Importacao.objects.filter(file_upload_id=file_id, status='PROCESSING').update(status='FAILED')
                 return Response({"detail": f"Erro interno: {str(e)}"}, status=400) 
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

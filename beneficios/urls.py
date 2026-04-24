@@ -1,13 +1,20 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import ProdutoViewSet, MovimentacaoBeneficioViewSet
+from .views import (
+    ProdutoViewSet,
+    MovimentacaoBeneficioViewSet,
+    UltimaImportacaoMovimentacoesView,
+    ImportacaoListView,
+    ImportacaoDetailView
+)
 
-# Cria um router e registra nossos ViewSets
 router = DefaultRouter()
 router.register(r'produtos', ProdutoViewSet)
 router.register(r'movimentacoes', MovimentacaoBeneficioViewSet, basename='movimentacao')
 
 urlpatterns = [
-    # Inclui as rotas geradas pelo router (list/create/retrieve/update/delete)
     path('', include(router.urls)),
+    path('importacoes/ultima/', UltimaImportacaoMovimentacoesView.as_view(), name='ultima-importacao'),
+    path('importacoes/', ImportacaoListView.as_view(), name='importacao-list'),
+    path('importacoes/<int:pk>/', ImportacaoDetailView.as_view(), name='importacao-detail'),
 ]
