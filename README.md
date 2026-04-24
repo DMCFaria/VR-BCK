@@ -107,6 +107,9 @@ docker-compose up --build
 - `GET/PUT/DELETE /api/beneficios/produtos/{codigo}/` - Detalhe do produto
 - `GET /api/beneficios/movimentacoes/` - Listar/Criar movimentações
 - `GET/PUT/DELETE /api/beneficios/movimentacoes/{id}/` - Detalhe da movimentação
+- `GET /api/beneficios/importacoes/ultima/` - Movimentações da última importação (para reutilizar no faturamento)
+- `GET /api/beneficios/importacoes/` - Histórico de importações
+- `GET /api/beneficios/importacoes/{id}/` - Detalhes de uma importação específica
 
 ### Upload
 - `POST /api/upload/` - Upload de arquivo Excel
@@ -174,6 +177,111 @@ As seguintes datas são automaticamente convertidas para `null`:
 - Python 3.10+
 - PostgreSQL 12+
 - Docker (opcional)
+
+## Rotas de Importação
+
+### 1. Movimentações da Última Importação
+`GET /api/beneficios/importacoes/ultima/`
+
+Retorna as movimentações da última importação realizada pela administradora do usuário, no mesmo formato esperado pelo endpoint `/api/upload/confirm/`. Ideal para reutilizar uma importação anterior para faturar novamente.
+
+**Resposta:**
+```json
+{
+    "condominios": [
+        {
+            "nome": "CONDOMINIO EDIFICIO X",
+            "cnpj": "0346804400013",
+            "rua": "Rua X",
+            "numero": "100",
+            "bairro": "Centro",
+            "cidade": "São Paulo",
+            "estado": "SP",
+            "cep": "01000000",
+            "funcionarios": [
+                {
+                    "nome": "FUNCIONÁRIO",
+                    "cpf": "12345678901",
+                    "matricula": "9000200000900",
+                    "departamento": "CONDOMINIO",
+                    "funcao": "ZELADOR",
+                    "data_nascimento": "1970-08-17",
+                    "movimentacoes": [
+                        {
+                            "produto": "VALE REFEICAO - TICKET",
+                            "codigo_produto": "VR001",
+                            "valor": 17.9
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "importacao_id": 1,
+    "data_importacao": "2024-01-15T10:30:00Z"
+}
+```
+
+### 2. Histórico de Importações
+`GET /api/beneficios/importacoes/`
+
+Lista as últimas 20 importações da administradora do usuário.
+
+**Resposta:**
+```json
+[
+    {
+        "id": 1,
+        "data_importacao": "2024-01-15T10:30:00Z",
+        "status": "COMPLETED",
+        "total_registros": 0,
+        "registros_processados": 150,
+        "nome_usuario": "admin@empresa.com"
+    }
+]
+```
+
+### 3. Detalhes de uma Importação
+`GET /api/beneficios/importacoes/{id}/`
+
+Retorna os detalhes de uma importação específica, incluindo todas as movimentações.
+
+**Resposta:**
+```json
+{
+    "importacao": {
+        "id": 1,
+        "file_upload": 5,
+        "nome_file": "arquivo.xlsx",
+        "usuario": 1,
+        "nome_usuario": "admin@empresa.com",
+        "data_importacao": "2024-01-15T10:30:00Z",
+        "status": "COMPLETED",
+        "total_registros": 0,
+        "registros_processados": 150,
+        "erros": [],
+        "url": null
+    },
+    "movimentacoes": [
+        {
+            "id": 1,
+            "empresa_cnpj": "0346804400013",
+            "empresa_nome": "CONDOMINIO EDIFICIO X",
+            "funcionario_cpf": "12345678901",
+            "funcionario_nome": "FUNCIONÁRIO",
+            "produto_codigo": "VR001",
+            "produto_nome": "VALE REFEICAO - TICKET",
+            "data_competencia": "2024-01-01",
+            "valor_beneficio": 17.9,
+            "quantidade_dias": 1
+        }
+    ],
+    "total_movimentacoes": 150
+}
+```
+
+### Autenticação
+Todas as rotas de importação requerem autenticação JWT e filtram os dados pela administradora vinculada ao usuário logado.
 
 ## Testes
 
