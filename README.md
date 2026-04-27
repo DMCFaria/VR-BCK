@@ -8,42 +8,28 @@ API REST para gestão de benefícios de funcionários (Vale Refeição).
 - **Autenticação:** JWT (Simple JWT)
 - **Banco de Dados:** PostgreSQL
 - **Processamento:** Pandas, NumPy (manipulação de arquivos Excel)
+- **Tarefas Assíncronas:** Celery + Redis
+- **Armazenamento:** AWS S3
 - **Container:** Docker + Gunicorn
 
 ## Estrutura do Projeto
 
 ```
 VR-BCK/
-├── core/           # Configurações Django (settings, urls, wsgi, asgi)
-├── users/         # Autenticação e gestão de usuários
-├── entidades/     # Cadastro de administradoras, condomínios e funcionários
-├── beneficios/   # Catálogo de produtos e movimentações
-├── upload/        # Upload, processamento de Excel e exports
+├── core/              # Configurações Django (settings, urls, wsgi, asgi, celery)
+├── users/             # Autenticação e gestão de usuários
+├── entidades/         # Cadastro de administradoras, condomínios e funcionários
+├── beneficios/        # Catálogo de produtos e movimentações
+├── upload/            # Upload, processamento de Excel, PDF e exports
+│   ├── tasks.py       # Tarefas Celery
+│   ├── pdf_reader.py  # Leitura de PDFs de boleto/nota dédito
+│   ├── faturamento.py # Upload de faturamento
+├── docs/              # Documentação de integração
 ├── manage.py
 ├── requirements.txt
 ├── Dockerfile
 └── docker-compose.yml
 ```
-
-## Modelos
-
-### Users
-- **CustomUser:** Usuário com tipos (Desenvolvedor, Financeiro, Faturista, Administrador, Cliente), linked to Administradora
-
-### Entidades
-- **Administradora:** Empresas administradoras de benefícios (CNPJ como chave)
-- **Gerente:** Gerentes responsáveis por vínculos
-- **VinculoCondominio:** Relacionamento N:N entre Administradora, Condomínio e Gerentes
-- **Condominio:** Entidade principal (CNPJ como chave)
-- **Funcionario:** Cadastro de funcionários (CPF como chave)
-
-### Benefícios
-- **Produto:** Catálogo de benefícios
-- **MovimentacaoBeneficio:** Registro de transações (unique por competência)
-
-### Upload
-- **FileUpload:** Arquivos enviados com status (PENDING → PARSED → COMPLETED)
-- **ProcessedFile:** Rastreamento de processamentos confirmados
 
 ## Configuração
 
@@ -56,9 +42,18 @@ DB_HOST=seu_host
 DB_PORT=sua_porta
 DB_NAME=nome_banco
 SECRET_KEY=sua_chave_secreta
+
+# AWS S3
+ACCESS_KEY_S3=sua_access_key
+SECRET_KEY_S3=sua_secret_key
+BUCKET_S3=nome_do_bucket
+
+# Celery
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/0
 ```
 
-### Instalação
+### Instalação Local
 
 ```bash
 python -m venv venv
@@ -70,11 +65,98 @@ python manage.py createsuperuser
 python manage.py runserver
 ```
 
+### Executando Celery (Processamento em Background)
+
+```bash
+# Terminal 1 - Redis
+redis-server
+
+# Terminal 2 - Worker Celery
+celery -A core worker -l info
+```
+
 ### Docker
 
 ```bash
 docker-compose up --build
 ```
+
+Isso cria os serviços: web, celery, redis e db.
+
+---
+
+## Fluxo de Trabalho
+
+### 1. Upload de Movimentações (Excel)
+
+1. Upload do arquivo Excel com movimentações
+2. Extração dos dados (parsing)
+3. Confirmação com dados corrigidos
+4. Criação de condomínios, funcionários e movimentações
+
+**Endpoints:**
+- `POST /api/upload/` - Upload Excel
+- `POST /api/upload/confirm/` - Confirmar dados processados
+
+**Payload de Confirmação:**
+```json
+{
+    "file_upload_id": 1,
+    "condominios": [...],
+    "data_vencimento": "2026-04-10",
+    "vigencia_inicio": "2026-04-01",
+    "vigencia_fim": "2026-04-30"
+}
+```
+
+---
+
+### 2. Upload de Faturamento (PDF - Assíncrono)
+
+Sistema de upload de documentos de faturamento (boleto, nota de débito, nota fiscal) com processamento em background utilizando Celery.
+
+#### Fluxo:
+1. Frontend envia arquivos PDF via POST
+2. Backend cria/atualiza registro Faturamento (mesmo ID da importação)
+3. Task Celery processa em background:
+   - Lê PDFs e extrai CNPJs
+   - Separa páginas por condomínio
+   - Faz upload individual para S3
+   - Salva documentos no banco
+4. Frontend faz polling no endpoint de status
+
+**Regras:**
+- `importacao_id` = `faturamento_id` (mesmo valor)
+- Se já existir faturamento para a importação, apaga o anterior
+
+#### Endpoints:
+
+**Upload:**
+- `POST /api/upload/faturamento/upload/`
+- Body: `importacao_id`, `competencia`, `arquivo_boleto`, `arquivo_nota_debito`, `arquivo_nota_fiscal` (opcional)
+
+**Status:**
+- `GET /api/upload/faturamento/<id>/status/`
+
+**Status possíveis:**
+- `PENDING` - Aguardando processamento
+- `PROCESSING` - Processando (campo `progresso`: 0-100%)
+- `COMPLETED` - Concluído
+- `FAILED` - Falhou
+
+**Response status:**
+```json
+{
+  "faturamento_id": 1,
+  "importacao_id": 1,
+  "status": "PROCESSING",
+  "progresso": 45,
+  "competencia": "2026-04-01",
+  "criado_em": "2026-04-27T10:30:00Z"
+}
+```
+
+---
 
 ## API Endpoints
 
@@ -87,207 +169,83 @@ docker-compose up --build
 - `POST /api/users/login/` - Login de usuário
 - `POST /api/users/register/` - Registrar usuário
 - `GET /api/users/me/` - Usuário atual
-- `GET /api/users/list/` - Listar usuários (requer autenticação)
-- `GET/PUT/DELETE /api/users/{id}/` - Detalhes do usuário
 
 ### Entidades
-- `GET /api/entidades/administradoras/` - Listar/Criar administradoras
-- `GET/PUT/DELETE /api/entidades/administradoras/{id}/` - Detalhe da administradora
-- `GET /api/entidades/condominios/` - Listar/Criar condomínios
-- `GET/PUT/DELETE /api/entidades/condominios/{cnpj}/` - Detalhe do condomínio
-- `GET /api/entidades/funcionarios/` - Listar/Criar funcionários
-- `GET/PUT/DELETE /api/entidades/funcionarios/{cpf}/` - Detalhe do funcionário
-- `GET /api/entidades/gerentes/` - Listar/Criar gerentes
-- `GET/PUT/DELETE /api/entidades/gerentes/{id}/` - Detalhe do gerente
-- `GET /api/entidades/vinculos/` - Listar/Criar vínculos
-- `GET/PUT/DELETE /api/entidades/vinculos/{id}/` - Detalhe do vínculo
+- `/api/entidades/administradoras/` - Administradoras
+- `/api/entidades/condominios/` - Condomínios
+- `/api/entidades/funcionarios/` - Funcionários
+- `/api/entidades/gerentes/` - Gerentes
+- `/api/entidades/vinculos/` - Vínculos
 
 ### Benefícios
-- `GET /api/beneficios/produtos/` - Listar/Criar produtos
-- `GET/PUT/DELETE /api/beneficios/produtos/{codigo}/` - Detalhe do produto
-- `GET /api/beneficios/movimentacoes/` - Listar/Criar movimentações
-- `GET/PUT/DELETE /api/beneficios/movimentacoes/{id}/` - Detalhe da movimentação
-- `GET /api/beneficios/importacoes/ultima/` - Movimentações da última importação (para reutilizar no faturamento)
-- `GET /api/beneficios/importacoes/` - Histórico de importações
-- `GET /api/beneficios/importacoes/{id}/` - Detalhes de uma importação específica
+- `/api/beneficios/produtos/` - Catálogo de produtos
+- `/api/beneficios/movimentacoes/` - Movimentações
+- `/api/beneficios/importacoes/` - Histórico de importações
+- `/api/beneficios/importacoes/ultima/` - Última importação
 
 ### Upload
-- `POST /api/upload/` - Upload de arquivo Excel
-- `POST /api/upload/confirm/` - Confirmar dados processados
-- `GET /api/upload/list-confirmed/` - Listar confirmações
-- `GET /api/upload/download-excel-template/` - Baixar template Excel
-- `POST /api/upload/export/txt-compra/` - Exportar TXT de compra
-- `GET /api/upload/export/faturamento/` - Exportar planilha faturamento
+- `POST /api/upload/` - Upload Excel
+- `POST /api/upload/confirm/` - Confirmar dados
+- `POST /api/upload/faturamento/upload/` - Upload faturamento (assíncrono)
+- `GET /api/upload/faturamento/<id>/status/` - Status faturamento
+- `GET /api/upload/export/faturamento/` - Exportar planilha
+- `GET /api/upload/download-excel-template/` - Baixar template
 
-## Payload de Confirmação (upload/confirm/)
+---
 
-O endpoint `/api/upload/confirm/` espera o seguinte formato de payload:
+## Modelos
 
-```json
-{
-    "file_upload_id": 100,
-    "condominios": [
-        {
-            "nome": "CONDOMINIO EDIFICIO X",
-            "cnpj": "0346804400013",
-            "valor_condo": "3473.13",
-            "funcionarios": [
-                {
-                    "nome": "NOME DO FUNCIONÁRIO",
-                    "cpf": "71823131468",
-                    "matricula": "9000200000900",
-                    "departamento": "CONDOMINIO",
-                    "funcao": "ZELADOR",
-                    "data_nascimento": "1970-08-17",
-                    "valor_bene": "569.98",
-                    "movimentacoes": [
-                        {
-                            "produto": "VALE REFEICAO - TICKET",
-                            "valor": "17.9"
-                        },
-                        {
-                            "produto": "VALE ALIMENTACAO - TICKET",
-                            "valor": "552.08"
-                        }
-                    ]
-                }
-            ]
-        }
-    ]
-}
-```
+### Importacao (beneficios)
+- `id`: ID único (também usado como faturamento_id)
+- `file_upload`: FK para FileUpload
+- `usuario`: FK para usuário
+- `data_importacao`: Data/hora da importação
+- `status`: PENDING/PROCESSING/COMPLETED/FAILED
+- `total_registros`: Total de registros no arquivo
+- `registros_processados`: Registros processados com sucesso
+- `erros`: Lista de erros
+- `url`: URL do arquivo processado
+- `data_vencimento`: Data de vencimento do faturamento
+- `vigencia_inicio`: Início da vigência
+- `vigencia_fim`: Fim da vigência
 
-### Validações do Payload
-- `file_upload_id`: Obrigatório - ID do arquivo enviado
-- `condominios`: Lista obrigatória - ao menos um condomínio
-- `cnpj`: Obrigatório e único
-- `cpf`: Obrigatório e único por funcionário
-- `data_nascimento`: Opcional - datas inválidas são ignoradas
-- `data_competencia`: Se não informada, usa a primeira data_nascimento válida ou data atual
+### Faturamento (beneficios)
+- `id`: ID único (mesmo que importacao_id)
+- `importacao`: FK para Importacao
+- `competencia`: Data (YYYY-MM-DD)
+- `status`: PENDING/PROCESSING/COMPLETED/FAILED
+- `progresso`: Inteiro 0-100
+- `criado_por`: Usuário que iniciou
+- `criado_em`: Data de criação
 
-### Datas Inválidas Tratadas
-As seguintes datas são automaticamente convertidas para `null`:
-- `0000-00-00`
-- `0001-01-01`
-- `0020-00-00`
-- `1900-01-01`
+### FaturamentoDocumento (beneficios)
+- `faturamento`: FK para Faturamento
+- `condominio`: FK para Condomínio
+- `url_boleto`: URL S3 do PDF
+- `url_nota_debito`: URL S3 do PDF
+- `url_nota_fiscal`: URL S3 do PDF (opcional)
 
-## Requisitos
+---
 
-- Python 3.10+
-- PostgreSQL 12+
-- Docker (opcional)
+## Processamento de PDF
 
-## Rotas de Importação
+### Leitura de Boleto
+- Extrai CNPJs do formato: `CNPJ: XX.XXX.XXX-XXXX-XX`
+- Separa páginas por condomínio
 
-### 1. Movimentações da Última Importação
-`GET /api/beneficios/importacoes/ultima/`
+### Leitura de Nota de Débito
+- Extrai CNPJs do formato: `XX.XXX.XXX/0001-XX`
+- Associa páginas aos condomínios
 
-Retorna as movimentações da última importação realizada pela administradora do usuário, no mesmo formato esperado pelo endpoint `/api/upload/confirm/`. Ideal para reutilizar uma importação anterior para faturar novamente.
-
-**Resposta:**
-```json
-{
-    "condominios": [
-        {
-            "nome": "CONDOMINIO EDIFICIO X",
-            "cnpj": "0346804400013",
-            "rua": "Rua X",
-            "numero": "100",
-            "bairro": "Centro",
-            "cidade": "São Paulo",
-            "estado": "SP",
-            "cep": "01000000",
-            "funcionarios": [
-                {
-                    "nome": "FUNCIONÁRIO",
-                    "cpf": "12345678901",
-                    "matricula": "9000200000900",
-                    "departamento": "CONDOMINIO",
-                    "funcao": "ZELADOR",
-                    "data_nascimento": "1970-08-17",
-                    "movimentacoes": [
-                        {
-                            "produto": "VALE REFEICAO - TICKET",
-                            "codigo_produto": "VR001",
-                            "valor": 17.9
-                        }
-                    ]
-                }
-            ]
-        }
-    ],
-    "importacao_id": 1,
-    "data_importacao": "2024-01-15T10:30:00Z"
-}
-```
-
-### 2. Histórico de Importações
-`GET /api/beneficios/importacoes/`
-
-Lista as últimas 20 importações da administradora do usuário.
-
-**Resposta:**
-```json
-[
-    {
-        "id": 1,
-        "data_importacao": "2024-01-15T10:30:00Z",
-        "status": "COMPLETED",
-        "total_registros": 0,
-        "registros_processados": 150,
-        "nome_usuario": "admin@empresa.com"
-    }
-]
-```
-
-### 3. Detalhes de uma Importação
-`GET /api/beneficios/importacoes/{id}/`
-
-Retorna os detalhes de uma importação específica, incluindo todas as movimentações.
-
-**Resposta:**
-```json
-{
-    "importacao": {
-        "id": 1,
-        "file_upload": 5,
-        "nome_file": "arquivo.xlsx",
-        "usuario": 1,
-        "nome_usuario": "admin@empresa.com",
-        "data_importacao": "2024-01-15T10:30:00Z",
-        "status": "COMPLETED",
-        "total_registros": 0,
-        "registros_processados": 150,
-        "erros": [],
-        "url": null
-    },
-    "movimentacoes": [
-        {
-            "id": 1,
-            "empresa_cnpj": "0346804400013",
-            "empresa_nome": "CONDOMINIO EDIFICIO X",
-            "funcionario_cpf": "12345678901",
-            "funcionario_nome": "FUNCIONÁRIO",
-            "produto_codigo": "VR001",
-            "produto_nome": "VALE REFEICAO - TICKET",
-            "data_competencia": "2024-01-01",
-            "valor_beneficio": 17.9,
-            "quantidade_dias": 1
-        }
-    ],
-    "total_movimentacoes": 150
-}
-```
-
-### Autenticação
-Todas as rotas de importação requerem autenticação JWT e filtram os dados pela administradora vinculada ao usuário logado.
+---
 
 ## Testes
 
 ```bash
 python manage.py test
 ```
+
+---
 
 ## Licença
 

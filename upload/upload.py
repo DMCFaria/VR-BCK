@@ -6,7 +6,8 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from .serializers import FileUploadSerializer
 from .utils import _get_beneficiary_summary, _convert_decimals_to_json_safe
 from datetime import datetime
-import boto3    
+import boto3   
+from django.conf import settings
 
 # Aqui você importará os parsers conforme sua estrutura de pastas
 from .RB.parsers import parse_rb_layout
@@ -35,8 +36,8 @@ class UploadView(views.APIView):
 
         s3 = boto3.client(
             's3',
-            aws_access_key_id="",
-            aws_secret_access_key="",
+            aws_access_key_id=getattr(settings, 'ACCESS_KEY_S3', ''),
+            aws_secret_access_key=getattr(settings, 'SECRET_KEY_S3', ''),
             region_name='us-east-2'
         )
         
@@ -95,7 +96,9 @@ class UploadView(views.APIView):
                 # Dica: se quiser manter a extensão no final, a lógica muda um pouco
                 new_file_name = f"{duas_primeiras}-{file_type}-{original_name}-{timestamp}.{ext}"
                 
-               # s3.upload_fileobj(file_obj, "fedcorp-prod", f"VR - DOCS/importacoes/{new_file_name}")
+                # Reposicionar o ponteiro no início do arquivo
+                file_obj.seek(0)
+                s3.upload_fileobj(file_obj, "fedcorp-prod", f"VR - DOCS/importacoes/{new_file_name}")
 
             return Response(
                 {

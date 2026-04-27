@@ -61,7 +61,7 @@ class ImportacaoListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Importacao
-        fields = ['id', 'data_importacao', 'status', 'total_registros', 'registros_processados', 'nome_usuario']
+        fields = ['id', 'data_importacao', 'status', 'total_registros', 'registros_processados', 'nome_usuario', 'data_vencimento', 'vigencia_inicio', 'vigencia_fim']
 
 
 class ImportacaoDetailSerializer(serializers.ModelSerializer):
@@ -73,7 +73,7 @@ class ImportacaoDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Importacao
-        fields = ['id', 'file_upload', 'nome_file', 'usuario', 'nome_usuario', 'data_importacao', 'status', 'total_registros', 'registros_processados', 'erros', 'url']
+        fields = ['id', 'file_upload', 'nome_file', 'usuario', 'nome_usuario', 'data_importacao', 'status', 'total_registros', 'registros_processados', 'erros', 'url', 'data_vencimento', 'vigencia_inicio', 'vigencia_fim']
 
 
 class MovimentacaoReuseSerializer(serializers.Serializer):

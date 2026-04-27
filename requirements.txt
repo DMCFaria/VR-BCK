@@ -19,3 +19,6 @@ tzdata==2025.2
 xlsxwriter==3.2.9
 openpyxl>=3.0.0
 boto3
+pypdf
+celery
+redis

@@ -43,6 +43,9 @@ class Importacao(models.Model):
     registros_processados = models.IntegerField(default=0, verbose_name="Registros Processados")
     erros = models.JSONField(default=list, verbose_name="Erros")
     url = models.URLField(max_length=500, verbose_name="URL", null=True, blank=True)
+    data_vencimento = models.DateField(verbose_name="Data de Vencimento", null=True, blank=True)
+    vigencia_inicio = models.DateField(verbose_name="Início da Vigência", null=True, blank=True)
+    vigencia_fim = models.DateField(verbose_name="Fim da Vigência", null=True, blank=True)
 
     class Meta:
         verbose_name = "Importação"
@@ -120,3 +123,65 @@ class MovimentacaoBeneficio(models.Model):
 
     def __str__(self):
         return f"{self.produto_codigo} - {self.funcionario_cpf} ({self.data_competencia})"
+
+
+class Faturamento(models.Model):
+    STATUS_CHOICES = [
+        ('PENDING', 'Pendente'),
+        ('PROCESSING', 'Processando'),
+        ('COMPLETED', 'Concluído'),
+        ('FAILED', 'Falhou'),
+    ]
+
+    importacao = models.ForeignKey(
+        Importacao,
+        on_delete=models.CASCADE,
+        related_name='faturamentos',
+        verbose_name="Importação"
+    )
+    competencia = models.DateField(verbose_name="Competência (Mês/Ano)")
+    arquivo_unificado_url = models.URLField(max_length=500, verbose_name="URL Arquivo Unificado", null=True, blank=True)
+    criado_por = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        verbose_name="Criado por"
+    )
+    criado_em = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING', verbose_name="Status")
+    progresso = models.PositiveSmallIntegerField(default=0, verbose_name="Progresso (%)")
+
+    class Meta:
+        verbose_name = "Faturamento"
+        verbose_name_plural = "Faturamentos"
+        ordering = ['-criado_em']
+
+    def __str__(self):
+        return f"Faturamento #{self.id} - {self.competencia}"
+
+
+class FaturamentoDocumento(models.Model):
+    faturamento = models.ForeignKey(
+        Faturamento,
+        on_delete=models.CASCADE,
+        related_name='documentos',
+        verbose_name="Faturamento"
+    )
+    condominio = models.ForeignKey(
+        Condominio,
+        on_delete=models.CASCADE,
+        related_name='documentos_faturamento',
+        verbose_name="Condomínio"
+    )
+    url_boleto = models.URLField(max_length=500, verbose_name="URL Boleto")
+    url_nota_debito = models.URLField(max_length=500, verbose_name="URL Nota Débito")
+    url_nota_fiscal = models.URLField(max_length=500, verbose_name="URL Nota Fiscal", null=True, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+
+    class Meta:
+        verbose_name = "Documento de Faturamento"
+        verbose_name_plural = "Documentos de Faturamento"
+        unique_together = ('faturamento', 'condominio')
+
+    def __str__(self):
+        return f"{self.condominio.cnpj} - {self.faturamento.id}"

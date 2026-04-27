@@ -89,6 +89,9 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
     summary = serializers.DictField(required=False)
     novos_registros = serializers.JSONField(required=False)
     linhas_com_erro = serializers.ListField(required=False, allow_empty=True)
+    data_vencimento = serializers.DateField(required=False, allow_null=True)
+    vigencia_inicio = serializers.DateField(required=False, allow_null=True)
+    vigencia_fim = serializers.DateField(required=False, allow_null=True)
 
     def create(self, validated_data):
         from django.db.models import Q
@@ -329,15 +332,18 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
             if file_upload_instance.process_status == 'COMPLETED':
                 raise serializers.ValidationError({"detail": "Este arquivo já foi processado anteriormente."})
 
+            file_upload_instance.process_status = 'COMPLETED'
+            file_upload_instance.save()
+            
             ProcessedFile.objects.create(
                 file=file_upload_instance,
                 processed_by=processed_by_user,
                 dados_requisicao=dados_da_requisicao 
             )
 
-            file_upload_instance.process_status = 'COMPLETED'
-            file_upload_instance.save()
-            
+            importacao.data_vencimento = validated_data.get('data_vencimento')
+            importacao.vigencia_inicio = validated_data.get('vigencia_inicio')
+            importacao.vigencia_fim = validated_data.get('vigencia_fim')
             importacao.status = 'COMPLETED'
             importacao.save()
         

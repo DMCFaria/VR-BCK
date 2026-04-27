@@ -2,35 +2,44 @@ version: '3.8'
 
 services:
   web:
-    # Construir a imagem a partir do Dockerfile no diretório atual
     build: .
-    # Mapear a porta 8000 do contêiner para a porta 8000 da sua máquina local
     ports:
       - "8080:8080"
-    # Montar o volume para que as alterações no seu código local sejam refletidas no contêiner
-    # sem precisar reconstruir a imagem toda hora. Útil para desenvolvimento.
     volumes:
       - .:/usr/src/app
-    # Depende do banco de dados estar pronto
     depends_on:
       - db
-    # Variáveis de ambiente que sua aplicação Django precisará
+      - redis
     env_file:
       - .env
-  db:
-    # Usar a imagem oficial do Postgres
-    image: postgres:latest
-    # Reiniciar sempre que sair
+    command: gunicorn --bind 0.0.0.0:8080 core.wsgi:application
+
+  celery:
+    build: .
+    volumes:
+      - .:/usr/src/app
+    depends_on:
+      - db
+      - redis
+    env_file:
+      - .env
+    command: celery -A core worker -l info
+
+  redis:
+    image: redis:7-alpine
     restart: always
-    # Variáveis de ambiente para configurar o banco de dados
+    ports:
+      - "6379:6379"
+
+  db:
+    image: postgres:latest
+    restart: always
     environment:
       - POSTGRES_DB=django_db
       - POSTGRES_USER=django_user
       - POSTGRES_PASSWORD=minhasenha
-    # Persistir os dados do banco de dados
     volumes:
       - postgres_data:/var/lib/postgresql/data/
 
-# Definição dos volumes para persistência de dados
 volumes:
   postgres_data:

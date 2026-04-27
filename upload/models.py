@@ -1,5 +1,5 @@
 from django.db import models
-from users.models import CustomUser # Import do seu modelo de usuário
+from users.models import CustomUser
 
 class FileUpload(models.Model):
     STATUS_CHOICES = (
@@ -11,8 +11,7 @@ class FileUpload(models.Model):
 
     file = models.FileField() 
     
-    # CORREÇÃO: Campo 'uploaded_by' adicionado
-    uploaded_by = models.ForeignKey(CustomUser, on_delete=models.CASCADE,default=1, verbose_name="Enviado por") 
+    uploaded_by = models.ForeignKey(CustomUser, on_delete=models.CASCADE, default=1, verbose_name="Enviado por") 
     
     uploaded_at = models.DateTimeField(auto_now_add=True)
     process_status = models.CharField(
@@ -30,7 +29,6 @@ class FileUpload(models.Model):
     def __str__(self):
         return f"Arquivo {self.file.name} - Status: {self.get_process_status_display()}"
 
-# --- MODELO DE RASTREAMENTO DE PROCESSAMENTO ---
 class ProcessedFile(models.Model):
     id = models.BigAutoField(primary_key=True)
     file = models.ForeignKey(FileUpload, on_delete=models.CASCADE, verbose_name="Arquivo Original")
