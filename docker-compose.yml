@@ -31,15 +31,5 @@ services:
     ports:
       - "6379:6379"
 
-  db:
-    image: postgres:latest
-    restart: always
-    environment:
-      - POSTGRES_DB=django_db
-      - POSTGRES_USER=django_user
-      - POSTGRES_PASSWORD=minhasenha
-    volumes:
-      - postgres_data:/var/lib/postgresql/data/
-
 volumes:
   postgres_data:
