@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.db import transaction
 from entidades.models import Condominio, Funcionario, VinculoCondominio
 from beneficios.models import Produto, MovimentacaoBeneficio, Importacao
-from .models import FileUpload, ProcessedFile
+from .models import FileUpload
 from .RB.parsers import cpf_valido_matematicamente
 import re
 
@@ -335,12 +335,6 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
             file_upload_instance.process_status = 'COMPLETED'
             file_upload_instance.save()
             
-            ProcessedFile.objects.create(
-                file=file_upload_instance,
-                processed_by=processed_by_user,
-                dados_requisicao=dados_da_requisicao 
-            )
-
             importacao.data_vencimento = validated_data.get('data_vencimento')
             importacao.vigencia_inicio = validated_data.get('vigencia_inicio')
             importacao.vigencia_fim = validated_data.get('vigencia_fim')

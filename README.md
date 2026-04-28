@@ -97,6 +97,7 @@ Isso cria os serviços: web, celery, redis e db.
 **Endpoints:**
 - `POST /api/upload/` - Upload Excel
 - `POST /api/upload/confirm/` - Confirmar dados processados
+- `GET /api/beneficios/importacoes/` - Listar importações (substitui list-confirmed)
 
 **Payload de Confirmação:**
 ```json
@@ -127,7 +128,7 @@ Sistema de upload de documentos de faturamento (boleto, nota de débito, nota fi
 
 **Regras:**
 - `importacao_id` = `faturamento_id` (mesmo valor)
-- Se já existir faturamento para a importação, apaga o anterior
+- Se já existir faturamento para a importação, apaga o anterior e cria novo
 
 #### Endpoints:
 
@@ -180,7 +181,7 @@ Sistema de upload de documentos de faturamento (boleto, nota de débito, nota fi
 ### Benefícios
 - `/api/beneficios/produtos/` - Catálogo de produtos
 - `/api/beneficios/movimentacoes/` - Movimentações
-- `/api/beneficios/importacoes/` - Histórico de importações
+- `/api/beneficios/importacoes/` - Histórico de importações (inclui dados de vencimento e vigência)
 - `/api/beneficios/importacoes/ultima/` - Última importação
 
 ### Upload
@@ -243,6 +244,18 @@ Sistema de upload de documentos de faturamento (boleto, nota de débito, nota fi
 
 ```bash
 python manage.py test
+```
+
+---
+
+## Migrações
+
+```bash
+# Criar migrações
+python manage.py makemigrations
+
+# Aplicar migrações
+python manage.py migrate
 ```
 
 ---

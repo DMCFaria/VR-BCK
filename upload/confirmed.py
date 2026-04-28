@@ -1,7 +1,4 @@
-from django.db import models
 from rest_framework import serializers
-from rest_framework.generics import ListAPIView
-from .models import ProcessedFile
 from rest_framework import views, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -10,21 +7,6 @@ from .serializers import ProcessamentoFinalSerializer
 from .models import FileUpload
 from beneficios.models import Importacao
 
-class ConfirmedUploadsSerializer(serializers.ModelSerializer):
-    """
-    Serializer para o modelo ConfirmedUploads.
-    """
-    class Meta:
-        model = ProcessedFile
-        fields = '__all__' 
-
-class ConfirmedUploadsListView(ListAPIView):
-    """
-    View para listar todos os uploads confirmados.
-    Permite requisições GET.
-    """
-    queryset = ProcessedFile.objects.all()
-    serializer_class = ConfirmedUploadsSerializer
 
 class ConfirmationView(views.APIView):
     permission_classes = [IsAuthenticated] 

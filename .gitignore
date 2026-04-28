@@ -19,6 +19,7 @@ db.sqlite3
 venv/
 env/
 
+.node_modules
 # IDE-specific files (e.g., PyCharm)
 .idea/
 

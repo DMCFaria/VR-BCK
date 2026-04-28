@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 from rest_framework import status
 
-from .models import FileUpload, ProcessedFile
+from .models import FileUpload
 from .utils import _convert_decimals_to_json_safe, _get_beneficiary_summary
 
 User = get_user_model()

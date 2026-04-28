@@ -28,19 +28,3 @@ class FileUpload(models.Model):
 
     def __str__(self):
         return f"Arquivo {self.file.name} - Status: {self.get_process_status_display()}"
-
-class ProcessedFile(models.Model):
-    id = models.BigAutoField(primary_key=True)
-    file = models.ForeignKey(FileUpload, on_delete=models.CASCADE, verbose_name="Arquivo Original")
-    processed_at = models.DateTimeField(auto_now_add=True, verbose_name="Processado em")
-    processed_by = models.ForeignKey(CustomUser, on_delete=models.CASCADE, verbose_name="Processado por")
-    dados_requisicao = models.JSONField(
-        default=dict,
-        help_text="Dados completos da requisição POST (além de file_id)"
-    )
-    class Meta:
-        verbose_name = "Arquivo Processado"
-        verbose_name_plural = "Arquivos Processados"
-
-    def __str__(self):
-        return f"Processamento de {self.file.id} por {self.processed_by.email}"

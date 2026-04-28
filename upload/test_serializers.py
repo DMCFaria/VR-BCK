@@ -8,7 +8,7 @@ from io import StringIO
 import tempfile
 import os
 
-from .models import FileUpload, ProcessedFile
+from .models import FileUpload
 from .serializers import ProcessamentoFinalSerializer, CondominioSerializer, FuncionarioSerializer
 from entidades.models import Administradora, Condominio, Funcionario, VinculoCondominio
 from beneficios.models import Produto, MovimentacaoBeneficio
