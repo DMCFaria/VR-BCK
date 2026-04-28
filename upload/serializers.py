@@ -12,6 +12,7 @@ class FileUploadSerializer(serializers.ModelSerializer):
         model = FileUpload
         fields = ['id', 'file', 'uploaded_at', 'process_status', 'summary_data', 'uploaded_by']
         read_only_fields = ['uploaded_at', 'process_status', 'summary_data', 'uploaded_by']
+        extra_kwargs = {'file': {'required': False, 'allow_null': True}}
 
 
 class MovimentacaoDetalhadaSerializer(serializers.Serializer):
@@ -84,7 +85,8 @@ class CondominiosDataSerializer(serializers.Serializer):
 
 class ProcessamentoFinalSerializer(serializers.Serializer):
     condominios = CondominioSerializer(many=True)
-    file_upload_id = serializers.IntegerField()
+    file_upload_id = serializers.IntegerField(required=False)
+    importacao_id = serializers.IntegerField(required=False)
     errors = serializers.ListField(child=serializers.CharField(), required=False)
     summary = serializers.DictField(required=False)
     novos_registros = serializers.JSONField(required=False)
@@ -93,14 +95,32 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
     vigencia_inicio = serializers.DateField(required=False, allow_null=True)
     vigencia_fim = serializers.DateField(required=False, allow_null=True)
 
+    def validate(self, data):
+        if not data.get('file_upload_id') and not data.get('importacao_id'):
+            raise serializers.ValidationError({
+                "detail": "Informe file_upload_id ou importacao_id."
+            })
+        return data
+
     def create(self, validated_data):
         from django.db.models import Q
         from decimal import Decimal
-        
+
         condominios_data = validated_data.get('condominios', [])
         file_upload_id = validated_data.get('file_upload_id')
+        importacao_id_origem = validated_data.get('importacao_id')
         processed_by_user = validated_data.get('processed_by')
         linhas_com_erro = validated_data.get('linhas_com_erro', [])
+
+        if not file_upload_id and importacao_id_origem:
+            last_fu = FileUpload.objects.order_by('-id').first()
+            new_id = (last_fu.id + 1) if last_fu else 1
+            fu = FileUpload.objects.create(
+                id=new_id,
+                uploaded_by=processed_by_user,
+                process_status='PENDING'
+            )
+            file_upload_id = fu.id
         
         for erro in linhas_com_erro:
             tipo = erro.get('tipo_erro')

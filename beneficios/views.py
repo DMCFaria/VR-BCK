@@ -85,6 +85,7 @@ class UltimaImportacaoMovimentacoesView(views.APIView):
                 condos_dict[cnpj] = {
                     'nome': mov.empresa_cnpj.nome,
                     'cnpj': cnpj,
+                    'valor_condo': 0,
                     'rua': mov.empresa_cnpj.endereco or '',
                     'numero': mov.empresa_cnpj.numero or '',
                     'complemento': mov.empresa_cnpj.complemento or '',
@@ -104,13 +105,18 @@ class UltimaImportacaoMovimentacoesView(views.APIView):
                     'departamento': mov.funcionario_cpf.departamento or '',
                     'funcao': mov.funcionario_cpf.funcao or '',
                     'data_nascimento': str(mov.funcionario_cpf.data_nascimento) if mov.funcionario_cpf.data_nascimento else '',
+                    'valor_bene': 0,
                     'movimentacoes': []
                 }
+
+            valor = round(float(mov.valor_beneficio), 2)
+            condos_dict[cnpj]['funcionarios'][cpf]['valor_bene'] = round(condos_dict[cnpj]['funcionarios'][cpf]['valor_bene'] + valor, 2)
+            condos_dict[cnpj]['valor_condo'] = round(condos_dict[cnpj]['valor_condo'] + valor, 2)
 
             condos_dict[cnpj]['funcionarios'][cpf]['movimentacoes'].append({
                 'produto': mov.produto_codigo.nome,
                 'codigo_produto': mov.produto_codigo.codigo_produto,
-                'valor': float(mov.valor_beneficio)
+                'valor': valor
             })
 
         condominios = []
