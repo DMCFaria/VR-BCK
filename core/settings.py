@@ -10,7 +10,7 @@ SECRET_KEY = config('SECRET_KEY')
 
 DEBUG = True
 
-ALLOWED_HOSTS = ["localhost","vr-beneficios-backend-fedcorp-y5bg8.ondigitalocean.app", "127.0.0.1"]
+ALLOWED_HOSTS = ["localhost","vr-beneficios-backend-fedcorp-ju482.ondigitalocean.app", "127.0.0.1"]
 
 
 
