@@ -29,6 +29,14 @@ class Importacao(models.Model):
         null=True,
         blank=True
     )
+    administradora = models.ForeignKey(
+        'entidades.Administradora',
+        on_delete=models.SET_NULL,
+        verbose_name="Administradora",
+        null=True,
+        blank=True,
+        related_name='importacoes'
+    )
     data_importacao = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Data da Importação"
@@ -138,6 +146,14 @@ class Faturamento(models.Model):
         on_delete=models.CASCADE,
         related_name='faturamentos',
         verbose_name="Importação"
+    )
+    administradora = models.ForeignKey(
+        'entidades.Administradora',
+        on_delete=models.CASCADE,
+        verbose_name="Administradora",
+        null=True,
+        blank=True,
+        related_name='faturamentos'
     )
     competencia = models.DateField(verbose_name="Competência (Mês/Ano)")
     arquivo_unificado_url = models.URLField(max_length=500, verbose_name="URL Arquivo Unificado", null=True, blank=True)

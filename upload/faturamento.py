@@ -89,6 +89,7 @@ class UploadFaturamentoView(views.APIView):
                 faturamento = Faturamento.objects.create(
                     id=importacao_id,
                     importacao=importacao,
+                    administradora=importacao.administradora,
                     competencia=competencia,
                     criado_por=request.user,
                     status='PENDING'

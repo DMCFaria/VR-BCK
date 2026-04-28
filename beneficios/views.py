@@ -52,15 +52,15 @@ class UltimaImportacaoMovimentacoesView(views.APIView):
     def get(self, request):
         user = request.user
         administradora = getattr(user, 'administradora', None)
-
+        
         if not administradora:
             return Response(
                 {"detail": "Usuário não possui administradora vinculada."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-
+        
         ultima_importacao = Importacao.objects.filter(
-            usuario__administradora=administradora,
+            administradora=administradora,
             status='COMPLETED'
         ).order_by('-data_importacao').first()
 
@@ -143,7 +143,7 @@ class ImportacaoListView(views.APIView):
             )
 
         importacoes = Importacao.objects.filter(
-            usuario__administradora=administradora
+            administradora=administradora
         ).order_by('-data_importacao')[:20]
 
         serializer = ImportacaoListSerializer(importacoes, many=True)
@@ -170,7 +170,7 @@ class ImportacaoDetailView(views.APIView):
 
         try:
             importacao = Importacao.objects.filter(
-                usuario__administradora=administradora,
+                administradora=administradora,
                 id=pk
             ).first()
 

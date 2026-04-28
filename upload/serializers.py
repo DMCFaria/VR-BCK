@@ -274,6 +274,7 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         importacao = Importacao.objects.create(
             file_upload_id=file_upload_id,
             usuario=processed_by_user,
+            administradora=administradora,
             status='PROCESSING',
             total_registros=0
         )

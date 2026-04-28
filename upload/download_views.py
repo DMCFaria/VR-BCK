@@ -39,9 +39,13 @@ class DownloadFaturamentoView(views.APIView):
         if not Faturamento.objects.filter(id=faturamento_id).exists():
             return HttpResponse("Faturamento não encontrado.", status=404)
 
-        s3 = boto3.client('s3', aws_access_key_id=settings.ACCESS_KEY_S3,
-                           aws_secret_access_key=settings.SECRET_KEY_S3, region_name='us-east-2')
-        bucket = settings.BUCKET_S3
+        s3 = boto3.client(
+            's3',
+            aws_access_key_id=getattr(settings, 'ACCESS_KEY_S3', ''),
+            aws_secret_access_key=getattr(settings, 'SECRET_KEY_S3', ''),
+            region_name='us-east-2'
+        )
+        bucket = getattr(settings, 'BUCKET_S3', 'fedcorp-prod')
 
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
@@ -64,9 +68,13 @@ class DownloadArquivosView(views.APIView):
         if not Faturamento.objects.filter(id=faturamento_id).exists():
             return HttpResponse("Faturamento não encontrado.", status=404)
 
-        s3 = boto3.client('s3', aws_access_key_id=settings.ACCESS_KEY_S3,
-                           aws_secret_access_key=settings.SECRET_KEY_S3, region_name='us-east-2')
-        bucket = settings.BUCKET_S3
+        s3 = boto3.client(
+            's3',
+            aws_access_key_id=getattr(settings, 'ACCESS_KEY_S3', ''),
+            aws_secret_access_key=getattr(settings, 'SECRET_KEY_S3', ''),
+            region_name='us-east-2'
+        )
+        bucket = getattr(settings, 'BUCKET_S3', 'fedcorp-prod')
         prefix = f"VR - DOCS/faturamentos/{faturamento_id}/{self.tipo}/"
 
         buffer = io.BytesIO()
