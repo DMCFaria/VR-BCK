@@ -58,6 +58,11 @@ class FuncionarioSerializer(serializers.Serializer):
     departamento = serializers.CharField(max_length=255)
     funcao = serializers.CharField(max_length=100)
     data_nascimento = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    cep = serializers.CharField(max_length=10, required=False, allow_null=True, allow_blank=True)
+    endereco_rua = serializers.CharField(max_length=255, required=False, allow_null=True, allow_blank=True)
+    endereco_numero = serializers.CharField(max_length=20, required=False, allow_null=True, allow_blank=True)
+    endereco_complemento = serializers.CharField(max_length=100, required=False, allow_null=True, allow_blank=True)
+    endereco_bairro = serializers.CharField(max_length=100, required=False, allow_null=True, allow_blank=True)
     valor_bene = serializers.DecimalField(max_digits=12, decimal_places=2)
     movimentacoes = MovimentacaoSerializer(many=True)
 
@@ -91,15 +96,47 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
     summary = serializers.DictField(required=False)
     novos_registros = serializers.JSONField(required=False)
     linhas_com_erro = serializers.ListField(required=False, allow_empty=True)
-    data_vencimento = serializers.DateField(required=False, allow_null=True)
-    vigencia_inicio = serializers.DateField(required=False, allow_null=True)
-    vigencia_fim = serializers.DateField(required=False, allow_null=True)
+    data_vencimento = serializers.DateField(input_formats=['%Y-%m-%d', '%d/%m/%Y'], required=False, allow_null=True)
+    vencimento = serializers.DateField(input_formats=['%Y-%m-%d', '%d/%m/%Y'], required=False, allow_null=True)
+    vigencia_inicio = serializers.DateField(input_formats=['%Y-%m-%d', '%d/%m/%Y'], required=False, allow_null=True)
+    inicio_vigencia = serializers.DateField(input_formats=['%Y-%m-%d', '%d/%m/%Y'], required=False, allow_null=True)
+    vigencia_fim = serializers.DateField(input_formats=['%Y-%m-%d', '%d/%m/%Y'], required=False, allow_null=True)
+    fim_vigencia = serializers.DateField(input_formats=['%Y-%m-%d', '%d/%m/%Y'], required=False, allow_null=True)
+    periodo_inicio = serializers.DateField(input_formats=['%Y-%m-%d', '%d/%m/%Y'], required=False, allow_null=True)
+    periodo_fim = serializers.DateField(input_formats=['%Y-%m-%d', '%d/%m/%Y'], required=False, allow_null=True)
 
     def validate(self, data):
         if not data.get('file_upload_id') and not data.get('importacao_id'):
             raise serializers.ValidationError({
                 "detail": "Informe file_upload_id ou importacao_id."
             })
+        summary = data.get('summary', {})
+        if 'vencimento' not in data and 'vencimento' in summary:
+            data['vencimento'] = summary['vencimento']
+        if 'periodo_inicio' not in data and 'periodo_inicio' in summary:
+            data['periodo_inicio'] = summary['periodo_inicio']
+        if 'periodo_fim' not in data and 'periodo_fim' in summary:
+            data['periodo_fim'] = summary['periodo_fim']
+        if data.get('vencimento') and not data.get('data_vencimento'):
+            data['data_vencimento'] = data.pop('vencimento')
+        elif 'vencimento' in data:
+            data.pop('vencimento')
+        if data.get('inicio_vigencia') and not data.get('vigencia_inicio'):
+            data['vigencia_inicio'] = data.pop('inicio_vigencia')
+        elif 'inicio_vigencia' in data:
+            data.pop('inicio_vigencia')
+        if data.get('fim_vigencia') and not data.get('vigencia_fim'):
+            data['vigencia_fim'] = data.pop('fim_vigencia')
+        elif 'fim_vigencia' in data:
+            data.pop('fim_vigencia')
+        if data.get('periodo_inicio') and not data.get('vigencia_inicio'):
+            data['vigencia_inicio'] = data.pop('periodo_inicio')
+        elif 'periodo_inicio' in data:
+            data.pop('periodo_inicio')
+        if data.get('periodo_fim') and not data.get('vigencia_fim'):
+            data['vigencia_fim'] = data.pop('periodo_fim')
+        elif 'periodo_fim' in data:
+            data.pop('periodo_fim')
         return data
 
     def create(self, validated_data):
@@ -219,11 +256,12 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         existing_condos = {c.cnpj: c for c in Condominio.objects.filter(cnpj__in=cnpj_list)}
         existing_funcs = {f.cpf: f for f in Funcionario.objects.filter(cpf__in=cpf_list)}
         existing_prods = {p.codigo_produto: p for p in Produto.objects.filter(codigo_produto__in=prod_key_list)}
-        
+
         condos_to_create = []
         funcs_to_create = []
+        funcs_to_update = []
         prods_to_create = []
-        
+
         condos_to_update = []
         for condo in condominios_data:
             if condo['cnpj'] not in existing_condos:
@@ -259,8 +297,33 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                         matricula=f.get('matricula', ''),
                         funcao=f.get('funcao', ''),
                         data_nascimento=_normalize_date(f.get('data_nascimento')),
-                        departamento=f.get('departamento', '')
+                        departamento=f.get('departamento', ''),
+                        cep=f.get('cep'),
+                        endereco_rua=f.get('endereco_rua'),
+                        endereco_numero=f.get('endereco_numero'),
+                        endereco_complemento=f.get('endereco_complemento'),
+                        endereco_bairro=f.get('endereco_bairro')
                     ))
+                else:
+                    func_obj = existing_funcs[f['cpf']]
+                    updated = False
+                    if f.get('cep') and func_obj.cep != f['cep']:
+                        func_obj.cep = f['cep']
+                        updated = True
+                    if f.get('endereco_rua') and func_obj.endereco_rua != f['endereco_rua']:
+                        func_obj.endereco_rua = f['endereco_rua']
+                        updated = True
+                    if f.get('endereco_numero') and func_obj.endereco_numero != f['endereco_numero']:
+                        func_obj.endereco_numero = f['endereco_numero']
+                        updated = True
+                    if f.get('endereco_complemento') and func_obj.endereco_complemento != f['endereco_complemento']:
+                        func_obj.endereco_complemento = f['endereco_complemento']
+                        updated = True
+                    if f.get('endereco_bairro') and func_obj.endereco_bairro != f['endereco_bairro']:
+                        func_obj.endereco_bairro = f['endereco_bairro']
+                        updated = True
+                    if updated:
+                        funcs_to_update.append(func_obj)
         
         prod_map = {}
         for key, nome in produtos_raw:
@@ -278,6 +341,11 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 ['endereco', 'numero', 'complemento', 'bairro', 'cidade', 'estado', 'cep']
             )
         Funcionario.objects.bulk_create(funcs_to_create, ignore_conflicts=True)
+        if funcs_to_update:
+            Funcionario.objects.bulk_update(
+                funcs_to_update,
+                ['cep', 'endereco_rua', 'endereco_numero', 'endereco_complemento', 'endereco_bairro']
+            )
         Produto.objects.bulk_create(prods_to_create, ignore_conflicts=True)
         
         existing_condos = {c.cnpj: c for c in Condominio.objects.filter(cnpj__in=cnpj_list)}
@@ -295,7 +363,7 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
             file_upload_id=file_upload_id,
             usuario=processed_by_user,
             administradora=administradora,
-            status='PROCESSING',
+            status='AGUARDANDO_FATURAMENTO',
             total_registros=0
         )
         
@@ -353,16 +421,15 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
             if file_upload_instance.process_status == 'COMPLETED':
                 raise serializers.ValidationError({"detail": "Este arquivo já foi processado anteriormente."})
 
-            file_upload_instance.process_status = 'COMPLETED'
+            file_upload_instance.process_status = 'AGUARDANDO_FATURAMENTO'
             file_upload_instance.save()
-            
+
             importacao.data_vencimento = validated_data.get('data_vencimento')
             importacao.vigencia_inicio = validated_data.get('vigencia_inicio')
             importacao.vigencia_fim = validated_data.get('vigencia_fim')
-            importacao.status = 'COMPLETED'
             importacao.save()
         
-        return {"count": len(novos_registros), "status": "COMPLETED", "importacao_id": importacao.id}
+        return {"count": len(novos_registros), "status": "AGUARDANDO_FATURAMENTO", "importacao_id": importacao.id}
 
 
 class FaturamentoExportSerializer(serializers.Serializer):

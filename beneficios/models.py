@@ -10,6 +10,7 @@ class Importacao(models.Model):
     STATUS_CHOICES = [
         ('PENDING', 'Pendente'),
         ('PROCESSING', 'Processando'),
+        ('AGUARDANDO_FATURAMENTO', 'Aguardando Faturamento'),
         ('COMPLETED', 'Concluída'),
         ('FAILED', 'Falhou'),
     ]
@@ -42,7 +43,7 @@ class Importacao(models.Model):
         verbose_name="Data da Importação"
     )
     status = models.CharField(
-        max_length=20,
+        max_length=30,
         choices=STATUS_CHOICES,
         default='PENDING',
         verbose_name="Status"
@@ -66,12 +67,30 @@ class Importacao(models.Model):
 
 # Modelo PRODUTO (Catálogo de Benefícios)
 class Produto(models.Model):
+    TIPO_CHOICES = [
+        ('ALIMENTACAO', 'Alimentação'),
+        ('AUX_ALIMENTACAO', 'Auxílio Alimentação'),
+        ('REFEICAO', 'Refeição'),
+        ('AUX_REFEICAO', 'Auxílio Refeição'),
+        ('AUTO', 'Auto'),
+        ('MULTI_AUXILIO', 'Multi Auxílio'),
+        ('MULTI_MOBILIDADE', 'Multi Mobilidade'),
+        ('MULTI_PREMIACAO', 'Multi Premiação'),
+    ]
+
     codigo_produto = models.CharField(
         max_length=50, # Aumentado por segurança
         primary_key=True, 
         verbose_name="Código do Produto"
     )
     nome = models.CharField(max_length=255, verbose_name="Nome do Produto/Benefício")
+    tipo = models.CharField(
+        max_length=30,
+        choices=TIPO_CHOICES,
+        blank=True,
+        null=True,
+        verbose_name="Tipo do Produto"
+    )
 
     class Meta:
         verbose_name = "Produto/Benefício"
@@ -79,6 +98,9 @@ class Produto(models.Model):
 
     def __str__(self):
         return f"{self.nome} ({self.codigo_produto})"
+
+    def get_tipo_display_or_codigo(self):
+        return self.get_tipo_display() if self.tipo else self.codigo_produto
 
 
 # Modelo MOVIMENTACAO_BENEFICIO (Tabela de Fatos)

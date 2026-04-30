@@ -84,7 +84,8 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
 
         condominios_encontrados = {}
 
-        s3_base_key = f"VR - DOCS/faturamentos/{faturamento.id}"
+        admin_nome = faturamento.administradora.nome if faturamento.administradora else "Sem Administradora"
+        s3_base_key = f"VR - DOCS/faturamentos/{faturamento.id} - {admin_nome}"
 
         _processar_e_upload_paginas(
             s3_client, bucket_name, s3_base_key, arquivo_boleto, 
@@ -101,6 +102,8 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
                 s3_client, bucket_name, s3_base_key, arquivo_nota_fiscal, 
                 resultado_nota_fiscal, 'nota_fiscal', condominios_encontrados, paginas_processadas, verificar_progresso
             )
+
+        _upload_arquivos_originais(s3_client, bucket_name, s3_base_key, arquivos_data, admin_nome, faturamento.id)
 
         atualizar_progresso(faturamento.id, 90)
 
@@ -126,7 +129,13 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
             atualizar_progresso(faturamento.id, progresso_banco)
 
         atualizar_progresso(faturamento.id, 100, 'COMPLETED')
-        
+
+        try:
+            from beneficios.models import Importacao
+            Importacao.objects.filter(id=importacao_id).update(status='COMPLETED')
+        except Exception:
+            logger.exception("Erro ao atualizar status da importação para COMPLETED")
+
         logger.info(f"Faturamento {faturamento.id} concluído com {total_condominios} condomínios")
 
         return {
@@ -147,41 +156,79 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
 
 
 def _processar_e_upload_paginas(s3_client, bucket_name, s3_base_key, pdf_file, resultado, tipo, condominios, paginas_processadas, on_progress=None):
+    from entidades.models import Condominio
+
     s3_base_key = f"VR - DOCS/faturamentos/{s3_base_key}" if '/' not in str(s3_base_key) else s3_base_key
-    
+
+    tipo_display = {'boleto': 'Boleto', 'nota_debito': 'Nota de débito', 'nota_fiscal': 'Nota Fiscal'}.get(tipo, tipo)
+
     pdf_file.seek(0)
     reader = PdfReader(pdf_file)
-    
+
     for pagina_info in resultado['paginas']:
         numero_pagina = pagina_info['numero_pagina']
         cnpj = pagina_info.get('cnpj') or f"sem_cnpj_{numero_pagina}"
         cnpj_limpo = re.sub(r'[^0-9]', '', cnpj)
-        
+
+        condominio = None
+        try:
+            condominio = Condominio.objects.get(cnpj=cnpj_limpo)
+        except Condominio.DoesNotExist:
+            pass
+
+        condo_nome = condominio.nome if condominio else cnpj_limpo
+        seq = str(numero_pagina).zfill(3)
+        nome_arquivo = f"{seq} - {condo_nome} - {cnpj_limpo} - {tipo_display}.pdf"
+
         page = reader.pages[numero_pagina - 1]
         writer = PdfWriter()
         writer.add_page(page)
-        
+
         pdf_bytes = io.BytesIO()
         writer.write(pdf_bytes)
         pdf_bytes.seek(0)
-        
-        s3_key = f"{s3_base_key}/{tipo}/{cnpj_limpo}.pdf"
-        
-        logger.debug(f"Upload {tipo} página {numero_pagina}: {cnpj_limpo}.pdf")
-        
+
+        s3_key = f"{s3_base_key}/{tipo}/{nome_arquivo}"
+
+        logger.debug(f"Upload {tipo} página {numero_pagina}: {nome_arquivo}")
+
         s3_client.upload_fileobj(
             pdf_bytes,
             bucket_name,
             s3_key,
             ExtraArgs={'ContentType': 'application/pdf'}
         )
-        
+
         url = f"https://{bucket_name}.s3.amazonaws.com/{s3_key}"
-        
+
         if cnpj_limpo not in condominios:
             condominios[cnpj_limpo] = {}
         condominios[cnpj_limpo][tipo] = url
-        
+
         paginas_processadas[0] += 1
         if on_progress:
             on_progress()
+
+
+def _upload_arquivos_originais(s3_client, bucket_name, s3_base_key, arquivos_data, admin_nome, faturamento_id):
+    import io
+    from pypdf import PdfReader, PdfWriter
+
+    for tipo, dados in arquivos_data.items():
+        if not dados:
+            continue
+
+        tipo_display = {'boleto': 'Boleto', 'nota_debito': 'Nota de débito', 'nota_fiscal': 'Nota Fiscal'}.get(tipo, tipo)
+        nome_arquivo = f"MERGED - {admin_nome} - {faturamento_id} - {tipo_display}.pdf"
+
+        pdf_bytes = io.BytesIO(base64.b64decode(dados['content']))
+        s3_key = f"{s3_base_key}/{tipo}/{nome_arquivo}"
+
+        s3_client.upload_fileobj(
+            pdf_bytes,
+            bucket_name,
+            s3_key,
+            ExtraArgs={'ContentType': 'application/pdf'}
+        )
+
+        logger.debug(f"Upload arquivo original {tipo}: {nome_arquivo}")

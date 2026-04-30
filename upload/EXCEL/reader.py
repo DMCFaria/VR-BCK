@@ -26,7 +26,12 @@ def parse_excel_layout(file_path, file_upload_id):
             'cpf_funcionario': str,
             'cep_condominio': str,
             'matricula_funcionario': str,
-            'codigo_produto': str
+            'codigo_produto': str,
+            'cep_funcionario': str,
+            'endereco_rua_funcionario': str,
+            'endereco_numero_funcionario': str,
+            'endereco_complemento_funcionario': str,
+            'endereco_bairro_funcionario': str
         })
 
         df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
@@ -151,6 +156,11 @@ def parse_excel_layout(file_path, file_upload_id):
                     "departamento": departamento,
                     "funcao": funcao,
                     "data_nascimento": data_nasc_validada,
+                    "cep": str(row.get('cep_funcionario', '')).strip() or None,
+                    "endereco_rua": str(row.get('endereco_rua_funcionario', '')).strip() or None,
+                    "endereco_numero": str(row.get('endereco_numero_funcionario', '')).strip() or None,
+                    "endereco_complemento": str(row.get('endereco_complemento_funcionario', '')).strip() or None,
+                    "endereco_bairro": str(row.get('endereco_bairro_funcionario', '')).strip() or None,
                     "valor_bene": Decimal('0.00'),
                     "movimentacoes": []
                 }

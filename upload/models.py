@@ -5,6 +5,7 @@ class FileUpload(models.Model):
     STATUS_CHOICES = (
         ('PENDING', 'Pendente de Processamento'),
         ('PARSED', 'Dados Extraídos, Pendente de Confirmação'),
+        ('AGUARDANDO_FATURAMENTO', 'Aguardando Faturamento'),
         ('COMPLETED', 'Processamento Finalizado'),
         ('FAILED', 'Falha no Processamento')
     )
@@ -15,7 +16,7 @@ class FileUpload(models.Model):
     
     uploaded_at = models.DateTimeField(auto_now_add=True)
     process_status = models.CharField(
-        max_length=10, 
+        max_length=30, 
         choices=STATUS_CHOICES, 
         default='PENDING',
         verbose_name="Status do Processamento"
