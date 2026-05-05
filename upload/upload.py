@@ -1,6 +1,5 @@
 import logging
 import os
-from core.fedhub.service.fedhub_service import FedhubService
 from rest_framework import views, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -54,7 +53,7 @@ class UploadView(views.APIView):
             elif extension in ['.xlsx', '.xls', '.csv']:
                 # Quando o diretor decidir o modelo, implementamos aqui
                 parsed_data = parse_excel_layout(file_path, upload_instance.id)
-                logger.info(f"Parsed data: {parsed_data}")
+                # logger.info(f"Parsed data: {parsed_data}")
             
             else:
                 return self._handle_error(upload_instance, f"Extensão {extension} não permitida.")

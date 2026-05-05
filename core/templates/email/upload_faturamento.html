@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Upload de Faturamento - FedVR</title>
+  <title>{{ tipo_processamento }} - FedVR</title>
   
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -24,7 +24,6 @@
       box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
     }
 
-    /* Header */
     .email-header {
       background: linear-gradient(135deg, #0F3D5D 0%, #1a6b8a 50%, #D3D3D2 100%);
       padding: 40px 30px;
@@ -54,7 +53,6 @@
       font-weight: 400;
     }
 
-    /* Conteúdo */
     .email-content {
       padding: 36px 36px 28px;
     }
@@ -71,25 +69,12 @@
       font-weight: 600;
     }
 
-    .message-text {
-      font-size: 14px;
-      color: #4a5568;
-      line-height: 1.7;
-      margin-bottom: 24px;
-    }
-
-    .message-text strong {
-      color: #1a202c;
-      font-weight: 500;
-    }
-
     .divider {
       height: 1px;
       background: #e2e8f0;
       margin: 0 0 24px;
     }
 
-    /* Info Box */
     .info-box {
       background: #e6f7f5;
       border-radius: 12px;
@@ -122,11 +107,10 @@
     .info-label {
       font-weight: 600;
       color: #1a202c;
-      min-width: 100px;
+      min-width: 110px;
       display: inline-block;
     }
 
-    /* Status Badge */
     .status-badge {
       display: inline-block;
       background: #0F3D5D;
@@ -138,7 +122,40 @@
       margin-top: 8px;
     }
 
-    /* Timeline */
+    .highlight-value {
+      font-size: 24px;
+      font-weight: 700;
+      color: #0F3D5D;
+      display: block;
+      margin-top: 8px;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin: 20px 0;
+    }
+
+    .stat-card {
+      text-align: center;
+      padding: 12px;
+      background: #f7fafc;
+      border-radius: 12px;
+    }
+
+    .stat-number {
+      font-size: 28px;
+      font-weight: 700;
+      color: #0F3D5D;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: #718096;
+      margin-top: 4px;
+    }
+
     .timeline {
       margin: 24px 0;
     }
@@ -188,7 +205,6 @@
       color: #718096;
     }
 
-    /* Botão */
     .button-container {
       text-align: center;
       margin: 24px 0;
@@ -210,7 +226,6 @@
       background: #1a6b8a;
     }
 
-    /* Warning Box */
     .warning-box {
       background: #fffbeb;
       border-left: 3px solid #f59e0b;
@@ -228,12 +243,6 @@
       line-height: 1.55;
     }
 
-    .warning-text strong {
-      font-weight: 600;
-      color: #78350f;
-    }
-
-    /* Security Note */
     .security-note {
       background: #f7fafc;
       border-radius: 10px;
@@ -249,7 +258,6 @@
       line-height: 1.6;
     }
 
-    /* Footer */
     .email-footer {
       padding: 20px 36px 24px;
       border-top: 1px solid #e2e8f0;
@@ -275,9 +283,9 @@
       .email-header { padding: 32px 24px 28px; }
       .email-content { padding: 28px 24px 24px; }
       .email-footer { padding: 18px 24px 20px; }
-      .email-header h1 { font-size: 22px; }
-      .btn-primary { padding: 12px 28px; font-size: 14px; }
-      .info-label { min-width: 80px; }
+      .stats-grid { gap: 8px; }
+      .stat-number { font-size: 22px; }
+      .info-label { min-width: 90px; }
     }
   </style>
 
@@ -285,52 +293,72 @@
 <body>
   <div class="email-wrapper">
 
-    <!-- Header -->
     <div class="email-header">
       <div class="logo-container">
         <img src="https://i.postimg.cc/FKq8j29p/logo2.png" alt="Fedcorp" class="logo"> 
       </div>
       <h1>FedVR</h1>
-      <div class="subtitle">Upload de Faturamento</div>
+      <div class="subtitle">{{ tipo_processamento }}</div>
     </div>
 
-    <!-- Conteúdo principal -->
     <div class="email-content">
 
       <div class="greeting">
         Olá, <strong>{{ user.get_full_name|default:user.email }}</strong>!
       </div>
 
-      <div class="message-text">
-        Recebemos o arquivo de faturamento enviado por você através do sistema 
-        <strong>FedVR</strong>. O processo de validação e processamento foi iniciado 
-        e em breve o faturamento estará disponível para conferência.
-      </div>
-
-      <div class="divider"></div>
-
-      <!-- Info Box com dados do upload -->
       <div class="info-box">
         <div class="info-title">
           📋 Detalhes do Upload
         </div>
         <div class="info-detail">
-          <span class="info-label">Arquivo:</span> {{ arquivo_nome|default:"faturamento.xlsx" }}
+          <span class="info-label">Arquivo:</span> {{ arquivo_nome }}
         </div>
         <div class="info-detail">
-          <span class="info-label">Data envio:</span> {{ data_envio|default:"hoje" }}
+          <span class="info-label">Data envio:</span> {{ data_envio }}
         </div>
         <div class="info-detail">
-          <span class="info-label">Competência:</span> {{ competencia|default:"—" }}
+          <span class="info-label">Competência:</span> {{ competencia }}
         </div>
+        {% if periodo_inicio and periodo_fim %}
         <div class="info-detail">
-          <span class="info-label">Registros:</span> {{ total_registros|default:"0" }}
+          <span class="info-label">Período:</span> {{ periodo_inicio }} até {{ periodo_fim }}
         </div>
+        {% endif %}
+        {% if vencimento %}
+        <div class="info-detail">
+          <span class="info-label">Vencimento:</span> {{ vencimento }}
+        </div>
+        {% endif %}
         <div class="info-detail">
           <span class="info-label">Status:</span>
           <span class="status-badge">✅ Recebido e processando</span>
         </div>
       </div>
+
+      <!-- Resumo em números -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-number">{{ total_condominios }}</div>
+          <div class="stat-label">Condomínios</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number">{{ total_funcionarios }}</div>
+          <div class="stat-label">Funcionários</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number">{{ total_registros }}</div>
+          <div class="stat-label">Movimentações</div>
+        </div>
+      </div>
+
+      <!-- Valor total destacado -->
+      <div class="info-box" style="text-align: center; background: linear-gradient(135deg, #0F3D5D 0%, #1a6b8a 100%); color: white; border-left: none;">
+        <div class="info-title" style="color: white; justify-content: center;">💰 Valor Total dos Benefícios</div>
+        <div class="highlight-value" style="color: white; font-size: 32px;">{{ valor_total_formatado }}</div>
+      </div>
+
+      <div class="divider"></div>
 
       <!-- Timeline do processo -->
       <div class="timeline">
@@ -338,28 +366,28 @@
           <div class="step-icon completed">✓</div>
           <div class="step-content">
             <div class="step-title">Upload realizado</div>
-            <div class="step-desc">Arquivo enviado e armazenado com sucesso</div>
+            <div class="step-desc">Arquivo enviado e validado com sucesso</div>
           </div>
         </div>
         <div class="timeline-step">
           <div class="step-icon completed">✓</div>
           <div class="step-content">
-            <div class="step-title">Validação de dados</div>
-            <div class="step-desc">Estrutura e regras de negócio verificadas</div>
+            <div class="step-title">Processamento dos dados</div>
+            <div class="step-desc">{{ total_registros }} movimentações processadas para {{ total_funcionarios }} funcionários</div>
           </div>
         </div>
         <div class="timeline-step">
           <div class="step-icon pending">⏳</div>
           <div class="step-content">
-            <div class="step-title">Processamento</div>
-            <div class="step-desc">Geração de boletos e notas fiscais</div>
+            <div class="step-title">Geração de documentos</div>
+            <div class="step-desc">Boletos e notas fiscais sendo gerados</div>
           </div>
         </div>
         <div class="timeline-step">
           <div class="step-icon pending">⏳</div>
           <div class="step-content">
             <div class="step-title">Disponibilização</div>
-            <div class="step-desc">Documentos prontos para download</div>
+            <div class="step-desc">Documentos prontos para download em breve</div>
           </div>
         </div>
       </div>
@@ -367,12 +395,13 @@
       <div class="divider"></div>
 
       <!-- Botão para acompanhar -->
+      {% if faturamento_id %}
       <div class="button-container">
-        <a href="{{ FRONTEND_URL|default:'https://app.fedvr.com.br' }}/faturamento/{{ faturamento_id }}" 
-           class="btn-primary">
+        <a href="{{ FRONTEND_URL }}/faturamento/{{ faturamento_id }}" class="btn-primary">
           📊 Acompanhar Processamento
         </a>
       </div>
+      {% endif %}
 
       <!-- Aviso de tempo de processamento -->
       <div class="warning-box">
@@ -382,7 +411,7 @@
           <circle cx="8" cy="11.5" r="0.7" fill="#92400e"/>
         </svg>
         <div class="warning-text">
-          <strong>⏱️ Processamento em andamento:</strong> O faturamento pode levar alguns minutos 
+          <strong>⏱️ Processamento em andamento:</strong> O {{ tipo_processamento|lower }} pode levar alguns minutos 
           para ser totalmente processado. Você pode acompanhar o progresso pelo link acima 
           ou aguardar o e-mail de conclusão.
         </div>
@@ -395,15 +424,14 @@
           <path d="M4.5 6V4a2.5 2.5 0 015 0v2" stroke="#718096" stroke-width="1.2"/>
         </svg>
         <div class="security-note-text">
-          Este e-mail foi enviado automaticamente porque você realizou um upload de faturamento 
-          no sistema FedVR. Caso não tenha sido você, entre em contato imediatamente com o 
-          suporte pelo e-mail <strong>suporte@fedcorp.com.br</strong>.
+          Este e-mail foi enviado automaticamente porque você realizou um upload no sistema FedVR. 
+          Caso não tenha sido você, entre em contato imediatamente com o suporte pelo e-mail 
+          <strong>suporte@fedcorp.com.br</strong>.
         </div>
       </div>
 
     </div>
 
-    <!-- Footer -->
     <div class="email-footer">
       <div class="brand">Grupo Fedcorp</div>
       <p>FedVR - Sistema de Gestão de Benefícios</p>

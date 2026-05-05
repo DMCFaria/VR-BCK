@@ -1,15 +1,5 @@
 import decimal
-from rest_framework import views, status
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from django.shortcuts import get_object_or_404
-from rest_framework_simplejwt.authentication import JWTAuthentication
 from collections import defaultdict
-
-from .RB.parsers import parse_rb_layout
-from .serializers import ProcessamentoFinalSerializer, FileUploadSerializer
-from .models import FileUpload
-
 
 def convert_decimals_to_json_safe(data):
     if isinstance(data, dict):
@@ -19,7 +9,6 @@ def convert_decimals_to_json_safe(data):
     elif isinstance(data, decimal.Decimal):
         return str(data) 
     return data
-
 
 def get_movimentacoes_detalhada(parsed_data):
     """
