@@ -48,7 +48,8 @@ def _get_beneficiary_summary(parsed_data):
             "nome_funcionario": nomes_por_cpf.get(cpf, "Nome não encontrado"),
             "cpf": cpf,
             "valor_total": str(total),
-            "condominio": condominios_por_cpf.get(cpf)
+            "condominio": condominios_por_cpf.get(cpf),
+            "cep": condo.get("cep")
         })
     return summary_list
 

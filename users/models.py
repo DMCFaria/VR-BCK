@@ -1,7 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 
-
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
         if not email:
@@ -45,7 +44,7 @@ class CustomUser(AbstractUser):
 
     email = models.EmailField(unique=True) 
 
-    empresa = models.CharField(max_length=100, blank=True)
+    empresa = models.CharField(blank=True, max_length=100)
     tipo = models.CharField(max_length=3, choices=TYPE_CHOICES, default="adm")
     administradora = models.ForeignKey(
         'entidades.Administradora',

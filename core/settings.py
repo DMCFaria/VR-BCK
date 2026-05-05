@@ -1,18 +1,20 @@
+import logging
 import os
 from pathlib import Path
 from datetime import timedelta
 from decouple import config
 
+logger = logging.getLogger(__name__)
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = config('SECRET_KEY')
-
+FEDHUB_URL = config('FEDHUB_URL', default='http://localhost:8090')
+FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173')
 
 DEBUG = True
 
 ALLOWED_HOSTS = ["localhost","vr-beneficios-backend-fedcorp-ju482.ondigitalocean.app", "127.0.0.1"]
-
-
 
 INSTALLED_APPS = [ 
     'django.contrib.admin',
@@ -31,7 +33,7 @@ INSTALLED_APPS = [
     'users',
     'upload',
     'beneficios',
-    'entidades'
+    'entidades',
 ]
 
 APPEND_SLASH = False
@@ -53,7 +55,7 @@ ROOT_URLCONF = 'core.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'core' / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -118,6 +120,55 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = 'static/'
+STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
+SUPPORT_EMAIL = os.getenv('SUPPORT_EMAIL', 'suporte@fedcorp.com')
+LOGO_URL = os.getenv('LOGO_URL', 'https://i.postimg.cc/SsPmTvDM/logo-fedcorp.png')
+
+# Configurações de Email
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@seusite.com')
+EMAIL_FROM_NAME = os.getenv('EMAIL_FROM_NAME', 'Sistema')
+
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+
+    'formatters': {
+        'verbose': {
+            'format': '[{levelname}] {asctime} {name} :: {message}',
+            'style': '{',
+        },
+    },
+
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+
+    'loggers': {
+        'nfse': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
+
+logger.info(f"ROOT_URLCONF está definido como: {ROOT_URLCONF}")
+
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -135,7 +186,6 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "https://vr-fedcorp-portal-beneficios-2kxoa.ondigitalocean.app",
 ]
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_METHODS = [
@@ -162,6 +212,7 @@ CORS_ALLOW_HEADERS = [
 ACCESS_KEY_S3 = config('ACCESS_KEY_S3')
 SECRET_KEY_S3 = config('SECRET_KEY_S3')
 BUCKET_S3 = config('BUCKET_S3')
+
 
 CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://localhost:6379/0')

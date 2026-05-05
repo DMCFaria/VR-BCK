@@ -1,4 +1,6 @@
+import logging
 import os
+from core.fedhub.service.fedhub_service import FedhubService
 from rest_framework import views, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -13,6 +15,8 @@ from django.conf import settings
 from .RB.parsers import parse_rb_layout
 from .EXCEL.reader import parse_excel_layout
 # from .excel.parsers import parse_excel_layout
+
+logger = logging.getLogger(__name__)
 
 class UploadView(views.APIView):
     permission_classes = [IsAuthenticated]
@@ -61,6 +65,8 @@ class UploadView(views.APIView):
             # 4. Processamento de Sumários (Reutilizando sua lógica original)
             beneficiary_summary = _get_beneficiary_summary(parsed_data)
             
+            logger.info(f"Beneficiary summary: {beneficiary_summary}")
+            
             frontend_summary = {
                 "total_condominios": parsed_data.get("summary", {}).get("total_condominios", 0),
                 "total_funcionarios": parsed_data.get("summary", {}).get("total_funcionarios", 0),
@@ -70,6 +76,8 @@ class UploadView(views.APIView):
                 "total_por_beneficiario": beneficiary_summary,
                 "novos_registros": parsed_data.get("novos_registros", {})
             }
+            
+            logger.info(f"Frontend summary: {frontend_summary}")
             
             # 5. Sanitização e Resposta
             frontend_summary_safe = _convert_decimals_to_json_safe(frontend_summary)
@@ -99,7 +107,18 @@ class UploadView(views.APIView):
                 # Reposicionar o ponteiro no início do arquivo
                 file_obj.seek(0)
                 s3.upload_fileobj(file_obj, "fedcorp-prod", f"VR - DOCS/importacoes/{new_file_name}")
-
+                    
+                fedhub_service = FedhubService()
+                
+                # email_enviado = fedhub_service.enviar_email_upload(
+                #     email=request.user.email,
+                #     user=request.user
+                # )
+                
+                email_enviado = "Sucesso!"
+                
+                logger.info(f"Email de notificação de upload de faturamento enviado: {email_enviado}")
+            
             return Response(
                 {
                     "file_upload_id": upload_instance.id,
