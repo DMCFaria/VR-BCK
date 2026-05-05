@@ -11,16 +11,61 @@ from .serializers import ProcessamentoFinalSerializer, FileUploadSerializer
 from .models import FileUpload
 
 
-def _convert_decimals_to_json_safe(data):
+def convert_decimals_to_json_safe(data):
     if isinstance(data, dict):
-        return {key: _convert_decimals_to_json_safe(value) for key, value in data.items()}
+        return {key: convert_decimals_to_json_safe(value) for key, value in data.items()}
     elif isinstance(data, list):
-        return [_convert_decimals_to_json_safe(element) for element in data]
+        return [convert_decimals_to_json_safe(element) for element in data]
     elif isinstance(data, decimal.Decimal):
         return str(data) 
     return data
 
-def _get_beneficiary_summary(parsed_data):
+
+def get_movimentacoes_detalhada(parsed_data):
+    """
+    Extrai todas as movimentações individuais em um array flat.
+    """
+    movimentacoes = []
+    
+    condominios = parsed_data.get('condominios', [])
+    
+    for condo in condominios:
+        nome_condominio = condo.get('nome', '')
+        cnpj_condominio = condo.get('cnpj', '')
+        cep_condominio = condo.get('cep', '')
+        endereco = {
+            'rua': condo.get('rua', ''),
+            'numero': condo.get('numero', ''),
+            'bairro': condo.get('bairro', ''),
+            'cidade': condo.get('cidade', ''),
+            'estado': condo.get('estado', ''),
+            'cep': cep_condominio
+        }
+        
+        for func in condo.get('funcionarios', []):
+            nome_funcionario = func.get('nome', '')
+            cpf_funcionario = func.get('cpf', '')
+            matricula = func.get('matricula', '')
+            funcao = func.get('funcao', '')
+            
+            for mov in func.get('movimentacoes', []):
+                movimentacoes.append({
+                    "nome_funcionario": nome_funcionario,
+                    "cpf_funcionario": cpf_funcionario,
+                    "matricula": matricula,
+                    "funcao": funcao,
+                    "condominio": nome_condominio,
+                    "cnpj_condominio": cnpj_condominio,
+                    "endereco_condominio": endereco,
+                    "codigo_produto": mov.get('codigo_produto', ''),
+                    "nome_produto": mov.get('produto', ''),
+                    "valor_recarga_bene": str(mov.get('valor', 0)),
+                    "data_competencia": parsed_data.get('summary', {}).get('data_competencia_arquivo')
+                })
+    
+    return movimentacoes
+
+def get_beneficiary_summary(parsed_data):
     total_por_cpf = defaultdict(decimal.Decimal)
     nomes_por_cpf = {}
     condominios_por_cpf = {}

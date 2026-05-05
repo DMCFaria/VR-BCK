@@ -1,17 +1,20 @@
+import logging
+
 from rest_framework import viewsets, views, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from django.db.models import Prefetch
+from django.db.models import Count, Prefetch, Sum
 from .models import Produto, MovimentacaoBeneficio, Importacao
 from .serializers import (
+    ImportacaoComMovimentacoesSerializer,
     ProdutoSerializer,
     MovimentacaoBeneficioSerializer,
     ImportacaoListSerializer,
     ImportacaoDetailSerializer,
-    MovimentacaoReuseSerializer
 )
 
+logger = logging.getLogger(__name__)
 
 class ProdutoViewSet(viewsets.ModelViewSet):
     """
@@ -148,11 +151,23 @@ class ImportacaoListView(views.APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        movimentacoes_qs = MovimentacaoBeneficio.objects.select_related(
+            'empresa_cnpj',
+            'funcionario_cpf',
+            'produto_codigo'
+        )
+
         importacoes = Importacao.objects.filter(
             administradora=administradora
-        ).order_by('-data_importacao')[:20]
+        ).annotate(
+            valor_total=Sum('movimentacoes__valor_beneficio'),
+            total_funcionarios=Count('movimentacoes__funcionario_cpf', distinct=True),
+        ).prefetch_related(
+            Prefetch('movimentacoes', queryset=movimentacoes_qs)
+        ).order_by('-data_importacao')
 
-        serializer = ImportacaoListSerializer(importacoes, many=True)
+        serializer = ImportacaoComMovimentacoesSerializer(importacoes, many=True)
+
         return Response(serializer.data)
 
 

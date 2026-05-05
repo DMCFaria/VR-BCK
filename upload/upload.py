@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from .serializers import FileUploadSerializer
-from .utils import _get_beneficiary_summary, _convert_decimals_to_json_safe
+from .utils import convert_decimals_to_json_safe, get_beneficiary_summary, get_movimentacoes_detalhada
 from datetime import datetime
 import boto3   
 from django.conf import settings
@@ -54,6 +54,7 @@ class UploadView(views.APIView):
             elif extension in ['.xlsx', '.xls', '.csv']:
                 # Quando o diretor decidir o modelo, implementamos aqui
                 parsed_data = parse_excel_layout(file_path, upload_instance.id)
+                logger.info(f"Parsed data: {parsed_data}")
             
             else:
                 return self._handle_error(upload_instance, f"Extensão {extension} não permitida.")
@@ -63,9 +64,9 @@ class UploadView(views.APIView):
                 return self._handle_error(upload_instance, parsed_data["error"])
 
             # 4. Processamento de Sumários (Reutilizando sua lógica original)
-            beneficiary_summary = _get_beneficiary_summary(parsed_data)
+            beneficiary_summary = get_beneficiary_summary(parsed_data)
             
-            logger.info(f"Beneficiary summary: {beneficiary_summary}")
+            # logger.info(f"Beneficiary summary: {beneficiary_summary}")
             
             frontend_summary = {
                 "total_condominios": parsed_data.get("summary", {}).get("total_condominios", 0),
@@ -77,12 +78,18 @@ class UploadView(views.APIView):
                 "novos_registros": parsed_data.get("novos_registros", {})
             }
             
-            logger.info(f"Frontend summary: {frontend_summary}")
+            # logger.info(f"Frontend summary: {frontend_summary}")
             
             # 5. Sanitização e Resposta
-            frontend_summary_safe = _convert_decimals_to_json_safe(frontend_summary)
-            data_to_backend_safe = _convert_decimals_to_json_safe({
+            frontend_summary_safe = convert_decimals_to_json_safe(frontend_summary)
+            
+            movimentacoes_detalhada = get_movimentacoes_detalhada(parsed_data)
+            
+            # logger.info(f"Movimentações detalhadas: {movimentacoes_detalhada}")
+            
+            data_to_backend_safe = convert_decimals_to_json_safe({
                 **parsed_data, 
+                "movimentacoes_detalhada": movimentacoes_detalhada,
                 "file_upload_id": upload_instance.id
             })
             
@@ -107,17 +114,6 @@ class UploadView(views.APIView):
                 # Reposicionar o ponteiro no início do arquivo
                 file_obj.seek(0)
                 s3.upload_fileobj(file_obj, "fedcorp-prod", f"VR - DOCS/importacoes/{new_file_name}")
-                    
-                fedhub_service = FedhubService()
-                
-                # email_enviado = fedhub_service.enviar_email_upload(
-                #     email=request.user.email,
-                #     user=request.user
-                # )
-                
-                email_enviado = "Sucesso!"
-                
-                logger.info(f"Email de notificação de upload de faturamento enviado: {email_enviado}")
             
             return Response(
                 {

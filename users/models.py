@@ -44,7 +44,7 @@ class CustomUser(AbstractUser):
 
     email = models.EmailField(unique=True) 
 
-    empresa = models.CharField(max_length=100, blank=True)
+    empresa = models.CharField(max_length=100, blank=True, null=True)
     tipo = models.CharField(max_length=3, choices=TYPE_CHOICES, default="adm")
     administradora = models.ForeignKey(
         'entidades.Administradora',
