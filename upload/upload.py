@@ -49,7 +49,7 @@ class UploadView(views.APIView):
             if extension == '.txt':
                 # Executa o seu parser RB original
                 parsed_data = parse_rb_layout(file_path, upload_instance.id)
-            
+                logger.info(f"Parsed data: {parsed_data}")
             elif extension in ['.xlsx', '.xls', '.csv']:
                 # Quando o diretor decidir o modelo, implementamos aqui
                 parsed_data = parse_excel_layout(file_path, upload_instance.id)

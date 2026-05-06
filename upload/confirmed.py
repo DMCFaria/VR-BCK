@@ -19,37 +19,37 @@ class ConfirmationView(views.APIView):
 
     def post(self, request):
         payload = request.data 
-        # logger.info(f"Recebido payload para confirmação: {payload}")
+        logger.info(f"Recebido payload para confirmação: {payload}")
         file_id = payload.get("file_upload_id")
-        # logger.info(f"Processando confirmação para file_upload_id: {file_id}")
+        logger.info(f"Processando confirmação para file_upload_id: {file_id}")
 
         if not file_id:
-            # logger.warning("O campo 'file_upload_id' é obrigatório.")
+            logger.warning("O campo 'file_upload_id' é obrigatório.")
             return Response({"detail": "O campo 'file_upload_id' é obrigatório."}, status=400)
 
         try:
             file_upload = FileUpload.objects.get(id=file_id)
             if file_upload.process_status == "COMPLETED":
-                # logger.info(f"Arquivo {file_id} já foi processado anteriormente.")
+                logger.info(f"Arquivo {file_id} já foi processado anteriormente.")
                 return Response(
                     {"detail": "Este arquivo já foi processado anteriormente."}, 
                     status=status.HTTP_400_BAD_REQUEST 
                 )
         except FileUpload.DoesNotExist:
-            # logger.warning(f"Arquivo {file_id} não encontrado.")
+            logger.warning(f"Arquivo {file_id} não encontrado.")
             return Response({"detail": "Arquivo não encontrado."}, status=404)
         
-        # logger.info(f"Validando payload para file_upload_id: {file_id}")
+        logger.info(f"Validando payload para file_upload_id: {file_id}")
 
         serializer = ProcessamentoFinalSerializer(data=payload)
         
-        # logger.info(f"Serializer criado para file_upload_id: {file_id}, validando dados...")
+        logger.info(f"Serializer criado para file_upload_id: {file_id}, validando dados...")
 
         if serializer.is_valid():
             try:
                 result = serializer.save(processed_by=request.user)
-                # logger.info(f"Processamento finalizado para file_upload_id: {file_id}, resultado: {result}")
-                
+                logger.info(f"Processamento finalizado para file_upload_id: {file_id}, resultado: {result}")
+                       
                 # Extrai dados do payload para o email
                 summary = payload.get('summary', {})
                 
@@ -67,7 +67,7 @@ class ConfirmationView(views.APIView):
                 # Tipo de processamento
                 tipo_processamento = payload.get('tipo_processamento', 'compra')
                 tipo_display = "Compra de Benefícios" if tipo_processamento == "compra" else "Faturamento"
-                
+
                 fedhub_service = FedhubService()
                 
                 # Envia email com dados REAIS
@@ -89,8 +89,7 @@ class ConfirmationView(views.APIView):
                         "periodo_fim": payload.get('periodo_fim', '')
                     }
                 )
-                
-                # logger.info(f"Email de notificação enviado para {request.user.email}: {email_enviado}")
+                logger.info(f"Email de notificação enviado para {request.user.email}: {email_enviado}")
                 
                 return Response({
                     "detail": "Dados gravados com sucesso.",
