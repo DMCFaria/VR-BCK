@@ -9,9 +9,12 @@ logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = config('SECRET_KEY')
+
+# Credenciais Fedhub
 FEDHUB_URL = config('FEDHUB_URL', default='http://localhost:8090')
-FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173')
 FEDHUB_X_API_KEY = config('FEDHUB_X_API_KEY', default='')
+
+FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173')
 
 DEBUG = True
 
