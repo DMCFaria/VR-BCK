@@ -13,7 +13,6 @@ class CustomUserSerializer(serializers.ModelSerializer):
             'username', 
             'first_name', 
             'last_name', 
-            'empresa', 
             'tipo',
             'created_at'
         )
@@ -29,7 +28,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomUser
-        fields = ('email', 'username', 'password', 'password2', 'tipo', 'empresa')
+        fields = ('email', 'username', 'password', 'password2', 'tipo')
         extra_kwargs = {
             'username': {'required': True},
             'tipo': {'required': True}
@@ -47,6 +46,5 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             username=validated_data['username'],
             password=validated_data['password'],
             tipo=validated_data.get('tipo', 'adm'), 
-            empresa=validated_data.get('empresa', ''),
         )
         return user
