@@ -19,9 +19,9 @@ class ConfirmationView(views.APIView):
 
     def post(self, request):
         payload = request.data 
-        logger.info(f"Recebido payload para confirmação: {payload}")
+        # logger.info(f"Recebido payload para confirmação: {payload}")
         file_id = payload.get("file_upload_id")
-        logger.info(f"Processando confirmação para file_upload_id: {file_id}")
+        # logger.info(f"Processando confirmação para file_upload_id: {file_id}")
 
         if not file_id:
             logger.warning("O campo 'file_upload_id' é obrigatório.")
@@ -39,16 +39,22 @@ class ConfirmationView(views.APIView):
             logger.warning(f"Arquivo {file_id} não encontrado.")
             return Response({"detail": "Arquivo não encontrado."}, status=404)
         
-        logger.info(f"Validando payload para file_upload_id: {file_id}")
+        # logger.info(f"Validando payload para file_upload_id: {file_id}")
 
         serializer = ProcessamentoFinalSerializer(data=payload)
         
-        logger.info(f"Serializer criado para file_upload_id: {file_id}, validando dados...")
+        # logger.info(f"Serializer criado para file_upload_id: {file_id}, validando dados...")
 
         if serializer.is_valid():
+            
+            # logger.info(f"Payload válido para file_upload_id: {file_id}, iniciando processamento final...")
+            
+            # summary = payload.get('summary', {})
+            # logger.info(f"Summary para file_upload_id: {file_id}: {summary}")
+            
             try:
                 result = serializer.save(processed_by=request.user)
-                logger.info(f"Processamento finalizado para file_upload_id: {file_id}, resultado: {result}")
+                # logger.info(f"Processamento finalizado para file_upload_id: {file_id}, resultado: {result}")
                        
                 # Extrai dados do payload para o email
                 summary = payload.get('summary', {})
