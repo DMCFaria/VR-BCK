@@ -8,7 +8,6 @@ class FileUploadSerializer(serializers.ModelSerializer):
         read_only_fields = ['uploaded_at', 'process_status', 'summary_data', 'uploaded_by']
         extra_kwargs = {'file': {'required': False, 'allow_null': True}}
 
-
 class MovimentacaoDetalhadaSerializer(serializers.Serializer):
     cpf_func = serializers.CharField(max_length=14)
     nome_func = serializers.CharField(max_length=255)
@@ -38,12 +37,10 @@ class MovimentacaoDetalhadaSerializer(serializers.Serializer):
     periodos = serializers.CharField(required=False)
     periodo2 = serializers.CharField(required=False)
 
-
 class MovimentacaoSerializer(serializers.Serializer):
     produto = serializers.CharField(max_length=255)
     codigo_produto = serializers.CharField(max_length=50, required=False, allow_blank=True, allow_null=True)
     valor = serializers.DecimalField(max_digits=12, decimal_places=2)
-
 
 class FuncionarioSerializer(serializers.Serializer):
     nome = serializers.CharField(max_length=255)
@@ -60,7 +57,6 @@ class FuncionarioSerializer(serializers.Serializer):
     valor_bene = serializers.DecimalField(max_digits=12, decimal_places=2)
     movimentacoes = MovimentacaoSerializer(many=True)
 
-
 class CondominioSerializer(serializers.Serializer):
     nome = serializers.CharField(max_length=255)
     cnpj = serializers.CharField(max_length=20)
@@ -74,13 +70,11 @@ class CondominioSerializer(serializers.Serializer):
     cep = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     funcionarios = FuncionarioSerializer(many=True)
 
-
 class CondominiosDataSerializer(serializers.Serializer):
     condominios = CondominioSerializer(many=True)
     file_upload_id = serializers.IntegerField()
     errors = serializers.ListField(child=serializers.CharField(), required=False)
     summary = serializers.DictField(required=False)
-
 
 class ProcessamentoFinalSerializer(serializers.Serializer):
     condominios = CondominioSerializer(many=True)

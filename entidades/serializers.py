@@ -8,13 +8,11 @@ class CondominioSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ('cnpj',)
 
-
 class FuncionarioSerializer(serializers.ModelSerializer):
     class Meta:
         model = Funcionario
         fields = '__all__'
         read_only_fields = ('cpf',)
-
 
 class AdministradoraSerializer(serializers.ModelSerializer):
     class Meta:
@@ -22,13 +20,11 @@ class AdministradoraSerializer(serializers.ModelSerializer):
         fields = ['id', 'cnpj', 'nome', 'ativo', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
 
-
 class GerenteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Gerente
         fields = ['id', 'nome', 'email', 'telefone', 'ativo', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
-
 
 class VinculoCondominioSerializer(serializers.ModelSerializer):
     condominio_nome = serializers.CharField(source='condominio.nome', read_only=True)

@@ -6,6 +6,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.db.models import Prefetch
+
+from core.fedhub.services.fedhub_service import FedhubService
 from .models import Produto, MovimentacaoBeneficio, Importacao
 from .serializers import (
     ImportacaoComMovimentacoesSerializer,
@@ -91,6 +93,9 @@ class AlterarStatusImportacaoView(views.APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        # Guarda o status anterior para verificar se mudou para COMPLETED
+        status_anterior = importacao.status
+        
         importacao.status = status_backend
         importacao.save()
         
@@ -107,6 +112,96 @@ class AlterarStatusImportacaoView(views.APIView):
             importacao.save()
         
         logger.info(f"Importação {pk} alterada para status: {status_backend}")
+        
+        fedhub_service = FedhubService()
+        
+        # SÓ ENVIA E-MAIL SE O STATUS FOR COMPLETED (FATURADO)
+        if status_backend == 'COMPLETED' and status_anterior != 'COMPLETED':
+            try:
+                # Buscar a administradora e seus contatos
+                administradora = importacao.administradora
+                
+                # Buscar os dados da importação para montar o e-mail
+                movimentacoes = MovimentacaoBeneficio.objects.filter(importacao=importacao)
+                
+                # Agrupar por empresa/condomínio para obter totais
+                empresas_unicas = movimentacoes.values('empresa_cnpj').distinct().count()
+                funcionarios_unicos = movimentacoes.values('funcionario_cpf').distinct().count()
+                total_registros = movimentacoes.count()
+                valor_total = float(importacao.valor_total) if importacao.valor_total else 0
+                
+                # Extrair competência da importação (assumindo que existe campo competencia)
+                competencia = getattr(importacao, 'competencia', '')
+                competencia_mes = competencia.month if competencia else ''
+                competencia_ano = competencia.year if competencia else ''
+                competencia_str = f"{competencia_mes}/{competencia_ano}" if competencia_mes and competencia_ano else "—"
+                
+                # Dados para o e-mail do cliente
+                # IMPORTANTE: Você precisa ter o e-mail do cliente final em algum lugar
+                # Pode ser no modelo Importacao ou no perfil do cliente
+                email_cliente = request.data.get('email_cliente')  # Pode vir no payload
+                nome_cliente = request.data.get('nome_cliente', administradora.nome if administradora else 'Cliente')
+                
+                # Se não veio no payload, tenta buscar do relacionamento
+                if not email_cliente and administradora:
+                    # Supondo que administradora tenha um método para pegar e-mail do cliente
+                    # Ou você pode ter um campo email_cliente na Importacao
+                    email_cliente = getattr(importacao, 'email_cliente', None)
+                
+                dados_faturamento = {
+                    'cliente_nome': nome_cliente,
+                    'cliente_email': email_cliente,
+                    'arquivo_nome': getattr(importacao.file_upload, 'file', 'faturamento.xlsx').name if hasattr(importacao, 'file_upload') else 'faturamento.xlsx',
+                    'data_faturamento': timezone.now().strftime('%d/%m/%Y %H:%M'),
+                    'competencia': competencia_str,
+                    'total_registros': total_registros,
+                    'total_funcionarios': funcionarios_unicos,
+                    'total_condominios': empresas_unicas,
+                    'valor_total': valor_total,
+                    'faturamento_id': importacao.id,
+                    'vencimento': request.data.get('vencimento', getattr(importacao, 'vencimento', '')),
+                    'periodo_inicio': request.data.get('periodo_inicio', ''),
+                    'periodo_fim': request.data.get('periodo_fim', ''),
+                    'numero_nota_fiscal': request.data.get('numero_nota_fiscal', ''),
+                    'link_boleto': request.data.get('link_boleto', ''),
+                    'link_nota_fiscal': request.data.get('link_nota_fiscal', ''),
+                }
+                
+                # Envia e-mail para o cliente final
+                if email_cliente:
+                    email_enviado_cliente = fedhub_service.enviar_email_cliente_faturamento(
+                        email=email_cliente,
+                        user=request.user,
+                        dados_processamento=dados_faturamento
+                    )
+                    logger.info(f"Email de faturamento enviado para cliente {email_cliente}: {email_enviado_cliente}")
+                else:
+                    logger.warning(f"Email do cliente não informado para importação {pk}")
+                
+                # Opcional: Envia também e-mail de confirmação para a administradora
+                email_enviado_admin = fedhub_service.enviar_email_upload(
+                    email=request.user.email,
+                    user=request.user,
+                    dados_processamento={
+                        "arquivo_nome": getattr(importacao.file_upload, 'file', 'faturamento.xlsx').name if hasattr(importacao, 'file_upload') else 'faturamento.xlsx',
+                        "data_envio": timezone.now().strftime('%d/%m/%Y %H:%M'),
+                        "competencia": competencia_str,
+                        "total_registros": total_registros,
+                        "total_funcionarios": funcionarios_unicos,
+                        "total_condominios": empresas_unicas,
+                        "valor_total": valor_total,
+                        "tipo_processamento": "Faturamento Concluído",
+                        "faturamento_id": importacao.id,
+                        "vencimento": request.data.get('vencimento', ''),
+                        "periodo_inicio": request.data.get('periodo_inicio', ''),
+                        "periodo_fim": request.data.get('periodo_fim', '')
+                    }
+                )
+                logger.info(f"Email de confirmação enviado para administradora {request.user.email}: {email_enviado_admin}")
+                
+            except Exception as e:
+                logger.error(f"Erro ao enviar e-mails de faturamento para importação {pk}: {str(e)}")
+                # Não falha a operação principal se o e-mail der erro
         
         return Response({
             "id": importacao.id,

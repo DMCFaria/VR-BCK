@@ -28,13 +28,11 @@ class CondominioViewSet(viewsets.ModelViewSet):
             ).distinct()
         return queryset
 
-
 class FuncionarioViewSet(viewsets.ModelViewSet):
     queryset = Funcionario.objects.all()
     serializer_class = FuncionarioSerializer
     permission_classes = [IsAuthenticated]
     lookup_field = 'cpf'
-
 
 class AdministradoraViewSet(viewsets.ModelViewSet):
     queryset = Administradora.objects.all()
@@ -55,7 +53,6 @@ class AdministradoraViewSet(viewsets.ModelViewSet):
         serializer = VinculoCondominioSerializer(vinculos, many=True)
         return Response(serializer.data)
 
-
 class GerenteViewSet(viewsets.ModelViewSet):
     queryset = Gerente.objects.all()
     serializer_class = GerenteSerializer
@@ -67,7 +64,6 @@ class GerenteViewSet(viewsets.ModelViewSet):
         if ativo is not None:
             queryset = queryset.filter(ativo=ativo.lower() == 'true')
         return queryset
-
 
 class VinculoCondominioViewSet(viewsets.ModelViewSet):
     queryset = VinculoCondominio.objects.all()
