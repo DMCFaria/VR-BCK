@@ -48,6 +48,7 @@ class Importacao(models.Model):
         default='PENDING',
         verbose_name="Status"
     )
+    total_funcionarios = models.IntegerField(default=0, verbose_name="Total de Registros")
     total_registros = models.IntegerField(default=0, verbose_name="Total de Registros")
     registros_processados = models.IntegerField(default=0, verbose_name="Registros Processados")
     erros = models.JSONField(default=list, verbose_name="Erros")
@@ -112,6 +113,20 @@ class Produto(models.Model):
 
 # Modelo MOVIMENTACAO_BENEFICIO (Tabela de Fatos)
 class MovimentacaoBeneficio(models.Model):
+    TIPO_CHOICES = [
+        ('APROVADO', 'Aprovado'),
+        ('CANCELADO', 'Cancelado'),
+        ('EM FATURAMENTO', 'Em Faturamento'),
+        ('FATURADO', 'Faturado'),
+    ]
+    
+    status = models.CharField(
+        max_length=30,
+        choices=TIPO_CHOICES,
+        default='APROVADO',
+        verbose_name="Status"
+    )
+    
     # Relacionamentos
     empresa_cnpj = models.ForeignKey(
         Condominio, 

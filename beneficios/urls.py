@@ -1,6 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
+    AlterarStatusImportacaoView,
     ProdutoViewSet,
     MovimentacaoBeneficioViewSet,
     UltimaImportacaoMovimentacoesView,
@@ -17,4 +18,5 @@ urlpatterns = [
     path('importacoes/ultima/', UltimaImportacaoMovimentacoesView.as_view(), name='ultima-importacao'),
     path('importacoes/', ImportacaoListView.as_view(), name='importacao-list'),
     path('importacoes/<int:pk>/', ImportacaoDetailView.as_view(), name='importacao-detail'),
+    path('importacoes/<int:pk>/status/', AlterarStatusImportacaoView.as_view(), name='alterar-status-importacao'),
 ]

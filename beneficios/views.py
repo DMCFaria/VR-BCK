@@ -1,16 +1,16 @@
 import logging
+from django.utils import timezone
 
 from rest_framework import viewsets, views, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from django.db.models import Count, Prefetch, Sum
+from django.db.models import Prefetch
 from .models import Produto, MovimentacaoBeneficio, Importacao
 from .serializers import (
     ImportacaoComMovimentacoesSerializer,
     ProdutoSerializer,
     MovimentacaoBeneficioSerializer,
-    ImportacaoListSerializer,
     ImportacaoDetailSerializer,
 )
 
@@ -42,6 +42,78 @@ class MovimentacaoBeneficioViewSet(viewsets.ModelViewSet):
         if funcionario_cpf is not None:
             queryset = queryset.filter(funcionario_cpf__cpf=funcionario_cpf)
         return queryset
+
+
+class AlterarStatusImportacaoView(views.APIView):
+    """
+    View para alterar o status de uma importação.
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def patch(self, request, pk):
+        try:
+            importacao = Importacao.objects.get(id=pk)
+        except Importacao.DoesNotExist:
+            return Response(
+                {"detail": "Importação não encontrada."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        novo_status = request.data.get('status')
+        
+        # Mapeamento de status do frontend para o backend
+        status_mapping = {
+            'aprovado': 'AGUARDANDO_FATURAMENTO',
+            'em_faturamento': 'EM_FATURAMENTO',
+            'faturado': 'COMPLETED',
+            'cancelado': 'CANCELADO',
+        }
+        
+        status_backend = status_mapping.get(novo_status)
+        
+        if not status_backend:
+            # Tenta usar o status diretamente se já estiver no formato do backend
+            valid_statuses = [choice[0] for choice in Importacao.STATUS_CHOICES]
+            if novo_status in valid_statuses:
+                status_backend = novo_status
+            else:
+                return Response(
+                    {"detail": f"Status inválido: {novo_status}. Opções: aprovado, em_faturamento, faturado, cancelado"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+        # Se for cancelado, verifica se tem motivo
+        motivo = request.data.get('motivo', '')
+        if status_backend == 'CANCELADO' and not motivo:
+            return Response(
+                {"detail": "Informe o motivo do cancelamento."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        importacao.status = status_backend
+        importacao.save()
+        
+        # Se houver motivo, registra nos erros
+        if motivo:
+            erros = importacao.erros or []
+            erros.append({
+                "tipo": "CANCELAMENTO",
+                "motivo": motivo,
+                "data": str(timezone.now().date()),
+                "usuario": request.user.email if request.user else None
+            })
+            importacao.erros = erros
+            importacao.save()
+        
+        logger.info(f"Importação {pk} alterada para status: {status_backend}")
+        
+        return Response({
+            "id": importacao.id,
+            "status": status_backend,
+            "status_display": dict(Importacao.STATUS_CHOICES).get(status_backend, status_backend),
+            "message": f"Status alterado para {status_backend} com sucesso."
+        }, status=status.HTTP_200_OK)
 
 
 class UltimaImportacaoMovimentacoesView(views.APIView):
@@ -157,12 +229,8 @@ class ImportacaoListView(views.APIView):
             'produto_codigo'
         )
 
-        # REMOVA O .annotate(valor_total=Sum(...)) pois agora o campo existe no model
         importacoes = Importacao.objects.filter(
             administradora=administradora
-        ).annotate(
-            # Use um nome diferente para a annotation, ou apenas não anote
-            total_funcionarios=Count('movimentacoes__funcionario_cpf', distinct=True),
         ).prefetch_related(
             Prefetch('movimentacoes', queryset=movimentacoes_qs)
         ).order_by('-data_importacao')

@@ -1,11 +1,5 @@
 from rest_framework import serializers
-from django.db import transaction
-from entidades.models import Condominio, Funcionario, VinculoCondominio
-from beneficios.models import Produto, MovimentacaoBeneficio, Importacao
 from .models import FileUpload
-from .RB.parsers import cpf_valido_matematicamente
-import re
-
 
 class FileUploadSerializer(serializers.ModelSerializer):
     class Meta:
