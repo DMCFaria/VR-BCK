@@ -19,7 +19,7 @@ class ConfirmationView(views.APIView):
 
     def post(self, request):
         payload = request.data 
-        logger.info(f"Recebido payload para confirmação: {payload}")
+        # logger.info(f"Recebido payload para confirmação: {payload}")
         
         file_id = payload.get("file_upload_id")
         # logger.info(f"Processando confirmação para file_upload_id: {file_id}")
@@ -50,11 +50,11 @@ class ConfirmationView(views.APIView):
             
             try:
                 result = serializer.save(processed_by=request.user)
-                logger.info(f"Resultado depois de salvar o processamento para file_upload_id: {file_id}: {result}")
+                # logger.info(f"Resultado depois de salvar o processamento para file_upload_id: {file_id}: {result}")
                                        
                 # Extrai dados do payload para o email
                 summary = payload.get('summary', {})
-                logger.info(f"Summary extraído do payload para file_upload_id: {file_id}: {summary}")
+                # logger.info(f"Summary extraído do payload para file_upload_id: {file_id}: {summary}")
                 
                 # Calcula totais
                 total_condominios = len(payload.get('condominios', []))
@@ -74,32 +74,32 @@ class ConfirmationView(views.APIView):
                 tipo_processamento = payload.get('tipo_processamento', 'compra')
                 tipo_display = "Compra de Benefícios" if tipo_processamento == "compra" else "Faturamento"
                 
-                logger.info(f"Dados para email - file_upload_id: {file_id}, total_condominios: {total_condominios}, total_funcionarios: {total_funcionarios}, total_movimentacoes: {total_movimentacoes}, valor_total: {valor_total}, competencia: {competencia_str}, tipo_processamento: {tipo_display}")
+                # logger.info(f"Dados para email - file_upload_id: {file_id}, total_condominios: {total_condominios}, total_funcionarios: {total_funcionarios}, total_movimentacoes: {total_movimentacoes}, valor_total: {valor_total}, competencia: {competencia_str}, tipo_processamento: {tipo_display}")
 
-                # fedhub_service = FedhubService()
+                fedhub_service = FedhubService()
                 
-                # # Envia email com dados REAIS
-                # email_enviado = fedhub_service.enviar_email_upload(
-                #     email=request.user.email,
-                #     user=request.user,
-                #     dados_processamento={
-                #         "arquivo_nome": file_upload.file.name if file_upload.file else "arquivo.xlsx",
-                #         "data_envio": timezone.now().strftime('%d/%m/%Y %H:%M'),
-                #         "competencia": competencia_str,
-                #         "total_registros": total_movimentacoes,
-                #         "total_funcionarios": total_funcionarios,
-                #         "total_condominios": total_condominios,
-                #         "valor_total": valor_total,
-                #         "tipo_processamento": tipo_display,
-                #         "faturamento_id": result.get("importacao_id"),
-                #         "vencimento": payload.get('vencimento', ''),
-                #         "periodo_inicio": payload.get('periodo_inicio', ''),
-                #         "periodo_fim": payload.get('periodo_fim', '')
-                #     }
-                # )
-                # logger.info(f"Email de notificação enviado para {request.user.email}: {email_enviado}")
+                # Envia email com dados REAIS
+                email_enviado = fedhub_service.enviar_email_upload(
+                    email=request.user.email,
+                    user=request.user,
+                    dados_processamento={
+                        "arquivo_nome": file_upload.file.name if file_upload.file else "arquivo.xlsx",
+                        "data_envio": timezone.now().strftime('%d/%m/%Y %H:%M'),
+                        "competencia": competencia_str,
+                        "total_registros": total_movimentacoes,
+                        "total_funcionarios": total_funcionarios,
+                        "total_condominios": total_condominios,
+                        "valor_total": valor_total,
+                        "tipo_processamento": tipo_display,
+                        "faturamento_id": result.get("importacao_id"),
+                        "vencimento": payload.get('vencimento', ''),
+                        "periodo_inicio": payload.get('periodo_inicio', ''),
+                        "periodo_fim": payload.get('periodo_fim', '')
+                    }
+                )
+                logger.info(f"Email de notificação enviado para {request.user.email}: {email_enviado}")
                 
-                email_enviado = True  # Simulando envio de email para fins de teste
+                # email_enviado = True  # Simulando envio de email para fins de teste
                 
                 return Response({
                     "detail": "Dados gravados com sucesso.",

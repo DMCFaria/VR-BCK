@@ -65,7 +65,7 @@ class UploadView(views.APIView):
             # 4. Processamento de Sumários (Reutilizando sua lógica original)
             beneficiary_summary = get_beneficiary_summary(parsed_data)
             
-            logger.info(f"Beneficiary summary: {beneficiary_summary}")
+            # logger.info(f"Beneficiary summary: {beneficiary_summary}")
             
             frontend_summary = {
                 "total_condominios": parsed_data.get("summary", {}).get("total_condominios", 0),
@@ -77,7 +77,7 @@ class UploadView(views.APIView):
                 "novos_registros": parsed_data.get("novos_registros", {})
             }
             
-            logger.info(f"Frontend summary: {frontend_summary}")
+            # logger.info(f"Frontend summary: {frontend_summary}")
             
             # 5. Sanitização e Resposta
             frontend_summary_safe = convert_decimals_to_json_safe(frontend_summary)
