@@ -19,7 +19,8 @@ class ConfirmationView(views.APIView):
 
     def post(self, request):
         payload = request.data 
-        # logger.info(f"Recebido payload para confirmação: {payload}")
+        logger.info(f"Recebido payload para confirmação: {payload}")
+        
         file_id = payload.get("file_upload_id")
         # logger.info(f"Processando confirmação para file_upload_id: {file_id}")
 
@@ -47,23 +48,22 @@ class ConfirmationView(views.APIView):
 
         if serializer.is_valid():
             
-            # logger.info(f"Payload válido para file_upload_id: {file_id}, iniciando processamento final...")
-            
-            # summary = payload.get('summary', {})
-            # logger.info(f"Summary para file_upload_id: {file_id}: {summary}")
-            
             try:
                 result = serializer.save(processed_by=request.user)
-                # logger.info(f"Processamento finalizado para file_upload_id: {file_id}, resultado: {result}")
-                       
+                logger.info(f"Resultado depois de salvar o processamento para file_upload_id: {file_id}: {result}")
+                                       
                 # Extrai dados do payload para o email
                 summary = payload.get('summary', {})
+                logger.info(f"Summary extraído do payload para file_upload_id: {file_id}: {summary}")
                 
                 # Calcula totais
                 total_condominios = len(payload.get('condominios', []))
                 total_funcionarios = summary.get('total_funcionarios', 0)
                 total_movimentacoes = summary.get('total_movimentacoes', 0)
-                valor_total = float(summary.get('valor_total_beneficios', 0))
+                
+                # USA O VALOR TOTAL QUE FOI SALVO NA IMPORTAÇÃO
+                importacao = Importacao.objects.get(id=result.get("importacao_id"))
+                valor_total = float(importacao.valor_total)
                 
                 # Data de competência
                 competencia_mes = payload.get('competencia_mes', '')
@@ -73,29 +73,33 @@ class ConfirmationView(views.APIView):
                 # Tipo de processamento
                 tipo_processamento = payload.get('tipo_processamento', 'compra')
                 tipo_display = "Compra de Benefícios" if tipo_processamento == "compra" else "Faturamento"
-
-                fedhub_service = FedhubService()
                 
-                # Envia email com dados REAIS
-                email_enviado = fedhub_service.enviar_email_upload(
-                    email=request.user.email,
-                    user=request.user,
-                    dados_processamento={
-                        "arquivo_nome": file_upload.file.name if file_upload.file else "arquivo.xlsx",
-                        "data_envio": timezone.now().strftime('%d/%m/%Y %H:%M'),
-                        "competencia": competencia_str,
-                        "total_registros": total_movimentacoes,
-                        "total_funcionarios": total_funcionarios,
-                        "total_condominios": total_condominios,
-                        "valor_total": valor_total,
-                        "tipo_processamento": tipo_display,
-                        "faturamento_id": result.get("importacao_id"),
-                        "vencimento": payload.get('vencimento', ''),
-                        "periodo_inicio": payload.get('periodo_inicio', ''),
-                        "periodo_fim": payload.get('periodo_fim', '')
-                    }
-                )
-                logger.info(f"Email de notificação enviado para {request.user.email}: {email_enviado}")
+                logger.info(f"Dados para email - file_upload_id: {file_id}, total_condominios: {total_condominios}, total_funcionarios: {total_funcionarios}, total_movimentacoes: {total_movimentacoes}, valor_total: {valor_total}, competencia: {competencia_str}, tipo_processamento: {tipo_display}")
+
+                # fedhub_service = FedhubService()
+                
+                # # Envia email com dados REAIS
+                # email_enviado = fedhub_service.enviar_email_upload(
+                #     email=request.user.email,
+                #     user=request.user,
+                #     dados_processamento={
+                #         "arquivo_nome": file_upload.file.name if file_upload.file else "arquivo.xlsx",
+                #         "data_envio": timezone.now().strftime('%d/%m/%Y %H:%M'),
+                #         "competencia": competencia_str,
+                #         "total_registros": total_movimentacoes,
+                #         "total_funcionarios": total_funcionarios,
+                #         "total_condominios": total_condominios,
+                #         "valor_total": valor_total,
+                #         "tipo_processamento": tipo_display,
+                #         "faturamento_id": result.get("importacao_id"),
+                #         "vencimento": payload.get('vencimento', ''),
+                #         "periodo_inicio": payload.get('periodo_inicio', ''),
+                #         "periodo_fim": payload.get('periodo_fim', '')
+                #     }
+                # )
+                # logger.info(f"Email de notificação enviado para {request.user.email}: {email_enviado}")
+                
+                email_enviado = True  # Simulando envio de email para fins de teste
                 
                 return Response({
                     "detail": "Dados gravados com sucesso.",

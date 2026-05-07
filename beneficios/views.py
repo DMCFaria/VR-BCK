@@ -157,10 +157,11 @@ class ImportacaoListView(views.APIView):
             'produto_codigo'
         )
 
+        # REMOVA O .annotate(valor_total=Sum(...)) pois agora o campo existe no model
         importacoes = Importacao.objects.filter(
             administradora=administradora
         ).annotate(
-            valor_total=Sum('movimentacoes__valor_beneficio'),
+            # Use um nome diferente para a annotation, ou apenas não anote
             total_funcionarios=Count('movimentacoes__funcionario_cpf', distinct=True),
         ).prefetch_related(
             Prefetch('movimentacoes', queryset=movimentacoes_qs)

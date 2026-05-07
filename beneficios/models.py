@@ -55,6 +55,13 @@ class Importacao(models.Model):
     data_vencimento = models.DateField(verbose_name="Data de Vencimento", null=True, blank=True)
     vigencia_inicio = models.DateField(verbose_name="Início da Vigência", null=True, blank=True)
     vigencia_fim = models.DateField(verbose_name="Fim da Vigência", null=True, blank=True)
+    
+    valor_total = models.DecimalField(
+        max_digits=15, 
+        decimal_places=2, 
+        default=0, 
+        verbose_name="Valor Total da Importação"
+    )
 
     class Meta:
         verbose_name = "Importação"
