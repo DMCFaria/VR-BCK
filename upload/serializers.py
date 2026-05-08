@@ -1,5 +1,9 @@
+import logging
+
 from rest_framework import serializers
 from .models import FileUpload
+
+logger = logging.getLogger(__name__)
 
 class FileUploadSerializer(serializers.ModelSerializer):
     class Meta:
@@ -130,11 +134,15 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
     def create(self, validated_data):
         from decimal import Decimal
         from django.db import transaction
+        
+        
+        logger.info(f"Dados do sumario: {validated_data.get('summary', {})}")
 
         condominios_data = validated_data.get('condominios', [])
         file_upload_id = validated_data.get('file_upload_id')
         importacao_id_origem = validated_data.get('importacao_id')
         processed_by_user = validated_data.get('processed_by')
+        total_funcionarios = validated_data.get('summary', {}).get('total_funcionarios', 0)
 
         # ========== 1. GARANTIR FILE_UPLOAD_ID ==========
         if not file_upload_id and importacao_id_origem:
@@ -314,6 +322,11 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         if condos_to_vinc:
             vinculos = [VinculoCondominio(administradora=administradora, condominio_id=c) for c in condos_to_vinc]
             VinculoCondominio.objects.bulk_create(vinculos, ignore_conflicts=True)
+            
+            
+        logger.warning(
+            f"DEBUG TOTAL FUNCIONARIOS RECEBIDO => {total_funcionarios}"
+        )
         
         # ========== 12. CRIAR IMPORTAÇÃO COM VALOR TOTAL ==========
         importacao = Importacao.objects.create(
@@ -323,11 +336,14 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
             status='AGUARDANDO_FATURAMENTO',
             total_registros=0,
             registros_processados=0,
-            valor_total=valor_total_payload,  # <--- SALVA O VALOR TOTAL AQUI
+            valor_total=valor_total_payload, 
+            total_funcionarios=total_funcionarios,
             data_vencimento=validated_data.get('data_vencimento'),
             vigencia_inicio=validated_data.get('vigencia_inicio') or validated_data.get('periodo_inicio'),
             vigencia_fim=validated_data.get('vigencia_fim') or validated_data.get('periodo_fim')
         )
+        
+        logger.info(f"Importação criada com ID {importacao.id} para file_upload_id {file_upload_id}. Valor total: {valor_total_payload}, Total funcionários: {total_funcionarios}")
         
         # ========== 13. SALVAR MOVIMENTAÇÕES ==========
         movimentacoes_to_create = []
@@ -405,8 +421,6 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 pass
         
         # ========== 16. LOG ==========
-        import logging
-        logger = logging.getLogger(__name__)
         logger.info(f"Importação {importacao.id} criada. Valor total: {valor_total_payload}. "
                     f"Movimentações: {movimentacoes_salvas}/{registros_count}")
         

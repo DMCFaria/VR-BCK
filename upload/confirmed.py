@@ -49,6 +49,15 @@ class ConfirmationView(views.APIView):
         if serializer.is_valid():
             
             try:
+                # summary = payload.get('summary', {})
+                # logger.info(f"Summary extraído do payload para file_upload_id: {file_id}: {summary}")
+                
+                # return Response({
+                #     "detail": "Dados validados com sucesso.",
+                #     "summary": summary
+                # }, status=status.HTTP_200_OK)
+                
+                
                 result = serializer.save(processed_by=request.user)
                 # logger.info(f"Resultado depois de salvar o processamento para file_upload_id: {file_id}: {result}")
                                        
@@ -74,7 +83,7 @@ class ConfirmationView(views.APIView):
                 tipo_processamento = payload.get('tipo_processamento', 'compra')
                 tipo_display = "Compra de Benefícios" if tipo_processamento == "compra" else "Faturamento"
                 
-                # logger.info(f"Dados para email - file_upload_id: {file_id}, total_condominios: {total_condominios}, total_funcionarios: {total_funcionarios}, total_movimentacoes: {total_movimentacoes}, valor_total: {valor_total}, competencia: {competencia_str}, tipo_processamento: {tipo_display}")
+                logger.info(f"Dados para email - file_upload_id: {file_id}, total_condominios: {total_condominios}, total_funcionarios: {total_funcionarios}, total_movimentacoes: {total_movimentacoes}, valor_total: {valor_total}, competencia: {competencia_str}, tipo_processamento: {tipo_display}")
 
                 fedhub_service = FedhubService()
                 
