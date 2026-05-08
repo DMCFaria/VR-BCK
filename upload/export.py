@@ -19,7 +19,6 @@ from beneficios.models import MovimentacaoBeneficio, Produto
 def gerar_txt_compra(administradora_cnpj, data_competencia=None):
     """
     Gera o arquivo txt_compra para envio à VR Benefícios.
-    Formato posicional baseado no layout do arquivo LayoutPedidoVRPAT.xlsx.
     """
     linhas = []
     seq = 1
@@ -53,45 +52,44 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None):
         condominio = vinculo.condominio
 
         # Local Entrega (TipoRec 10)
-        # Garantir que o número seja string e não vazio
         numero_condo = str(condominio.numero or '').strip()
         if not numero_condo:
-            numero_condo = ''  # Se vazio, usa string vazia
+            numero_condo = ''
         linha_local = (
-            f"10"  # TipoRec (2)
-            f"{administradora_cnpj.zfill(14)}"  # CNPJ/Código Cliente (14)
-            f"{condominio.cnpj[:30]:<30}"  # Código local entrega (30)
-            f"{condominio.nome[:80]:<80}"  # Nome local entrega (80)
-            f"{'AV'[:20]:<20}"  # Tipo Logradouro (20) - fixo
-            f"{(condominio.endereco or '')[:40]:<40}"  # Logradouro (40)
-            f"{numero_condo[:6]:<6}"  # Número (6)
-            f"{(condominio.complemento or '')[:20]:<20}"  # Complemento (20)
-            f"{(condominio.bairro or '')[:30]:<30}"  # Bairro (30)
-            f"{(condominio.cidade or '')[:30]:<30}"  # Cidade (30)
-            f"{(condominio.estado or '')[:2]:<2}"  # UF (2)
-            f"{(condominio.cep or '').replace('-', '')[:8]:<8}"  # CEP (8)
-            f"{' ' * 30}"  # Nome Interlocutor (30) - vazio
-            f"{' ' * 29}"  # FILLER (29)
-            f"{str(seq).zfill(9)}"  # Número da linha (9)
+            f"10"
+            f"{administradora_cnpj.zfill(14)}"
+            f"{condominio.cnpj[:30]:<30}"
+            f"{condominio.nome[:80]:<80}"
+            f"{'AV'[:20]:<20}"
+            f"{(condominio.endereco or '')[:40]:<40}"
+            f"{numero_condo[:6]:<6}"
+            f"{(condominio.complemento or '')[:20]:<20}"
+            f"{(condominio.bairro or '')[:30]:<30}"
+            f"{(condominio.cidade or '')[:30]:<30}"
+            f"{(condominio.estado or '')[:2]:<2}"
+            f"{(condominio.cep or '').replace('-', '')[:8]:<8}"
+            f"{' ' * 30}"
+            f"{' ' * 29}"
+            f"{str(seq).zfill(9)}"
         )
         linhas.append(linha_local)
         seq += 1
 
         # Associação CNPJ ao Local Entrega (TipoRec 11)
         linha_assoc = (
-            f"11"  # TipoRec (2)
-            f"{administradora_cnpj.zfill(14)}"  # CNPJ/Código Cliente (14)
-            f"{condominio.cnpj[:30]:<30}"   # Código local entrega (30)
-            f"{administradora_cnpj.zfill(14)}"  # CNPJ Local Entrega (14)
-            f"{admin.nome[:24]:<24}"  # Nome Impressão Cartão (24)
-            f"{'suportevr@grupofedcorp.com.br'[:70]:<70}"  # Email alerta financeiro (70)
-            f"{' ' * 187}"  # FILLER (187)
-            f"{str(seq).zfill(9)}"  # Número da linha (9)
+            f"11"
+            f"{administradora_cnpj.zfill(14)}"
+            f"{condominio.cnpj[:30]:<30}"
+            f"{administradora_cnpj.zfill(14)}"
+            f"{admin.nome[:24]:<24}"
+            f"{'suportevr@grupofedcorp.com.br'[:70]:<70}"
+            f"{' ' * 187}"
+            f"{str(seq).zfill(9)}"
         )
         linhas.append(linha_assoc)
         seq += 1
 
-        # Responsáveis pelo Local de Entrega (TipoRec 12) - Um por condomínio
+        # Responsáveis pelo Local de Entrega (TipoRec 12)
         gerentes = vinculo.gerentes.all()
         emails_gerentes = [g.email for g in gerentes if g.email][:3]
         if not emails_gerentes:
@@ -102,21 +100,21 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None):
         email3 = emails_gerentes[2][:60] if len(emails_gerentes) > 2 else email1
 
         linha_resp = (
-            f"12"  # TipoRec (2)
-            f"{administradora_cnpj.zfill(14)}"  # CNPJ/Código Cliente (14)
-            f"{condominio.cnpj[:30]:<30}"  # Código local entrega (30)
-            f"{email1:<60}"  # Email Responsável (principal) (60)
-            f"{' ' * 43}"  # FILLER (43)
-            f"{email2:<60}"  # Email Responsável (2) (60)
-            f"{' ' * 43}"  # FILLER (43)
-            f"{email3:<60}"  # Email Responsável (3) (60)
-            f"{' ' * 29}"  # FILLER (29)
-            f"{str(seq).zfill(9)}"  # Número da linha (9)
+            f"12"
+            f"{administradora_cnpj.zfill(14)}"
+            f"{condominio.cnpj[:30]:<30}"
+            f"{email1:<60}"
+            f"{' ' * 43}"
+            f"{email2:<60}"
+            f"{' ' * 43}"
+            f"{email3:<60}"
+            f"{' ' * 29}"
+            f"{str(seq).zfill(9)}"
         )
         linhas.append(linha_resp)
         seq += 1
 
-    # Buscar movimentações ordenadas por produto para gerar registros 50 e 60 alternados
+    # Buscar movimentações
     mov_query = MovimentacaoBeneficio.objects.filter(
         empresa_cnpj__vinculocondominio__administradora=admin
     ).select_related('produto_codigo', 'funcionario_cpf', 'empresa_cnpj')
@@ -124,7 +122,9 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None):
     if data_competencia:
         mov_query = mov_query.filter(data_competencia=data_competencia)
 
-    # Beneficiário (TipoRec 30) - antes do benefício
+    # ⭐⭐⭐ REMOVER DUPLICAÇÃO: Apenas UM bloco de registros 30, 50 e 60 ⭐⭐⭐
+    
+    # Beneficiário (TipoRec 30)
     funcionarios_vistos = set()
     for mov in mov_query:
         func = mov.funcionario_cpf
@@ -134,126 +134,76 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None):
             continue
         funcionarios_vistos.add(func.cpf)
 
-        # Data nascimento no formato DDMMAAAA
         data_nasc = ''
         if func.data_nascimento:
             data_nasc = func.data_nascimento.strftime('%d%m%Y')
         else:
             data_nasc = '00000000'
 
-        # Sexo
-        sexo = (func.sexo or 'M')[:1].upper()
-        if sexo not in ['M', 'F']:
-            sexo = 'M'
-
         linha_benef = (
-            f"30"  # TipoRec (2)
-            f"{administradora_cnpj.zfill(14)}"  # CNPJ/Código Cliente (14)
-            f"{func.cpf[:11]:<11}"  # CPF (11)
-            f"{cond.cnpj[:30]:<30}"  # Código local entrega (30)
-            f"{' ' * 12}"  # Código centro de custo (12) - vazio
-            f"CONDOMINIO"  # Matrícula (10)
-            f"{func.nome[:40]:<40}"  # Nome completo (40)
-            f"{' '[:24]:<24}"  # Nome Impressão Cartão (24)
-            f"{data_nasc}"  # Data Nascimento (8)
-            f"{' ' * 187}"  # FILLER (187)
-            f"{str(seq).zfill(9)}"  # Número da linha (9)
+            f"30"
+            f"{administradora_cnpj.zfill(14)}"
+            f"{func.cpf[:11]:<11}"
+            f"{cond.cnpj[:30]:<30}"
+            f"{' ' * 12}"
+            f"CONDOMINIO"
+            f"{func.nome[:40]:<40}"
+            f"{' '[:24]:<24}"
+            f"{data_nasc}"
+            f"{' ' * 187}"
+            f"{str(seq).zfill(9)}"
         )
         linhas.append(linha_benef)
         seq += 1
 
-    # Agrupar movimentações por produto para alternar 50 e 60
+    # ⭐⭐⭐ APENAS UM BLOCO PARA REGISTROS 50 e 60 ⭐⭐⭐
     from itertools import groupby
     from operator import attrgetter
 
-    # Ordenar por código do produto
     movimentacoes_ordenadas = mov_query.order_by('produto_codigo__codigo_produto')
 
     for prod_codigo, movimentacoes_grupo in groupby(movimentacoes_ordenadas, key=attrgetter('produto_codigo.codigo_produto')):
         prod_cod = prod_codigo[:3].upper()
         mov_list = list(movimentacoes_grupo)
 
-        # Registro 50 - Produto Voucher (Agendamento)
+        # Registro 50 - Produto Voucher
         data_agend = data_competencia if data_competencia else date.today()
         linha_prod = (
-            f"50"  # TipoRec (2)
-            f"{administradora_cnpj.zfill(14)}"  # CNPJ/Código Cliente (14)
-            f"{prod_cod:<3}"  # Código Produto (3)
-            f"{data_agend.strftime('%d%m%Y')}"  # Data Agendamento (8)
-            f"{' ' * 314}"  # FILLER (314)
-            f"{str(seq).zfill(9)}"  # Número da linha (9)
+            f"50"
+            f"{administradora_cnpj.zfill(14)}"
+            f"{prod_cod:<3}"
+            f"{data_agend.strftime('%d%m%Y')}"
+            f"{' ' * 314}"
+            f"{str(seq).zfill(9)}"
         )
         linhas.append(linha_prod)
         seq += 1
 
-        # Registros 60 - Benefícios Voucher para este produto
+        # Registros 60 - Benefícios Voucher
         for mov in mov_list:
             func = mov.funcionario_cpf
-
-            # Valor do benefício: 9 posições inteiras + 2 decimais, sem ponto
             valor = float(mov.valor_beneficio)
             valor_str = f"{valor:.2f}".replace('.', '').zfill(11)
 
             linha_beneficio = (
-                f"60"  # TipoRec (2)
-                f"{administradora_cnpj.zfill(14)}"  # CNPJ/Código Cliente (14)
-                f"{prod_cod:<3}"  # Código Produto (3)
-                f"{func.cpf.zfill(11)}"  # CPF (11)
-                f"{' ' * 40}"  # Nome completo Provisório (40)
-                f"{valor_str}"  # Valor Benefício (11)
-                f"{' ' * 260}"  # FILLER (260)
-                f"{str(seq).zfill(9)}"  # Número da linha (9)
+                f"60"
+                f"{administradora_cnpj.zfill(14)}"
+                f"{prod_cod:<3}"
+                f"{func.cpf.zfill(11)}"
+                f"{' ' * 40}"
+                f"{valor_str}"
+                f"{' ' * 260}"
+                f"{str(seq).zfill(9)}"
             )
             linhas.append(linha_beneficio)
             seq += 1
 
-    # Produto Voucher (TipoRec 50) - Agrupado por produto
-    produtos_unicos = {}
-    for mov in mov_query:
-        cod = mov.produto_codigo.codigo_produto[:3].upper()
-        if cod not in produtos_unicos:
-            produtos_unicos[cod] = mov.produto_codigo
-
-    for cod, prod in produtos_unicos.items():
-        data_agend = data_competencia if data_competencia else date.today()
-        linha_prod = (
-            f"50"  # TipoRec (2)
-            f"{administradora_cnpj.zfill(14)}"  # CNPJ/Código Cliente (14)
-            f"{cod:<3}"  # Código Produto (3)
-            f"{data_agend.strftime('%d%m%Y')}"  # Data Agendamento (8)
-            f"{' ' * 314}"  # FILLER (314)
-            f"{str(seq).zfill(9)}"  # Número da linha (9)
-        )
-        linhas.append(linha_prod)
-        seq += 1
-    # Benefício Voucher (TipoRec 60)
-    for mov in mov_query:
-        func = mov.funcionario_cpf
-        prod_cod = mov.produto_codigo.codigo_produto[:3].upper()
-
-        # Valor do benefício: 9 posições inteiras + 2 decimais, sem ponto
-        valor = float(mov.valor_beneficio)
-        valor_str = f"{valor:.2f}".replace('.', '').zfill(11)
-
-        linha_beneficio = (
-            f"60"  # TipoRec (2)
-            f"{administradora_cnpj.zfill(14)}"  # CNPJ/Código Cliente (14)
-            f"{prod_cod:<3}"  # Código Produto (3)
-            f"{func.cpf.zfill(11)}"  # CPF (11)
-            f"{' ' * 40}"  # Nome completo Provisório (40)
-            f"{valor_str}"  # Valor Benefício (11)
-            f"{' ' * 260}"  # FILLER (260)
-            f"{str(seq).zfill(9)}"  # Número da linha (9)
-        )
-        linhas.append(linha_beneficio)
-        seq += 1
-
     # Trailler (TipoRec 99)
     linha_trailler = (
-        f"99"  # TipoRec (2)
-        f"{administradora_cnpj.zfill(14)}"  # CNPJ/Código Cliente (14)
-        f"{' ' * 325}"  # FILLER (325)
-        f"{str(seq).zfill(9)}"  # Número da linha (9)
+        f"99"
+        f"{administradora_cnpj.zfill(14)}"
+        f"{' ' * 325}"
+        f"{str(seq).zfill(9)}"
     )
     linhas.append(linha_trailler)
 
@@ -427,24 +377,68 @@ class ExportFaturamentoView(views.APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        df = pd.DataFrame(dados)
+        try:
+            df = pd.DataFrame(dados)
+            
+            # Verificar se o DataFrame não está vazio
+            if df.empty:
+                return Response(
+                    {'detail': 'Nenhum dado para exportar.'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
 
-        columns_order = [
-            'CPF', 'NOME_FUNC', 'PRODUTO', 'BENEFICIO', 'VALOR_UNITARIO',
-            'QUANTIDADE', 'VALOR_RECARGA_BENE', 'REPASSE_VT', 'DEPARTAMENTO',
-            'CNPJ', 'ENDERECO', 'BAIRRO', 'CIDADE', 'UF', 'CEP',
-            'TAXA', 'vencimento', 'periodos', 'periodo2'
-        ]
-        df = df[[c for c in columns_order if c in df.columns]]
+            # Definir colunas
+            columns_order = [
+                'CPF', 'NOME_FUNC', 'PRODUTO', 'BENEFICIO', 'VALOR_UNITARIO',
+                'QUANTIDADE', 'VALOR_RECARGA_BENE', 'REPASSE_VT', 'DEPARTAMENTO',
+                'CNPJ', 'ENDERECO', 'BAIRRO', 'CIDADE', 'UF', 'CEP',
+                'TAXA', 'vencimento', 'periodos', 'periodo2'
+            ]
+            
+            # Filtrar apenas colunas que existem
+            existing_columns = [c for c in columns_order if c in df.columns]
+            df = df[existing_columns]
 
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='Faturamento')
-
-        buffer.seek(0)
-        response = HttpResponse(
-            buffer.getvalue(),
-            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-        response['Content-Disposition'] = f'attachment; filename="PLAN_FATURAMENTO_{date.today().strftime("%Y%m%d")}.xlsx"'
-        return response
+            output = io.BytesIO()
+            
+            # Tentar com xlsxwriter primeiro (mais estável)
+            try:
+                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                    df.to_excel(writer, index=False, sheet_name='Faturamento')
+            except Exception as e:
+                # Fallback para openpyxl
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    df.to_excel(writer, index=False, sheet_name='Faturamento')
+            
+            output.seek(0)
+            
+            # Verificar se o buffer não está vazio
+            if output.getbuffer().nbytes == 0:
+                return Response(
+                    {'detail': 'Erro ao gerar arquivo Excel: buffer vazio.'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            
+            response = HttpResponse(
+                output.getvalue(),
+                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+            
+            # Usar filename com .xlsx e aspas para evitar problemas
+            filename = f"PLAN_FATURAMENTO_{importacao_id}_{date.today().strftime('%Y%m%d')}.xlsx"
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            
+            response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response['Pragma'] = 'no-cache'
+            response['Expires'] = '0'
+            
+            return response
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Erro ao gerar Excel: {str(e)}", exc_info=True)
+            return Response(
+                {'detail': f'Erro ao gerar planilha: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
