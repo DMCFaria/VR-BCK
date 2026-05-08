@@ -97,7 +97,6 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
     periodo_inicio = serializers.DateField(input_formats=['%Y-%m-%d', '%d/%m/%Y'], required=False, allow_null=True)
     periodo_fim = serializers.DateField(input_formats=['%Y-%m-%d', '%d/%m/%Y'], required=False, allow_null=True)
     
-    # ⭐⭐⭐ CAMPOS QUE ESTAVAM FALTANDO ⭐⭐⭐
     competencia_mes = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     competencia_ano = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     tipo_processamento = serializers.CharField(required=False, default='compra')
@@ -111,7 +110,6 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 "detail": "Informe file_upload_id ou importacao_id."
             })
         
-        # ⭐⭐⭐ NÃO REMOVER OS CAMPOS period_inicio/periodo_fim ⭐⭐⭐
         # Apenas normalizar para vigencia_inicio/vigencia_fim se necessário
         if 'periodo_inicio' in data and data['periodo_inicio'] and not data.get('vigencia_inicio'):
             data['vigencia_inicio'] = data['periodo_inicio']
@@ -127,9 +125,7 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         
         if 'fim_vigencia' in data and data['fim_vigencia'] and not data.get('vigencia_fim'):
             data['vigencia_fim'] = data['fim_vigencia']
-        
-        # ⭐⭐⭐ NÃO POPPING DOS CAMPOS - MANTÉM ELES NO validated_data ⭐⭐⭐
-        
+                
         return data
 
     def create(self, validated_data):
@@ -143,7 +139,6 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         processed_by_user = validated_data.get('processed_by')
         total_funcionarios = validated_data.get('summary', {}).get('total_funcionarios', 0)
 
-        # ⭐⭐⭐ CORREÇÃO: Obter a administradora do usuário ⭐⭐⭐
         administradora = None
         if processed_by_user:
             # Tenta pegar a administradora do usuário
@@ -156,7 +151,6 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
             # Log para debug
             logger.info(f"Administradora do usuário {processed_by_user.email}: {administradora}")
         
-        # ⭐⭐⭐ VALIDAÇÃO MAIS CLARA ⭐⭐⭐
         if not administradora:
             error_msg = "Usuário não possui administradora vinculada. Verifique o perfil do usuário."
             logger.error(error_msg)
@@ -389,7 +383,6 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                     nome_produto = mov_data.get('nome', '') or mov_data.get('produto', '')
                     valor_beneficio = Decimal(str(mov_data.get('valor', 0)))
                     
-                    # ⭐⭐⭐ LOG PARA DEBUG - MOSTRA O VALOR QUE ESTÁ SENDO SALVO ⭐⭐⭐
                     logger.info(f"  - Produto: {codigo_produto}, Valor: {valor_beneficio}")
                     
                     # PULA SE NÃO TIVER VALOR
@@ -427,7 +420,7 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                         funcionario_cpf=func_obj,
                         produto_codigo=prod_obj,
                         data_competencia=data_competencia,
-                        valor_beneficio=valor_beneficio,  # ⭐⭐⭐ VALOR ALTERADO PELO FRONTEND ⭐⭐⭐
+                        valor_beneficio=valor_beneficio,
                         quantidade_dias=mov_data.get('quantidade', 1)
                     ))
                     registros_count += 1

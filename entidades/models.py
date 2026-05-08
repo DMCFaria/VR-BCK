@@ -107,6 +107,15 @@ class Funcionario(models.Model):
     )
     nome = models.CharField(max_length=255, verbose_name="Nome Completo")
     
+    condominio = models.ForeignKey(
+        'Condominio',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Condomínio",
+        related_name='funcionarios'
+    )
+    
     departamento = models.CharField(max_length=255, verbose_name="Departamento / Local", blank=True, null=True)
     
     funcao = models.CharField(max_length=100, verbose_name="Função/Cargo", blank=True, null=True)
