@@ -19,7 +19,7 @@ class ConfirmationView(views.APIView):
 
     def post(self, request):
         payload = request.data 
-        # logger.info(f"Recebido payload para confirmação: {payload}")
+        logger.info(f"Recebido payload para confirmação: {payload}")
         
         file_id = payload.get("file_upload_id")
         # logger.info(f"Processando confirmação para file_upload_id: {file_id}")

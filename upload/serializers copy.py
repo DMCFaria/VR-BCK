@@ -96,75 +96,50 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
     fim_vigencia = serializers.DateField(input_formats=['%Y-%m-%d', '%d/%m/%Y'], required=False, allow_null=True)
     periodo_inicio = serializers.DateField(input_formats=['%Y-%m-%d', '%d/%m/%Y'], required=False, allow_null=True)
     periodo_fim = serializers.DateField(input_formats=['%Y-%m-%d', '%d/%m/%Y'], required=False, allow_null=True)
-    
-    # ⭐⭐⭐ CAMPOS QUE ESTAVAM FALTANDO ⭐⭐⭐
-    competencia_mes = serializers.CharField(required=False, allow_null=True, allow_blank=True)
-    competencia_ano = serializers.CharField(required=False, allow_null=True, allow_blank=True)
-    tipo_processamento = serializers.CharField(required=False, default='compra')
-    origem = serializers.CharField(required=False, default='importacao_faturamento')
-    status = serializers.CharField(required=False, default='PARSED')
-    detail = serializers.CharField(required=False)
 
     def validate(self, data):
         if not data.get('file_upload_id') and not data.get('importacao_id'):
             raise serializers.ValidationError({
                 "detail": "Informe file_upload_id ou importacao_id."
             })
-        
-        # ⭐⭐⭐ NÃO REMOVER OS CAMPOS period_inicio/periodo_fim ⭐⭐⭐
-        # Apenas normalizar para vigencia_inicio/vigencia_fim se necessário
-        if 'periodo_inicio' in data and data['periodo_inicio'] and not data.get('vigencia_inicio'):
-            data['vigencia_inicio'] = data['periodo_inicio']
-        
-        if 'periodo_fim' in data and data['periodo_fim'] and not data.get('vigencia_fim'):
-            data['vigencia_fim'] = data['periodo_fim']
-        
-        if 'vencimento' in data and data['vencimento'] and not data.get('data_vencimento'):
-            data['data_vencimento'] = data['vencimento']
-        
-        if 'inicio_vigencia' in data and data['inicio_vigencia'] and not data.get('vigencia_inicio'):
-            data['vigencia_inicio'] = data['inicio_vigencia']
-        
-        if 'fim_vigencia' in data and data['fim_vigencia'] and not data.get('vigencia_fim'):
-            data['vigencia_fim'] = data['fim_vigencia']
-        
-        # ⭐⭐⭐ NÃO POPPING DOS CAMPOS - MANTÉM ELES NO validated_data ⭐⭐⭐
-        
+        summary = data.get('summary', {})
+        if 'vencimento' not in data and 'vencimento' in summary:
+            data['vencimento'] = summary['vencimento']
+        if 'periodo_inicio' not in data and 'periodo_inicio' in summary:
+            data['periodo_inicio'] = summary['periodo_inicio']
+        if 'periodo_fim' not in data and 'periodo_fim' in summary:
+            data['periodo_fim'] = summary['periodo_fim']
+        if data.get('vencimento') and not data.get('data_vencimento'):
+            data['data_vencimento'] = data.pop('vencimento')
+        elif 'vencimento' in data:
+            data.pop('vencimento')
+        if data.get('inicio_vigencia') and not data.get('vigencia_inicio'):
+            data['vigencia_inicio'] = data.pop('inicio_vigencia')
+        elif 'inicio_vigencia' in data:
+            data.pop('inicio_vigencia')
+        if data.get('fim_vigencia') and not data.get('vigencia_fim'):
+            data['vigencia_fim'] = data.pop('fim_vigencia')
+        elif 'fim_vigencia' in data:
+            data.pop('fim_vigencia')
+        if data.get('periodo_inicio') and not data.get('vigencia_inicio'):
+            data['vigencia_inicio'] = data.pop('periodo_inicio')
+        elif 'periodo_inicio' in data:
+            data.pop('periodo_inicio')
+        if data.get('periodo_fim') and not data.get('vigencia_fim'):
+            data['vigencia_fim'] = data.pop('periodo_fim')
+        elif 'periodo_fim' in data:
+            data.pop('periodo_fim')
         return data
 
     def create(self, validated_data):
         from decimal import Decimal
         from django.db import transaction
-        from datetime import datetime, date
-        
+
         condominios_data = validated_data.get('condominios', [])
         file_upload_id = validated_data.get('file_upload_id')
         importacao_id_origem = validated_data.get('importacao_id')
         processed_by_user = validated_data.get('processed_by')
         total_funcionarios = validated_data.get('summary', {}).get('total_funcionarios', 0)
-
-        # ⭐⭐⭐ CORREÇÃO: Obter a administradora do usuário ⭐⭐⭐
-        administradora = None
-        if processed_by_user:
-            # Tenta pegar a administradora do usuário
-            administradora = getattr(processed_by_user, 'administradora', None)
-            
-            # Se não tiver, tenta pegar do perfil/grupo
-            if not administradora and hasattr(processed_by_user, 'perfil'):
-                administradora = getattr(processed_by_user.perfil, 'administradora', None)
-            
-            # Log para debug
-            logger.info(f"Administradora do usuário {processed_by_user.email}: {administradora}")
-        
-        # ⭐⭐⭐ VALIDAÇÃO MAIS CLARA ⭐⭐⭐
-        if not administradora:
-            error_msg = "Usuário não possui administradora vinculada. Verifique o perfil do usuário."
-            logger.error(error_msg)
-            raise serializers.ValidationError({
-                "detail": error_msg,
-                "user_email": processed_by_user.email if processed_by_user else "unknown",
-                "user_id": processed_by_user.id if processed_by_user else None
-            })
 
         # ========== 1. GARANTIR FILE_UPLOAD_ID ==========
         if not file_upload_id and importacao_id_origem:
@@ -182,46 +157,38 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         valor_total_payload = Decimal(str(summary.get('valor_total_beneficios', 0)))
         
         # ========== 3. EXTRAIR COMPETÊNCIA DO PAYLOAD ==========
-        from datetime import datetime, date
-
         competencia_mes = validated_data.get('competencia_mes')
         competencia_ano = validated_data.get('competencia_ano')
         data_competencia = None
-
-        logger.info(f"Competência do payload: mês={competencia_mes}, ano={competencia_ano}")
-
+        
         if competencia_mes and competencia_ano:
+            from datetime import datetime
             try:
                 data_competencia = datetime(int(competencia_ano), int(competencia_mes), 1).date()
-                logger.info(f"Data de competência definida pelo payload: {data_competencia}")
-            except Exception as e:
-                logger.error(f"Erro ao parsear data de competência: {e}")
-
+            except:
+                pass
+        
+        # Fallback: usar vencimento ou periodo_inicio
         if not data_competencia:
-            # Fallback para data de vencimento
-            vencimento = validated_data.get('data_vencimento') or validated_data.get('vencimento')
+            vencimento = validated_data.get('data_vencimento')
             if vencimento:
                 data_competencia = vencimento.replace(day=1)
-                logger.info(f"Data de competência definida pelo vencimento: {data_competencia}")
-
+        
         if not data_competencia:
-            # Fallback para vigência início
-            vigencia_inicio = validated_data.get('vigencia_inicio') or validated_data.get('periodo_inicio')
-            if vigencia_inicio:
-                data_competencia = vigencia_inicio.replace(day=1)
-                logger.info(f"Data de competência definida pela vigência início: {data_competencia}")
-
+            periodo_inicio = validated_data.get('periodo_inicio') or validated_data.get('vigencia_inicio')
+            if periodo_inicio:
+                data_competencia = periodo_inicio.replace(day=1)
+        
         if not data_competencia:
-            # Último fallback: data atual
-            data_competencia = date.today().replace(day=1)
-            logger.warning(f"Usando data atual como competência: {data_competencia}")
-            
-            # ========== 4. VALIDAÇÕES INICIAIS ==========
-            administradora = getattr(processed_by_user, 'administradora', None)
-            if not administradora:
-                raise serializers.ValidationError({
-                    "detail": "Usuário não possui administradora vinculada."
-                })
+            from datetime import date
+            data_competencia = date.today()
+        
+        # ========== 4. VALIDAÇÕES INICIAIS ==========
+        administradora = getattr(processed_by_user, 'administradora', None)
+        if not administradora:
+            raise serializers.ValidationError({
+                "detail": "Usuário não possui administradora vinculada."
+            })
         
         # ========== 5. PREPARAR LISTS PARA BULK OPERATIONS ==========
         cnpj_list = [c['cnpj'] for c in condominios_data]
@@ -231,7 +198,6 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         produtos_raw = []
         for c in condominios_data:
             for f in c.get('funcionarios', []):
-                # CORREÇÃO: Usar 'movimentacoes' em vez de 'beneficios'
                 for m in f.get('movimentacoes', []):
                     codigo = m.get('codigo_produto') or ''
                     produto = m.get('produto') or ''
@@ -369,44 +335,31 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
             vigencia_fim=validated_data.get('vigencia_fim') or validated_data.get('periodo_fim')
         )
         
-        # ========== 13. SALVAR MOVIMENTAÇÕES USANDO O PAYLOAD CORRETAMENTE ==========
+        # ========== 13. SALVAR MOVIMENTAÇÕES USANDO O PAYLOAD DIRETAMENTE ==========
         movimentacoes_to_create = []
         registros_count = 0
-
-        logger.info(f"Condominios: {condominios_data}")
 
         # PERCORRE O PAYLOAD EXATAMENTE COMO ELE VEM DO FRONTEND
         for condo_data in condominios_data:
             for func_data in condo_data.get('funcionarios', []):
-                
-                movimentacoes_fonte = func_data.get('movimentacoes', [])
-                
-                logger.info(f"Processando {func_data.get('nome')} - {len(movimentacoes_fonte)} movimentações")
-                
-                for mov_data in movimentacoes_fonte:
-                    # PEGA OS DADOS DIRETO DO PAYLOAD (COM AS ALTERAÇÕES DO FRONTEND)
-                    codigo_produto = mov_data.get('codigo_produto', '').strip() or mov_data.get('codigo', '').strip()
-                    nome_produto = mov_data.get('nome', '') or mov_data.get('produto', '')
-                    valor_beneficio = Decimal(str(mov_data.get('valor', 0)))
-                    
-                    # ⭐⭐⭐ LOG PARA DEBUG - MOSTRA O VALOR QUE ESTÁ SENDO SALVO ⭐⭐⭐
-                    logger.info(f"  - Produto: {codigo_produto}, Valor: {valor_beneficio}")
+                for bene_data in func_data.get('beneficios', []):  # USA beneficios do payload
+                    # PEGA OS DADOS DIRETO DO PAYLOAD
+                    codigo_produto = bene_data.get('codigo', '').strip()
+                    nome_produto = bene_data.get('nome', '')
+                    valor_beneficio = Decimal(str(bene_data.get('valor', 0)))
                     
                     # PULA SE NÃO TIVER VALOR
                     if valor_beneficio == 0:
-                        logger.warning(f"  - Pulando movimentação com valor 0: {codigo_produto}")
                         continue
                     
-                    # ENCONTRA OU CRIA O PRODUTO
+                    # ENCONTRA OU CRIA O PRODUTO (SIMPLES)
                     prod_obj = existing_prods.get(codigo_produto)
                     if not prod_obj and codigo_produto:
-                        prod_obj, created = Produto.objects.get_or_create(
+                        prod_obj, _ = Produto.objects.get_or_create(
                             codigo_produto=codigo_produto,
                             defaults={'nome': nome_produto or codigo_produto}
                         )
-                        if created:
-                            existing_prods[codigo_produto] = prod_obj
-                            logger.info(f"  - Criado novo produto: {codigo_produto}")
+                        existing_prods[codigo_produto] = prod_obj
                     
                     if not prod_obj:
                         logger.warning(f"Produto não encontrado/criado para código: {codigo_produto}")
@@ -420,15 +373,15 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                         logger.warning(f"Condomínio ou funcionário não encontrado: {condo_data.get('cnpj')} / {func_data.get('cpf')}")
                         continue
                     
-                    # CRIA A MOVIMENTAÇÃO COM OS VALORES DO PAYLOAD (QUE JÁ INCLUI AS ALTERAÇÕES)
+                    # CRIA A MOVIMENTAÇÃO COM OS VALORES DO PAYLOAD
                     movimentacoes_to_create.append(MovimentacaoBeneficio(
                         importacao=importacao,
                         empresa_cnpj=condo_obj,
                         funcionario_cpf=func_obj,
                         produto_codigo=prod_obj,
                         data_competencia=data_competencia,
-                        valor_beneficio=valor_beneficio,  # ⭐⭐⭐ VALOR ALTERADO PELO FRONTEND ⭐⭐⭐
-                        quantidade_dias=mov_data.get('quantidade', 1)
+                        valor_beneficio=valor_beneficio,  # VALOR JÁ CORRETO DO FRONTEND
+                        quantidade_dias=1
                     ))
                     registros_count += 1
 
@@ -436,23 +389,22 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         movimentacoes_salvas = 0
         if movimentacoes_to_create:
             try:
-                movimentacoes_salvas = MovimentacaoBeneficio.objects.bulk_create(
+                MovimentacaoBeneficio.objects.bulk_create(
                     movimentacoes_to_create,
                     ignore_conflicts=True,
                     batch_size=500
                 )
-                movimentacoes_salvas = len(movimentacoes_salvas) if movimentacoes_salvas else len(movimentacoes_to_create)
-                logger.info(f"Salvas {movimentacoes_salvas} movimentações via bulk_create")
+                movimentacoes_salvas = len(movimentacoes_to_create)
             except Exception as e:
                 logger.error(f"Erro no bulk_create: {e}")
-                # Fallback para save individual
+                # Fallback: salva um por um
                 for mov in movimentacoes_to_create:
                     try:
                         mov.save()
                         movimentacoes_salvas += 1
                     except Exception as e2:
                         logger.error(f"Erro ao salvar individual: {e2}")
-                
+        
         # ========== 14. ATUALIZAR ESTATÍSTICAS ==========
         importacao.total_registros = registros_count
         importacao.registros_processados = movimentacoes_salvas

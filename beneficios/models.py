@@ -72,7 +72,6 @@ class Importacao(models.Model):
     def __str__(self):
         return f"Importação #{self.id} - {self.data_importacao.strftime('%d/%m/%Y %H:%M')}"
 
-
 # Modelo PRODUTO (Catálogo de Benefícios)
 class Produto(models.Model):
     TIPO_CHOICES = [
@@ -109,7 +108,6 @@ class Produto(models.Model):
 
     def get_tipo_display_or_codigo(self):
         return self.get_tipo_display() if self.tipo else self.codigo_produto
-
 
 # Modelo MOVIMENTACAO_BENEFICIO (Tabela de Fatos)
 class MovimentacaoBeneficio(models.Model):
@@ -176,7 +174,7 @@ class MovimentacaoBeneficio(models.Model):
     def __str__(self):
         return f"{self.produto_codigo} - {self.funcionario_cpf} ({self.data_competencia})"
 
-
+# Modelo FATURAMENTO (Processamento e Geração de Documentos)
 class Faturamento(models.Model):
     STATUS_CHOICES = [
         ('PENDING', 'Pendente'),
@@ -219,7 +217,7 @@ class Faturamento(models.Model):
     def __str__(self):
         return f"Faturamento #{self.id} - {self.competencia}"
 
-
+# Modelo FATURAMENTO_DOCUMENTO (Documentos Gerados no Faturamento)
 class FaturamentoDocumento(models.Model):
     faturamento = models.ForeignKey(
         Faturamento,

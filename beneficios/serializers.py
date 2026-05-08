@@ -32,8 +32,31 @@ class FuncionarioSerializer(serializers.Serializer):
     departamento = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
     funcao = serializers.CharField(max_length=100, required=False, allow_blank=True, allow_null=True)
     data_nascimento = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    cep = serializers.CharField(max_length=10, required=False, allow_null=True, allow_blank=True)
+    endereco_rua = serializers.CharField(max_length=255, required=False, allow_null=True, allow_blank=True)
+    endereco_numero = serializers.CharField(max_length=20, required=False, allow_null=True, allow_blank=True)
+    endereco_complemento = serializers.CharField(max_length=100, required=False, allow_null=True, allow_blank=True)
+    endereco_bairro = serializers.CharField(max_length=100, required=False, allow_null=True, allow_blank=True)
     valor_bene = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, allow_null=True)
-    movimentacoes = MovimentacaoSerializer(many=True)
+    
+    # ⭐⭐⭐ ACEITA AMBOS OS CAMPOS ⭐⭐⭐
+    movimentacoes = MovimentacaoSerializer(many=True, required=False)
+    
+    def to_internal_value(self, data):
+        modified_data = data.copy()
+
+        if 'beneficios' in modified_data and modified_data['beneficios']:
+            modified_data['movimentacoes'] = modified_data.pop('beneficios')
+
+        return super().to_internal_value(modified_data)
+    
+    def validate(self, data):
+        # Garante que pelo menos um dos dois exista
+        if not data.get('movimentacoes') and not data.get('beneficios'):
+            raise serializers.ValidationError({
+                "movimentacoes": "É necessário informar movimentacoes ou beneficios"
+            })
+        return data
 
 class CondominioSerializer(serializers.Serializer):
     nome = serializers.CharField(max_length=255)
