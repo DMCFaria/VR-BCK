@@ -2,6 +2,7 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+import logging
 
 from .models import Condominio, Funcionario, Administradora, VinculoCondominio, Gerente
 from .serializers import (
@@ -12,6 +13,7 @@ from .serializers import (
     GerenteSerializer
 )
 
+logger = logging.getLogger(__name__)
 
 class CondominioViewSet(viewsets.ModelViewSet):
     queryset = Condominio.objects.all()
@@ -20,19 +22,121 @@ class CondominioViewSet(viewsets.ModelViewSet):
     lookup_field = 'cnpj'
 
     def get_queryset(self):
-        queryset = super().get_queryset()
-        administradora_id = self.request.query_params.get('administradora')
-        if administradora_id:
-            queryset = queryset.filter(
-                vinculocondominio__administradora_id=administradora_id
-            ).distinct()
-        return queryset
+        try:
+            queryset = super().get_queryset()
+            administradora_id = self.request.query_params.get('administradora')
+
+            logger.info(
+                f'[CondominioViewSet] GET queryset | administradora={administradora_id}'
+            )
+
+            if administradora_id:
+                queryset = queryset.filter(
+                    vinculocondominio__administradora_id=administradora_id
+                ).distinct()
+
+            logger.info(
+                f'[CondominioViewSet] Total encontrados: {queryset.count()}'
+            )
+
+            return queryset
+
+        except Exception as e:
+            logger.exception(
+                f'[CondominioViewSet] Erro no get_queryset: {str(e)}'
+            )
+            return Condominio.objects.none()
+
+    def create(self, request, *args, **kwargs):
+        logger.info(
+            f'[CondominioViewSet] Payload recebido: {request.data}'
+        )
+
+        serializer = self.get_serializer(data=request.data)
+
+        if not serializer.is_valid():
+            logger.error(
+                f'[CondominioViewSet] Erros serializer: {serializer.errors}'
+            )
+
+            return Response(
+                serializer.errors,
+                status=400
+            )
+
+        try:
+            self.perform_create(serializer)
+
+            logger.info(
+                f'[CondominioViewSet] Condomínio criado com sucesso: {serializer.data}'
+            )
+
+            return Response(
+                serializer.data,
+                status=201
+            )
+
+        except Exception as e:
+            logger.exception(
+                f'[CondominioViewSet] Erro ao salvar condomínio: {str(e)}'
+            )
+
+            return Response(
+                {'erro': str(e)},
+                status=500
+            )
 
 class FuncionarioViewSet(viewsets.ModelViewSet):
     queryset = Funcionario.objects.all()
     serializer_class = FuncionarioSerializer
     permission_classes = [IsAuthenticated]
     lookup_field = 'cpf'
+
+    def create(self, request, *args, **kwargs):
+        logger.info(f'[FuncionarioViewSet][CREATE] payload={request.data}')
+
+        serializer = self.get_serializer(data=request.data)
+
+        if not serializer.is_valid():
+            logger.error(
+                f'[FuncionarioViewSet][CREATE] errors={serializer.errors}'
+            )
+            return Response(serializer.errors, status=400)
+
+        self.perform_create(serializer)
+
+        logger.info(
+            f'[FuncionarioViewSet][CREATE] salvo={serializer.data}'
+        )
+
+        return Response(serializer.data, status=201)
+
+    def update(self, request, *args, **kwargs):
+        logger.info(f'[FuncionarioViewSet][UPDATE] payload={request.data}')
+
+        partial = kwargs.pop('partial', False)
+
+        instance = self.get_object()
+
+        serializer = self.get_serializer(
+            instance,
+            data=request.data,
+            partial=partial
+        )
+
+        if not serializer.is_valid():
+            logger.error(
+                f'[FuncionarioViewSet][UPDATE] errors={serializer.errors}'
+            )
+            return Response(serializer.errors, status=400)
+
+        self.perform_update(serializer)
+
+        logger.info(
+            f'[FuncionarioViewSet][UPDATE] salvo={serializer.data}'
+        )
+
+        return Response(serializer.data)
 
 class AdministradoraViewSet(viewsets.ModelViewSet):
     queryset = Administradora.objects.all()

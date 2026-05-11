@@ -3,16 +3,38 @@ from .models import Condominio, Funcionario, Administradora, VinculoCondominio, 
 
 
 class CondominioSerializer(serializers.ModelSerializer):
+
+    def validate_cnpj(self, value):
+        cnpj = ''.join(filter(str.isdigit, str(value)))
+
+        if not cnpj:
+            raise serializers.ValidationError('CNPJ obrigatório.')
+
+        if len(cnpj) != 14:
+            raise serializers.ValidationError('CNPJ inválido.')
+
+        return cnpj
+
     class Meta:
         model = Condominio
         fields = '__all__'
-        read_only_fields = ('cnpj',)
 
 class FuncionarioSerializer(serializers.ModelSerializer):
+
+    def validate_cpf(self, value):
+        cpf = ''.join(filter(str.isdigit, str(value)))
+
+        if not cpf:
+            raise serializers.ValidationError('CPF obrigatório.')
+
+        if len(cpf) != 11:
+            raise serializers.ValidationError('CPF inválido.')
+
+        return cpf
+
     class Meta:
         model = Funcionario
         fields = '__all__'
-        read_only_fields = ('cpf',)
 
 class AdministradoraSerializer(serializers.ModelSerializer):
     class Meta:

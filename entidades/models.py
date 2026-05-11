@@ -129,6 +129,17 @@ class Funcionario(models.Model):
     endereco_numero = models.CharField(max_length=20, blank=True, null=True, verbose_name="Número")
     endereco_complemento = models.CharField(max_length=100, blank=True, null=True, verbose_name="Complemento")
     endereco_bairro = models.CharField(max_length=100, verbose_name="Bairro", blank=True, null=True)
+    
+    telefone = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True
+    )
+
+    email = models.EmailField(
+        blank=True,
+        null=True
+    )
 
     class Meta:
         verbose_name = "Funcionário"
