@@ -39,7 +39,6 @@ class FuncionarioSerializer(serializers.Serializer):
     endereco_bairro = serializers.CharField(max_length=100, required=False, allow_null=True, allow_blank=True)
     valor_bene = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, allow_null=True)
     
-    # ⭐⭐⭐ ACEITA AMBOS OS CAMPOS ⭐⭐⭐
     movimentacoes = MovimentacaoSerializer(many=True, required=False)
     
     def to_internal_value(self, data):

@@ -49,22 +49,23 @@ class MovimentacaoSerializer(serializers.Serializer):
 class FuncionarioSerializer(serializers.Serializer):
     nome = serializers.CharField(max_length=255)
     cpf = serializers.CharField(max_length=14)
-    matricula = serializers.CharField(max_length=50)
-    departamento = serializers.CharField(max_length=255)
-    funcao = serializers.CharField(max_length=100)
+    matricula = serializers.CharField(max_length=50, required=False, allow_blank=True, allow_null=True)
+    departamento = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
+    funcao = serializers.CharField(max_length=100, required=False, allow_blank=True, allow_null=True)
     data_nascimento = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     cep = serializers.CharField(max_length=10, required=False, allow_null=True, allow_blank=True)
     endereco_rua = serializers.CharField(max_length=255, required=False, allow_null=True, allow_blank=True)
     endereco_numero = serializers.CharField(max_length=20, required=False, allow_null=True, allow_blank=True)
     endereco_complemento = serializers.CharField(max_length=100, required=False, allow_null=True, allow_blank=True)
     endereco_bairro = serializers.CharField(max_length=100, required=False, allow_null=True, allow_blank=True)
-    valor_bene = serializers.DecimalField(max_digits=12, decimal_places=2)
-    movimentacoes = MovimentacaoSerializer(many=True)
+    valor_bene = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, default=0)
+    movimentacoes = MovimentacaoSerializer(many=True, required=False, default=[])
+    condominio = serializers.CharField(max_length=20, required=False, allow_null=True, allow_blank=True)
 
 class CondominioSerializer(serializers.Serializer):
     nome = serializers.CharField(max_length=255)
     cnpj = serializers.CharField(max_length=20)
-    valor_condo = serializers.DecimalField(max_digits=12, decimal_places=2)
+    valor_condo = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, default=0)
     rua = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     numero = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     complemento = serializers.CharField(required=False, allow_blank=True, allow_null=True)
@@ -110,7 +111,6 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 "detail": "Informe file_upload_id ou importacao_id."
             })
         
-        # Apenas normalizar para vigencia_inicio/vigencia_fim se necessário
         if 'periodo_inicio' in data and data['periodo_inicio'] and not data.get('vigencia_inicio'):
             data['vigencia_inicio'] = data['periodo_inicio']
         
@@ -139,16 +139,14 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         processed_by_user = validated_data.get('processed_by')
         total_funcionarios = validated_data.get('summary', {}).get('total_funcionarios', 0)
 
+        # ========== 1. VALIDAR ADMINISTRADORA ==========
         administradora = None
         if processed_by_user:
-            # Tenta pegar a administradora do usuário
             administradora = getattr(processed_by_user, 'administradora', None)
             
-            # Se não tiver, tenta pegar do perfil/grupo
             if not administradora and hasattr(processed_by_user, 'perfil'):
                 administradora = getattr(processed_by_user.perfil, 'administradora', None)
             
-            # Log para debug
             logger.info(f"Administradora do usuário {processed_by_user.email}: {administradora}")
         
         if not administradora:
@@ -160,7 +158,7 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 "user_id": processed_by_user.id if processed_by_user else None
             })
 
-        # ========== 1. GARANTIR FILE_UPLOAD_ID ==========
+        # ========== 2. GARANTIR FILE_UPLOAD_ID ==========
         if not file_upload_id and importacao_id_origem:
             last_fu = FileUpload.objects.order_by('-id').first()
             new_id = (last_fu.id + 1) if last_fu else 1
@@ -171,13 +169,11 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
             )
             file_upload_id = fu.id
         
-        # ========== 2. EXTRAIR VALOR TOTAL DO PAYLOAD (FONTE DA VERDADE) ==========
+        # ========== 3. EXTRAIR VALOR TOTAL ==========
         summary = validated_data.get('summary', {})
         valor_total_payload = Decimal(str(summary.get('valor_total_beneficios', 0)))
         
-        # ========== 3. EXTRAIR COMPETÊNCIA DO PAYLOAD ==========
-        from datetime import datetime, date
-
+        # ========== 4. EXTRAIR COMPETÊNCIA ==========
         competencia_mes = validated_data.get('competencia_mes')
         competencia_ano = validated_data.get('competencia_ano')
         data_competencia = None
@@ -192,40 +188,35 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 logger.error(f"Erro ao parsear data de competência: {e}")
 
         if not data_competencia:
-            # Fallback para data de vencimento
             vencimento = validated_data.get('data_vencimento') or validated_data.get('vencimento')
             if vencimento:
                 data_competencia = vencimento.replace(day=1)
                 logger.info(f"Data de competência definida pelo vencimento: {data_competencia}")
 
         if not data_competencia:
-            # Fallback para vigência início
             vigencia_inicio = validated_data.get('vigencia_inicio') or validated_data.get('periodo_inicio')
             if vigencia_inicio:
                 data_competencia = vigencia_inicio.replace(day=1)
                 logger.info(f"Data de competência definida pela vigência início: {data_competencia}")
 
         if not data_competencia:
-            # Último fallback: data atual
             data_competencia = date.today().replace(day=1)
             logger.warning(f"Usando data atual como competência: {data_competencia}")
-            
-            # ========== 4. VALIDAÇÕES INICIAIS ==========
-            administradora = getattr(processed_by_user, 'administradora', None)
-            if not administradora:
-                raise serializers.ValidationError({
-                    "detail": "Usuário não possui administradora vinculada."
-                })
         
         # ========== 5. PREPARAR LISTS PARA BULK OPERATIONS ==========
-        cnpj_list = [c['cnpj'] for c in condominios_data]
-        cpf_list = list(set(f['cpf'] for c in condominios_data for f in c.get('funcionarios', [])))
+        # Normalizar CNPJ e CPF
+        for condo in condominios_data:
+            condo['cnpj'] = ''.join(filter(str.isdigit, str(condo.get('cnpj', ''))))
+            for func in condo.get('funcionarios', []):
+                func['cpf'] = ''.join(filter(str.isdigit, str(func.get('cpf', '')))).zfill(11)
+        
+        cnpj_list = [c['cnpj'] for c in condominios_data if c.get('cnpj')]
+        cpf_list = list(set(f['cpf'] for c in condominios_data for f in c.get('funcionarios', []) if f.get('cpf')))
         
         # Extrair produtos únicos
         produtos_raw = []
         for c in condominios_data:
             for f in c.get('funcionarios', []):
-                # CORREÇÃO: Usar 'movimentacoes' em vez de 'beneficios'
                 for m in f.get('movimentacoes', []):
                     codigo = m.get('codigo_produto') or ''
                     produto = m.get('produto') or ''
@@ -252,9 +243,11 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         condos_to_update = []
         
         for condo in condominios_data:
-            if condo['cnpj'] not in existing_condos:
+            cnpj_limpo = condo['cnpj']
+            
+            if cnpj_limpo not in existing_condos:
                 condos_to_create.append(Condominio(
-                    cnpj=condo['cnpj'],
+                    cnpj=cnpj_limpo,
                     nome=condo['nome'],
                     tipo_local='CONDOMINIO',
                     endereco=condo.get('rua', ''),
@@ -266,20 +259,32 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                     cep=condo.get('cep', '')
                 ))
             else:
-                condo_obj = existing_condos[condo['cnpj']]
+                condo_obj = existing_condos[cnpj_limpo]
                 updated = False
+                
+                if condo.get('nome') and condo_obj.nome != condo['nome']:
+                    condo_obj.nome = condo['nome']
+                    updated = True
+                
                 if condo.get('rua') and not condo_obj.endereco:
                     condo_obj.endereco = condo['rua']
                     updated = True
+                    
                 if updated:
                     condos_to_update.append(condo_obj)
         
         if condos_to_create:
             Condominio.objects.bulk_create(condos_to_create, ignore_conflicts=True)
+            logger.info(f"Criados {len(condos_to_create)} novos condomínios")
+
         if condos_to_update:
-            Condominio.objects.bulk_update(condos_to_update, ['endereco'])
+            Condominio.objects.bulk_update(condos_to_update, ['nome', 'endereco'])
+            logger.info(f"Atualizados {len(condos_to_update)} condomínios existentes")
         
-        # ========== 8. CRIAR/ATUALIZAR FUNCIONÁRIOS ==========
+        # Recarregar condomínios após criação
+        existing_condos = {c.cnpj: c for c in Condominio.objects.filter(cnpj__in=cnpj_list)}
+        
+        # ========== 8. CRIAR/ATUALIZAR FUNCIONÁRIOS COM VÍNCULO (CORREÇÃO PRINCIPAL) ==========
         funcs_to_create = []
         funcs_to_update = []
         
@@ -290,37 +295,121 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
             invalid_dates = {'0001-01-01', '0000-00-00', '0020-00-00', '1900-01-01'}
             if val_str in invalid_dates or val_str.startswith('000') or val_str == '00-00-0000':
                 return None
-            return val
+            return val_str if val_str else None
         
         for c in condominios_data:
+            condo_obj = existing_condos.get(c['cnpj'])
+            if not condo_obj:
+                logger.warning(f"Condomínio não encontrado para CNPJ: {c['cnpj']}")
+                continue
+                
             for f in c.get('funcionarios', []):
-                if f['cpf'] not in existing_funcs:
+                cpf_normalizado = f['cpf']
+                
+                # Validar CPF
+                if len(cpf_normalizado) != 11:
+                    logger.warning(f"CPF inválido para {f.get('nome')}: {cpf_normalizado}")
+                    continue
+                
+                # Normalizar data de nascimento
+                data_nascimento = f.get('data_nascimento')
+                if data_nascimento and isinstance(data_nascimento, str):
+                    try:
+                        data_nascimento = datetime.strptime(data_nascimento, '%Y-%m-%d').date()
+                    except ValueError:
+                        try:
+                            data_nascimento = datetime.strptime(data_nascimento, '%d/%m/%Y').date()
+                        except ValueError:
+                            data_nascimento = None
+                
+                if cpf_normalizado not in existing_funcs:
+                    # CRIAR novo funcionário com vínculo
                     funcs_to_create.append(Funcionario(
-                        cpf=f['cpf'],
-                        nome=f['nome'],
-                        matricula=f.get('matricula', ''),
-                        funcao=f.get('funcao', ''),
-                        data_nascimento=_normalize_date(f.get('data_nascimento')),
-                        departamento=f.get('departamento', ''),
-                        cep=f.get('cep', ''),
-                        endereco_rua=f.get('endereco_rua', ''),
-                        endereco_numero=f.get('endereco_numero', ''),
-                        endereco_complemento=f.get('endereco_complemento', ''),
-                        endereco_bairro=f.get('endereco_bairro', '')
+                        cpf=cpf_normalizado,
+                        nome=f['nome'][:255],
+                        matricula=f.get('matricula', '')[:50],
+                        funcao=f.get('funcao', '')[:100],
+                        data_nascimento=data_nascimento,
+                        departamento=f.get('departamento', c['nome'])[:255],
+                        condominio=condo_obj,  # 🔧 CORREÇÃO: vincula ao condomínio
+                        cep=f.get('cep', '')[:10],
+                        endereco_rua=f.get('endereco_rua', '')[:255],
+                        endereco_numero=f.get('endereco_numero', '')[:20],
+                        endereco_complemento=f.get('endereco_complemento', '')[:100],
+                        endereco_bairro=f.get('endereco_bairro', '')[:100]
                     ))
+                    logger.info(f"Preparado para criar funcionário {f['nome']} vinculado a {condo_obj.nome}")
                 else:
-                    func_obj = existing_funcs[f['cpf']]
+                    # ATUALIZAR funcionário existente
+                    func_obj = existing_funcs[cpf_normalizado]
                     updated = False
-                    if f.get('cep') and func_obj.cep != f['cep']:
-                        func_obj.cep = f['cep']
+                    
+                    # Atualizar condomínio (vinculação)
+                    if func_obj.condominio != condo_obj:
+                        func_obj.condominio = condo_obj
                         updated = True
+                        logger.info(f"Vinculando {func_obj.nome} ao condomínio {condo_obj.nome}")
+                    
+                    # Atualizar departamento se vazio
+                    if not func_obj.departamento and f.get('departamento'):
+                        func_obj.departamento = f['departamento'][:255]
+                        updated = True
+                    elif not func_obj.departamento:
+                        func_obj.departamento = c['nome'][:255]
+                        updated = True
+                    
+                    # Atualizar endereço se vazio
+                    if not func_obj.cep and f.get('cep'):
+                        func_obj.cep = f['cep'][:10]
+                        updated = True
+                    
+                    # Atualizar função se vazia
+                    if not func_obj.funcao and f.get('funcao'):
+                        func_obj.funcao = f['funcao'][:100]
+                        updated = True
+                    
+                    # Atualizar data de nascimento se vazia
+                    if not func_obj.data_nascimento and data_nascimento:
+                        func_obj.data_nascimento = data_nascimento
+                        updated = True
+                    
                     if updated:
                         funcs_to_update.append(func_obj)
         
+        # Criar novos funcionários
         if funcs_to_create:
-            Funcionario.objects.bulk_create(funcs_to_create, ignore_conflicts=True)
+            try:
+                Funcionario.objects.bulk_create(funcs_to_create, ignore_conflicts=True)
+                logger.info(f"Criados {len(funcs_to_create)} novos funcionários com vínculo")
+            except Exception as e:
+                logger.error(f"Erro ao criar funcionários: {e}")
+                # Fallback: criar um por um
+                for func in funcs_to_create:
+                    try:
+                        func.save()
+                        logger.info(f"Criado funcionário {func.nome} via fallback")
+                    except Exception as e2:
+                        logger.error(f"Erro ao criar {func.nome}: {e2}")
+
+        # Atualizar funcionários existentes
         if funcs_to_update:
-            Funcionario.objects.bulk_update(funcs_to_update, ['cep'])
+            try:
+                Funcionario.objects.bulk_update(
+                    funcs_to_update, 
+                    ['condominio', 'departamento', 'cep', 'funcao', 'data_nascimento']
+                )
+                logger.info(f"Atualizados {len(funcs_to_update)} funcionários existentes")
+            except Exception as e:
+                logger.error(f"Erro ao atualizar funcionários: {e}")
+                for func in funcs_to_update:
+                    try:
+                        func.save(update_fields=['condominio', 'departamento', 'cep', 'funcao', 'data_nascimento'])
+                        logger.info(f"Atualizado funcionário {func.nome} via fallback")
+                    except Exception as e2:
+                        logger.error(f"Erro ao atualizar {func.nome}: {e2}")
+        
+        # Recarregar funcionários após criação/atualização
+        existing_funcs = {f.cpf: f for f in Funcionario.objects.filter(cpf__in=cpf_list)}
         
         # ========== 9. CRIAR PRODUTOS QUE NÃO EXISTEM ==========
         prod_map = {}
@@ -331,24 +420,24 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         prods_to_create = []
         for key, nome in prod_map.items():
             if key not in existing_prods:
-                prods_to_create.append(Produto(codigo_produto=key, nome=nome))
+                prods_to_create.append(Produto(codigo_produto=key, nome=nome[:255]))
         
         if prods_to_create:
             Produto.objects.bulk_create(prods_to_create, ignore_conflicts=True)
+            logger.info(f"Criados {len(prods_to_create)} novos produtos")
         
-        # ========== 10. RECARREGAR ENTIDADES APÓS CRIAÇÃO ==========
-        existing_condos = {c.cnpj: c for c in Condominio.objects.filter(cnpj__in=cnpj_list)}
-        existing_funcs = {f.cpf: f for f in Funcionario.objects.filter(cpf__in=cpf_list)}
+        # Recarregar produtos
         existing_prods = {p.codigo_produto: p for p in Produto.objects.filter(codigo_produto__in=prod_key_list)}
         
-        # ========== 11. CRIAR VÍNCULOS CONDOMÍNIO-ADMINISTRADORA ==========
-        condos_to_vinc = [c for c in cnpj_list if not VinculoCondominio.objects.filter(
+        # ========== 10. CRIAR VÍNCULOS CONDOMÍNIO-ADMINISTRADORA ==========
+        condos_to_vinc = [c for c in cnpj_list if c and not VinculoCondominio.objects.filter(
             administradora=administradora, condominio_id=c).exists()]
         if condos_to_vinc:
             vinculos = [VinculoCondominio(administradora=administradora, condominio_id=c) for c in condos_to_vinc]
             VinculoCondominio.objects.bulk_create(vinculos, ignore_conflicts=True)
+            logger.info(f"Criados {len(vinculos)} vínculos condomínio-administradora")
         
-        # ========== 12. CRIAR IMPORTAÇÃO COM VALOR TOTAL ==========
+        # ========== 11. CRIAR IMPORTAÇÃO ==========
         importacao = Importacao.objects.create(
             file_upload_id=file_upload_id,
             usuario=processed_by_user,
@@ -362,58 +451,46 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
             vigencia_inicio=validated_data.get('vigencia_inicio') or validated_data.get('periodo_inicio'),
             vigencia_fim=validated_data.get('vigencia_fim') or validated_data.get('periodo_fim')
         )
+        logger.info(f"Importação {importacao.id} criada. Valor total: {valor_total_payload}")
         
-        # ========== 13. SALVAR MOVIMENTAÇÕES USANDO O PAYLOAD CORRETAMENTE ==========
+        # ========== 12. SALVAR MOVIMENTAÇÕES ==========
         movimentacoes_to_create = []
         registros_count = 0
 
-        logger.info(f"Condominios: {condominios_data}")
-
-        # PERCORRE O PAYLOAD EXATAMENTE COMO ELE VEM DO FRONTEND
         for condo_data in condominios_data:
+            condo_obj = existing_condos.get(condo_data['cnpj'])
+            if not condo_obj:
+                continue
+                
             for func_data in condo_data.get('funcionarios', []):
+                func_obj = existing_funcs.get(func_data['cpf'])
+                if not func_obj:
+                    logger.warning(f"Funcionário não encontrado: {func_data.get('cpf')}")
+                    continue
                 
                 movimentacoes_fonte = func_data.get('movimentacoes', [])
                 
-                logger.info(f"Processando {func_data.get('nome')} - {len(movimentacoes_fonte)} movimentações")
-                
                 for mov_data in movimentacoes_fonte:
-                    # PEGA OS DADOS DIRETO DO PAYLOAD (COM AS ALTERAÇÕES DO FRONTEND)
                     codigo_produto = mov_data.get('codigo_produto', '').strip() or mov_data.get('codigo', '').strip()
-                    nome_produto = mov_data.get('nome', '') or mov_data.get('produto', '')
                     valor_beneficio = Decimal(str(mov_data.get('valor', 0)))
                     
-                    logger.info(f"  - Produto: {codigo_produto}, Valor: {valor_beneficio}")
-                    
-                    # PULA SE NÃO TIVER VALOR
                     if valor_beneficio == 0:
-                        logger.warning(f"  - Pulando movimentação com valor 0: {codigo_produto}")
                         continue
                     
-                    # ENCONTRA OU CRIA O PRODUTO
                     prod_obj = existing_prods.get(codigo_produto)
                     if not prod_obj and codigo_produto:
                         prod_obj, created = Produto.objects.get_or_create(
                             codigo_produto=codigo_produto,
-                            defaults={'nome': nome_produto or codigo_produto}
+                            defaults={'nome': mov_data.get('produto', '') or codigo_produto}
                         )
                         if created:
                             existing_prods[codigo_produto] = prod_obj
-                            logger.info(f"  - Criado novo produto: {codigo_produto}")
+                            logger.info(f"Criado novo produto: {codigo_produto}")
                     
                     if not prod_obj:
-                        logger.warning(f"Produto não encontrado/criado para código: {codigo_produto}")
+                        logger.warning(f"Produto não encontrado para código: {codigo_produto}")
                         continue
                     
-                    # ENCONTRA O CONDOMÍNIO E FUNCIONÁRIO
-                    condo_obj = existing_condos.get(condo_data['cnpj'])
-                    func_obj = existing_funcs.get(func_data['cpf'])
-                    
-                    if not condo_obj or not func_obj:
-                        logger.warning(f"Condomínio ou funcionário não encontrado: {condo_data.get('cnpj')} / {func_data.get('cpf')}")
-                        continue
-                    
-                    # CRIA A MOVIMENTAÇÃO COM OS VALORES DO PAYLOAD (QUE JÁ INCLUI AS ALTERAÇÕES)
                     movimentacoes_to_create.append(MovimentacaoBeneficio(
                         importacao=importacao,
                         empresa_cnpj=condo_obj,
@@ -425,33 +502,32 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                     ))
                     registros_count += 1
 
-        # SALVA TUDO
+        # Salvar movimentações
         movimentacoes_salvas = 0
         if movimentacoes_to_create:
             try:
-                movimentacoes_salvas = MovimentacaoBeneficio.objects.bulk_create(
+                result = MovimentacaoBeneficio.objects.bulk_create(
                     movimentacoes_to_create,
                     ignore_conflicts=True,
                     batch_size=500
                 )
-                movimentacoes_salvas = len(movimentacoes_salvas) if movimentacoes_salvas else len(movimentacoes_to_create)
+                movimentacoes_salvas = len(result) if result else len(movimentacoes_to_create)
                 logger.info(f"Salvas {movimentacoes_salvas} movimentações via bulk_create")
             except Exception as e:
                 logger.error(f"Erro no bulk_create: {e}")
-                # Fallback para save individual
                 for mov in movimentacoes_to_create:
                     try:
                         mov.save()
                         movimentacoes_salvas += 1
                     except Exception as e2:
                         logger.error(f"Erro ao salvar individual: {e2}")
-                
-        # ========== 14. ATUALIZAR ESTATÍSTICAS ==========
+        
+        # ========== 13. ATUALIZAR ESTATÍSTICAS ==========
         importacao.total_registros = registros_count
         importacao.registros_processados = movimentacoes_salvas
         importacao.save()
         
-        # ========== 15. ATUALIZAR FILEUPLOAD ==========
+        # ========== 14. ATUALIZAR FILEUPLOAD ==========
         with transaction.atomic():
             try:
                 file_upload_instance = FileUpload.objects.select_for_update().get(id=file_upload_id)
@@ -459,18 +535,22 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                     file_upload_instance.process_status = 'AGUARDANDO_FATURAMENTO'
                     file_upload_instance.summary_data = summary
                     file_upload_instance.save()
+                    logger.info(f"FileUpload {file_upload_id} atualizado para AGUARDANDO_FATURAMENTO")
             except FileUpload.DoesNotExist:
-                pass
+                logger.warning(f"FileUpload {file_upload_id} não encontrado")
         
-        # ========== 16. LOG ==========
-        logger.info(f"Importação {importacao.id} criada. Valor total: {valor_total_payload}. "
+        # ========== 15. LOG FINAL ==========
+        logger.info(f"Importação {importacao.id} concluída. "
+                    f"Funcionários criados/atualizados: {len(funcs_to_create)}/{len(funcs_to_update)}. "
                     f"Movimentações: {movimentacoes_salvas}/{registros_count}")
         
         return {
             "count": movimentacoes_salvas,
             "status": "AGUARDANDO_FATURAMENTO",
             "importacao_id": importacao.id,
-            "valor_total": float(valor_total_payload)
+            "valor_total": float(valor_total_payload),
+            "funcionarios_criados": len(funcs_to_create),
+            "funcionarios_atualizados": len(funcs_to_update)
         }
 
 class FaturamentoExportSerializer(serializers.Serializer):
