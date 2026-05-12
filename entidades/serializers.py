@@ -39,7 +39,7 @@ class FuncionarioSerializer(serializers.ModelSerializer):
 class AdministradoraSerializer(serializers.ModelSerializer):
     class Meta:
         model = Administradora
-        fields = ['id', 'cnpj', 'nome', 'ativo', 'created_at', 'updated_at']
+        fields = ['id', 'cnpj', 'razao_social', 'ativo', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
 
 class GerenteSerializer(serializers.ModelSerializer):
