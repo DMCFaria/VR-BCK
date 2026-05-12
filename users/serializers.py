@@ -14,6 +14,7 @@ class CustomUserSerializer(serializers.ModelSerializer):
             'first_name', 
             'last_name', 
             'tipo',
+            'administradora_id',
             'created_at'
         )
         read_only_fields = ('email', 'created_at', 'tipo')

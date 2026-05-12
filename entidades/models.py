@@ -4,6 +4,7 @@ from django.db import models
 class Administradora(models.Model):
     cnpj = models.CharField(max_length=20, unique=True, verbose_name="CNPJ")
     nome = models.CharField(max_length=255, verbose_name="Nome/Razão Social")
+    nome_fantasia = models.CharField(max_length=255, verbose_name="Nome Fantasia", null=True, blank=True)
     ativo = models.BooleanField(default=True, verbose_name="Ativo")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

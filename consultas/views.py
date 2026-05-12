@@ -68,3 +68,21 @@ class BuscarAdministradorasPorCNPJ(APIView):
             "data": dados
         })
 
+class BuscarPessoasPorCNPJ(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, cnpj: str, *args, **kwargs):
+        service = FedhubService()
+        dados = service.buscar_pessoa_por_cnpj(cnpj)
+
+        if not dados:
+            return Response(
+                {"sucesso": False, "erro": "Nenhuma pessoa encontrada para o CNPJ fornecido"},
+                status=404
+            )
+
+        return Response({
+            "sucesso": True,
+            "data": dados
+        })

@@ -21,8 +21,10 @@ class UploadView(views.APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
-    def post(self, request, *args, **kwargs):
+    def post(self, request, *args, **kwargs):        
+        # logger.info(f"Received upload request from user: {request.data.get('administradora_id')}")
         serializer = FileUploadSerializer(data=request.data)
+        administradora_id = request.data.get('administradora_id')
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -49,11 +51,11 @@ class UploadView(views.APIView):
             if extension == '.txt':
                 # Executa o seu parser RB original
                 parsed_data = parse_rb_layout(file_path, upload_instance.id)
-                # logger.info(f"Parsed data: {parsed_data}")
+                logger.info(f"Parsed data: {parsed_data}")
             elif extension in ['.xlsx', '.xls', '.csv']:
                 # Quando o diretor decidir o modelo, implementamos aqui
                 parsed_data = parse_excel_layout(file_path, upload_instance.id)
-                # logger.info(f"Parsed data: {parsed_data}")
+                logger.info(f"Parsed data: {parsed_data}")
             
             else:
                 return self._handle_error(upload_instance, f"Extensão {extension} não permitida.")
@@ -68,6 +70,7 @@ class UploadView(views.APIView):
             # logger.info(f"Beneficiary summary: {beneficiary_summary}")
             
             frontend_summary = {
+                "administradora_id": administradora_id,
                 "total_condominios": parsed_data.get("summary", {}).get("total_condominios", 0),
                 "total_funcionarios": parsed_data.get("summary", {}).get("total_funcionarios", 0),
                 "total_movimentacoes": parsed_data.get("summary", {}).get("total_movimentacoes", 0),
@@ -76,6 +79,32 @@ class UploadView(views.APIView):
                 "total_por_beneficiario": beneficiary_summary,
                 "novos_registros": parsed_data.get("novos_registros", {})
             }
+            
+            logger.info(f"Frontend summary before sanitization: {frontend_summary}")
+            
+            
+            # frontend_summary_safe = convert_decimals_to_json_safe(frontend_summary)
+
+            # movimentacoes_detalhada = get_movimentacoes_detalhada(parsed_data)
+
+            # data_to_backend_safe = convert_decimals_to_json_safe({
+            #     **parsed_data,
+            #     "movimentacoes_detalhada": movimentacoes_detalhada,
+            #     "file_upload_id": upload_instance.id
+            # })
+
+            # return Response(
+            #     {
+            #         "file_upload_id": upload_instance.id,
+            #         "status": "PARSED",
+            #         "summary": frontend_summary_safe,
+            #         "data_to_backend": data_to_backend_safe,
+            #         "movimentacoes_detalhada": movimentacoes_detalhada,
+            #         "linhas_com_erro": parsed_data.get("linhas_com_erro", []),
+            #         "detail": "Arquivo processado. Confirme os dados para gravação."
+            #     },
+            #     status=status.HTTP_202_ACCEPTED,
+            # )           
             
             # logger.info(f"Frontend summary: {frontend_summary}")
             

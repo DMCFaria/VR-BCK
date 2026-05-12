@@ -88,6 +88,7 @@ def parse_rb_layout(file_path, file_upload_id):
         "errors": [],
         "linhas_com_erro": [],
         "summary": {
+            "administradora_id": None,
             "total_condominios": 0,
             "total_funcionarios": 0,
             "total_movimentacoes": 0,
