@@ -113,7 +113,11 @@ class UploadView(views.APIView):
                 # Reposicionar o ponteiro no início do arquivo
                 file_obj.seek(0)
                 s3.upload_fileobj(file_obj, "fedcorp-prod", f"VR - DOCS/importacoes/{new_file_name}")
-            
+
+            # Remove o arquivo local do disco — já foi processado e está no S3
+            if os.path.exists(file_path):
+                os.remove(file_path)
+
             return Response(
                 {
                     "file_upload_id": upload_instance.id,
@@ -127,6 +131,8 @@ class UploadView(views.APIView):
             )
 
         except Exception as e:
+            if os.path.exists(file_path):
+                os.remove(file_path)
             return self._handle_error(upload_instance, f"Erro inesperado: {str(e)}")
 
     def _handle_error(self, instance, message):

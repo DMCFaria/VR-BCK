@@ -11,6 +11,8 @@ class Importacao(models.Model):
         ('PENDING', 'Pendente'),
         ('PROCESSING', 'Processando'),
         ('AGUARDANDO_FATURAMENTO', 'Aguardando Faturamento'),
+        ('FATURADO', 'Faturado'),
+        ('CANCELADO', 'Cancelado'),
         ('COMPLETED', 'Concluída'),
         ('FAILED', 'Falhou'),
     ]
@@ -110,76 +112,13 @@ class Produto(models.Model):
         return self.get_tipo_display() if self.tipo else self.codigo_produto
 
 # Modelo MOVIMENTACAO_BENEFICIO (Tabela de Fatos)
-class MovimentacaoBeneficio(models.Model):
-    TIPO_CHOICES = [
-        ('APROVADO', 'Aprovado'),
-        ('CANCELADO', 'Cancelado'),
-        ('EM FATURAMENTO', 'Em Faturamento'),
-        ('FATURADO', 'Faturado'),
-    ]
-    
-    status = models.CharField(
-        max_length=30,
-        choices=TIPO_CHOICES,
-        default='APROVADO',
-        verbose_name="Status"
-    )
-    
-    # Relacionamentos
-    empresa_cnpj = models.ForeignKey(
-        Condominio, 
-        on_delete=models.CASCADE, 
-        verbose_name="Condomínio"
-    )
-    funcionario_cpf = models.ForeignKey(
-        Funcionario, 
-        on_delete=models.CASCADE, 
-        verbose_name="Funcionário"
-    )
-    produto_codigo = models.ForeignKey(
-        Produto, 
-        on_delete=models.CASCADE,
-        verbose_name="Produto"
-    )
-    importacao = models.ForeignKey(
-        Importacao,
-        on_delete=models.SET_NULL,
-        verbose_name="Importação",
-        null=True,
-        blank=True,
-        related_name='movimentacoes'
-    )
-
-    # Dados da Transação
-    data_competencia = models.DateField(verbose_name="Data de Competência")
-    valor_beneficio = models.DecimalField(
-        max_digits=12, 
-        decimal_places=2, 
-        verbose_name="Valor do Benefício"
-    )
-    quantidade_dias = models.IntegerField(verbose_name="Quantidade", default=0)
-
-    class Meta:
-        verbose_name = "Movimentação de Benefício"
-        verbose_name_plural = "Movimentações de Benefício"
-        
-        # Unicidade para não duplicar lançamento no mesmo mês
-        unique_together = (
-            'empresa_cnpj', 
-            'funcionario_cpf', 
-            'produto_codigo', 
-            'data_competencia'
-        )
-
-    def __str__(self):
-        return f"{self.produto_codigo} - {self.funcionario_cpf} ({self.data_competencia})"
-
 # Modelo FATURAMENTO (Processamento e Geração de Documentos)
 class Faturamento(models.Model):
     STATUS_CHOICES = [
         ('PENDING', 'Pendente'),
         ('PROCESSING', 'Processando'),
         ('COMPLETED', 'Concluído'),
+        ('FATURADO', 'Faturado'),
         ('FAILED', 'Falhou'),
     ]
 
@@ -243,3 +182,69 @@ class FaturamentoDocumento(models.Model):
 
     def __str__(self):
         return f"{self.condominio.cnpj} - {self.faturamento.id}"
+
+
+
+class MovimentacaoBeneficio(models.Model):
+    
+    fat_status = models.CharField(
+        max_length=30,
+        choices=Faturamento.STATUS_CHOICES,
+        default='PENDING',
+        verbose_name="Status"
+    )
+    
+    # Relacionamentos
+    empresa_cnpj = models.ForeignKey(
+        Condominio, 
+        on_delete=models.CASCADE, 
+        verbose_name="Condomínio"
+    )
+    funcionario_cpf = models.ForeignKey(
+        Funcionario, 
+        on_delete=models.CASCADE, 
+        verbose_name="Funcionário"
+    )
+    produto_codigo = models.ForeignKey(
+        Produto, 
+        on_delete=models.CASCADE,
+        verbose_name="Produto"
+    )
+    importacao = models.ForeignKey(
+        Importacao,
+        on_delete=models.SET_NULL,
+        verbose_name="Importação",
+        null=True,
+        blank=True,
+        related_name='movimentacoes'
+    )
+    importacao_status = models.CharField(
+        max_length=30,
+        choices=Importacao.STATUS_CHOICES,
+        default='PENDING',
+        verbose_name="Status da Importação"
+    )
+
+    # Dados da Transação
+    data_competencia = models.DateField(verbose_name="Data de Competência")
+    valor_beneficio = models.DecimalField(
+        max_digits=12, 
+        decimal_places=2, 
+        verbose_name="Valor do Benefício"
+    )
+    quantidade_dias = models.IntegerField(verbose_name="Quantidade", default=0)
+
+    class Meta:
+        verbose_name = "Movimentação de Benefício"
+        verbose_name_plural = "Movimentações de Benefício"
+        
+        # Unicidade para não duplicar lançamento no mesmo mês
+        unique_together = (
+            'empresa_cnpj', 
+            'funcionario_cpf', 
+            'produto_codigo', 
+            'data_competencia'
+        )
+
+    def __str__(self):
+        return f"{self.produto_codigo} - {self.funcionario_cpf} ({self.data_competencia})"
