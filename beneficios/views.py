@@ -66,9 +66,9 @@ class AlterarStatusImportacaoView(views.APIView):
         
         # Mapeamento de status do frontend para o backend
         status_mapping = {
-            'aprovado': 'AGUARDANDO_FATURAMENTO',
+            'aprovado': 'APROVADO',
             'em_faturamento': 'EM_FATURAMENTO',
-            'faturado': 'COMPLETED',
+            'faturado': 'FATURADO',
             'cancelado': 'CANCELADO',
         }
         
@@ -76,7 +76,7 @@ class AlterarStatusImportacaoView(views.APIView):
         
         if not status_backend:
             # Tenta usar o status diretamente se já estiver no formato do backend
-            valid_statuses = [choice[0] for choice in Importacao.STATUS_CHOICES]
+            valid_statuses = [choice[2] for choice in Importacao.STATUS_CHOICES]
             if novo_status in valid_statuses:
                 status_backend = novo_status
             else:

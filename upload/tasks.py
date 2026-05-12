@@ -84,7 +84,7 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
 
         condominios_encontrados = {}
 
-        admin_nome = faturamento.administradora.nome if faturamento.administradora else "Sem Administradora"
+        admin_nome = faturamento.administradora.razao_social if faturamento.administradora else "Sem Administradora"
         s3_base_key = f"VR - DOCS/faturamentos/{faturamento.id} - {admin_nome}"
 
         _processar_e_upload_paginas(
