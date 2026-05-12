@@ -191,7 +191,9 @@ class MovimentacaoBeneficio(models.Model):
         max_length=30,
         choices=Faturamento.STATUS_CHOICES,
         default='PENDING',
-        verbose_name="Status"
+        null=True,
+        blank=True,
+        verbose_name="Status do Faturamento"
     )
     
     # Relacionamentos
@@ -221,7 +223,6 @@ class MovimentacaoBeneficio(models.Model):
     importacao_status = models.CharField(
         max_length=30,
         choices=Importacao.STATUS_CHOICES,
-        default='PENDING',
         verbose_name="Status da Importação"
     )
 

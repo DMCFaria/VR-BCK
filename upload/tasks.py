@@ -131,13 +131,17 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
         atualizar_progresso(faturamento.id, 100, 'COMPLETED')
 
         try:
-            from beneficios.models import Importacao
+            from beneficios.models import Importacao, MovimentacaoBeneficio
             Importacao.objects.filter(id=importacao_id).update(status='COMPLETED')
+            MovimentacaoBeneficio.objects.filter(importacao=importacao_id).update(importacao_status='COMPLETED')
+            faturamento.status = 'COMPLETED'
+            faturamento.save(update_fields=['status'])
+            MovimentacaoBeneficio.objects.filter(faturamento=importacao_id).update(fat_status='COMPLETED')
         except Exception:
             logger.exception("Erro ao atualizar status da importação para COMPLETED")
 
         logger.info(f"Faturamento {faturamento.id} concluído com {total_condominios} condomínios")
-
+       
         return {
             "faturamento_id": faturamento.id,
             "total_condominios": total_condominios,

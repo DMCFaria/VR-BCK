@@ -493,6 +493,7 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                     
                     movimentacoes_to_create.append(MovimentacaoBeneficio(
                         importacao=importacao,
+                        importacao_status=importacao.status,
                         empresa_cnpj=condo_obj,
                         funcionario_cpf=func_obj,
                         produto_codigo=prod_obj,
