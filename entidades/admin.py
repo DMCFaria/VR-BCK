@@ -4,10 +4,10 @@ from .models import Condominio, Funcionario, Administradora, VinculoCondominio, 
 
 @admin.register(Administradora)
 class AdministradoraAdmin(admin.ModelAdmin):
-    list_display = ['cnpj', 'nome', 'ativo', 'created_at']
+    list_display = ['cnpj', 'razao_social', 'ativo', 'created_at']
     list_filter = ['ativo']
-    search_fields = ['cnpj', 'nome']
-    ordering = ['nome']
+    search_fields = ['cnpj', 'razao_social']
+    ordering = ['razao_social']
 
 
 @admin.register(Gerente)
@@ -22,7 +22,7 @@ class GerenteAdmin(admin.ModelAdmin):
 class VinculoCondominioAdmin(admin.ModelAdmin):
     list_display = ['administradora', 'condominio', 'created_at']
     list_filter = ['administradora']
-    search_fields = ['condominio__nome', 'condominio__cnpj', 'administradora__nome']
+    search_fields = ['condominio__nome', 'condominio__cnpj', 'administradora__razao_social']
     filter_horizontal = ['gerentes']
 
 

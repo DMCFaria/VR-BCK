@@ -3,19 +3,23 @@ from django.db import models
 
 class Administradora(models.Model):
     cnpj = models.CharField(max_length=20, unique=True, verbose_name="CNPJ")
-    nome = models.CharField(max_length=255, verbose_name="Nome/Razão Social")
+    razao_social = models.CharField(max_length=255, verbose_name="Nome/Razão Social")
     nome_fantasia = models.CharField(max_length=255, verbose_name="Nome Fantasia", null=True, blank=True)
+    email = models.EmailField(verbose_name="E-mail", blank=True, null=True)
     ativo = models.BooleanField(default=True, verbose_name="Ativo")
+    
+    cartao_admin = models.BooleanField(default=True, verbose_name="Cartão Admin")
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "Administradora"
         verbose_name_plural = "Administradoras"
-        ordering = ['nome']
+        ordering = ['razao_social']
 
     def __str__(self):
-        return f"{self.nome} ({self.cnpj})"
+        return f"{self.razao_social} ({self.cnpj})"
 
 
 class Gerente(models.Model):
@@ -66,7 +70,7 @@ class VinculoCondominio(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.administradora.nome} - {self.condominio.nome}"
+        return f"{self.administradora.razao_social} - {self.condominio.nome}"
 
 
 class Condominio(models.Model):
