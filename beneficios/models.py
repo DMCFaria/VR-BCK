@@ -190,7 +190,6 @@ class MovimentacaoBeneficio(models.Model):
     fat_status = models.CharField(
         max_length=30,
         choices=Faturamento.STATUS_CHOICES,
-        default='PENDING',
         null=True,
         blank=True,
         verbose_name="Status do Faturamento"
@@ -239,8 +238,9 @@ class MovimentacaoBeneficio(models.Model):
         verbose_name = "Movimentação de Benefício"
         verbose_name_plural = "Movimentações de Benefício"
         
-        # Unicidade para não duplicar lançamento no mesmo mês
+        # Unicidade: permite mesmo combo em importações diferentes
         unique_together = (
+            'importacao',
             'empresa_cnpj', 
             'funcionario_cpf', 
             'produto_codigo', 

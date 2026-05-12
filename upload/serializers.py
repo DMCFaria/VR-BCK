@@ -457,9 +457,13 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         movimentacoes_to_create = []
         registros_count = 0
 
+        logger.info(f"Preparando movimentações para {len(condominios_data)} condomínios, "
+                     f"{len(existing_condos)} condos no DB, {len(existing_funcs)} funcionários no DB")
+
         for condo_data in condominios_data:
             condo_obj = existing_condos.get(condo_data['cnpj'])
             if not condo_obj:
+                logger.warning(f"Condomínio CNPJ {condo_data['cnpj']} não encontrado no DB após criação/recarga")
                 continue
                 
             for func_data in condo_data.get('funcionarios', []):
@@ -505,6 +509,7 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
 
         # Salvar movimentações
         movimentacoes_salvas = 0
+        logger.info(f"Total de movimentações para salvar: {len(movimentacoes_to_create)}")
         if movimentacoes_to_create:
             try:
                 result = MovimentacaoBeneficio.objects.bulk_create(
@@ -515,13 +520,15 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 movimentacoes_salvas = len(result) if result else len(movimentacoes_to_create)
                 logger.info(f"Salvas {movimentacoes_salvas} movimentações via bulk_create")
             except Exception as e:
-                logger.error(f"Erro no bulk_create: {e}")
+                logger.error(f"Erro no bulk_create: {e}", exc_info=True)
                 for mov in movimentacoes_to_create:
                     try:
                         mov.save()
                         movimentacoes_salvas += 1
                     except Exception as e2:
-                        logger.error(f"Erro ao salvar individual: {e2}")
+                        logger.error(f"Erro ao salvar individual: {e2}", exc_info=True)
+        else:
+            logger.warning("Nenhuma movimentação para salvar")
         
         # ========== 13. ATUALIZAR ESTATÍSTICAS ==========
         importacao.total_registros = registros_count
