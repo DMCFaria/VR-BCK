@@ -232,5 +232,30 @@ class FedhubService:
         except requests.RequestException as e:
             logger.error(f"Erro ao chamar Firebird: {e}")
             return None
+        
+    def buscar_pessoa_por_cnpj(self, cnpj: str):
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/pessoas/cnpj/{cnpj}",
+                headers=get_headers(),
+                timeout=30
+            )
+
+            if response.status_code != 200:
+                logger.error(f"Firebird erro {response.status_code}")
+                return None
+
+            data = response.json()
+            
+            # logger.info(f"Dados retornados do serviço de pessoas por CNPJ: {data}")
+
+            if data.get("status") != "success":
+                return None
+
+            return data.get("data")
+
+        except requests.RequestException as e:
+            logger.error(f"Erro ao chamar Firebird: {e}")
+            return None
 
     

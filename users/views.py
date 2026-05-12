@@ -13,7 +13,6 @@ class UserRegistrationAPIView(generics.CreateAPIView):
     serializer_class = UserRegistrationSerializer
     permission_classes = [IsAdminUserType]
 
-
 class CurrentUserView(generics.RetrieveUpdateAPIView):
     """
     Retorna os dados do usuário logado e permite a atualização.
@@ -27,15 +26,12 @@ class CurrentUserView(generics.RetrieveUpdateAPIView):
         Retorna o objeto CustomUser associado à requisição (usuário logado).
         """
         return self.request.user
-    
-    
+      
 class LoginApiView(TokenObtainPairView):
     
     def post(self, request, *args, **kwargs):
         response = super().post(request, *args, **kwargs)
         return response
-
-
 
 class UserListView(generics.ListAPIView):
     """
