@@ -38,10 +38,10 @@ class CustomUser(AbstractUser):
     
     TYPE_CHOICES = [
         ("dev", "Desenvolvedor"),
-        ("fin", "Financeiro"),
-        ("fat", "Faturista"),
-        ("adm", "Administrador"),
-        ("cli", "Client"),
+        ("fin", "Financeiro Fedcorp"),
+        ("fat", "Faturista Fedcorp"),
+        ("adm", "Usuário da Administradora"),
+        ("cli", "Cliente(Condomínio)"),
     ]
 
     created_at = models.DateTimeField(auto_now_add=True)

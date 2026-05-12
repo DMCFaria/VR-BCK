@@ -39,8 +39,14 @@ class FuncionarioSerializer(serializers.ModelSerializer):
 class AdministradoraSerializer(serializers.ModelSerializer):
     class Meta:
         model = Administradora
-        fields = ['id', 'cnpj', 'razao_social', 'ativo', 'created_at', 'updated_at']
+        fields = ['id', 'cnpj', 'razao_social', 'nome_fantasia', 'email', 'ativo', 'cartao_admin', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
+    
+    def validate_cartao_admin(self, value):
+        """Valida se cartao_admin é booleano"""
+        if not isinstance(value, bool):
+            raise serializers.ValidationError('cartao_admin deve ser true ou false')
+        return value
 
 class GerenteSerializer(serializers.ModelSerializer):
     class Meta:
