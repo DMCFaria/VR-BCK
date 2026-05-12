@@ -32,7 +32,7 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None):
         f"00"  # TipoRec (2)
         f"011"  # Versao (3)
         f"{administradora_cnpj.zfill(14)}"  # CNPJ/Código Cliente (14)
-        f"{admin.nome[:40]:<40}"  # Razão Social Cliente (40)
+        f"{admin.razao_social[:40]:<40}"  # Razão Social Cliente (40)
         f"{' ' * 282}"  # FILLER (282)
         f"{str(seq).zfill(9)}"  # Número da linha (9)
     )
@@ -81,7 +81,7 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None):
             f"{administradora_cnpj.zfill(14)}"
             f"{condominio.cnpj[:30]:<30}"
             f"{administradora_cnpj.zfill(14)}"
-            f"{admin.nome[:24]:<24}"
+            f"{admin.razao_social[:24]:<24}"
             f"{'suportevr@grupofedcorp.com.br'[:70]:<70}"
             f"{' ' * 187}"
             f"{str(seq).zfill(9)}"

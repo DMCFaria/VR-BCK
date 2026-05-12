@@ -126,7 +126,7 @@ class DownloadArquivoOriginalView(views.APIView):
         except Faturamento.DoesNotExist:
             return HttpResponse("Faturamento não encontrado.", status=404)
 
-        admin_nome = faturamento.administradora.nome if faturamento.administradora else "Sem Administradora"
+        admin_nome = faturamento.administradora.razao_social if faturamento.administradora else "Sem Administradora"
         s3_prefix = f"{faturamento_id} - {admin_nome}"
         tipo_display = {'boleto': 'Boleto', 'nota_debito': 'Nota de débito', 'nota_fiscal': 'Nota Fiscal'}.get(self.tipo, self.tipo)
         nome_arquivo = f"MERGED - {admin_nome} - {faturamento_id} - {tipo_display}.pdf"
