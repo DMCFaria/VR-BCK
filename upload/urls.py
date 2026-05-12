@@ -4,7 +4,7 @@ from .upload import UploadView
 from .EXCEL.template import baixar_template_excel
 from .export import ExportTxtCompraView, ExportFaturamentoView
 from .faturamento import UploadFaturamentoView, StatusFaturamentoView
-from .download_views import DownloadFaturamentoView, DownloadBoletosView, DownloadNotasDebitoView, DownloadNotasFiscaisView, DownloadBoletoOriginalView, DownloadNotaDebitoOriginalView, DownloadNotaFiscalOriginalView
+from .download_views import DownloadArquivoView, DownloadFaturamentoView, DownloadBoletosView, DownloadNotasDebitoView, DownloadNotasFiscaisView, DownloadBoletoOriginalView, DownloadNotaDebitoOriginalView, DownloadNotaFiscalOriginalView
 
 
 urlpatterns = [
@@ -31,4 +31,7 @@ urlpatterns = [
     path('faturamento/<int:faturamento_id>/download/boleto-original/', DownloadBoletoOriginalView.as_view(), name='download_boleto_original'),
     path('faturamento/<int:faturamento_id>/download/nota-debito-original/', DownloadNotaDebitoOriginalView.as_view(), name='download_nota_debito_original'),
     path('faturamento/<int:faturamento_id>/download/nota-fiscal-original/', DownloadNotaFiscalOriginalView.as_view(), name='download_nota_fiscal_original'),
+
+    path('importacao/<int:importacao_id>/download/', DownloadArquivoView.as_view(), name='download_importacao_arquivo'),
+
 ]

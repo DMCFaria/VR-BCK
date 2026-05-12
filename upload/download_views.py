@@ -8,6 +8,8 @@ from django.http import HttpResponse, HttpResponseRedirect
 import boto3
 from beneficios.models import Faturamento
 
+from urllib.parse import quote
+
 
 def baixar_pdfs_s3(s3, bucket, prefix, zf, subpasta=None):
     """Baixa PDFs do S3 e adiciona ao ZIP."""
@@ -156,3 +158,47 @@ class DownloadNotaDebitoOriginalView(DownloadArquivoOriginalView):
 
 class DownloadNotaFiscalOriginalView(DownloadArquivoOriginalView):
     tipo = 'nota_fiscal'
+    
+
+class DownloadArquivoView(views.APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, importacao_id):
+        """
+        Faz o download do arquivo original do S3
+        """
+        from beneficios.models import Importacao
+        
+        try:
+            importacao = Importacao.objects.get(id=importacao_id)
+            file_upload = importacao.file_upload
+        except Importacao.DoesNotExist:
+            return Response({"error": "Importação não encontrada"}, status=404)
+        
+        if not file_upload or not file_upload.s3_key:  # precisa armazenar o s3_key no modelo
+            return Response({"error": "Arquivo não encontrado no S3"}, status=404)
+        
+        # Gerar URL pré-assinada (expira em 1 hora)
+        s3 = boto3.client(
+            's3',
+            aws_access_key_id=settings.ACCESS_KEY_S3,
+            aws_secret_access_key=settings.SECRET_KEY_S3,
+            region_name='us-east-2'
+        )
+        
+        url = s3.generate_presigned_url(
+            'get_object',
+            Params={
+                'Bucket': "fedcorp-prod",
+                'Key': file_upload.s3_key,
+                'ResponseContentDisposition': f'attachment; filename="{quote(file_upload.original_filename)}"'
+            },
+            ExpiresIn=3600  # 1 hora
+        )
+        
+        # Redirecionar para a URL pré-assinada
+        return Response({
+            "download_url": url,
+            "expires_in": 3600,
+            "filename": file_upload.original_filename
+        })
