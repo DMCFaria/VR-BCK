@@ -183,8 +183,6 @@ class FaturamentoDocumento(models.Model):
     def __str__(self):
         return f"{self.condominio.cnpj} - {self.faturamento.id}"
 
-
-
 class MovimentacaoBeneficio(models.Model):
     
     fat_status = models.CharField(
