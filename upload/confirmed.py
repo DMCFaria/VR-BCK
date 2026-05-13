@@ -90,6 +90,8 @@ class ConfirmationView(views.APIView):
                 fedhub_service = FedhubService()
                 email_faturamento = settings.EMAIL_FATURAMENTO
                 
+                logger.info(f"Enviando email para {email_faturamento} com os dados do processamento para file_upload_id: {file_id}")
+                
                 # Envia email com dados REAIS
                 email_enviado = fedhub_service.enviar_email_upload(
                     # email=request.user.email,
