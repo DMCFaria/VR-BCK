@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 class FedhubService:
     def __init__(self):
         self.base_url = settings.FEDHUB_URL
+        # self.base_url = 'http://localhost:8090'  # URL local para desenvolvimento
 
     # Emails
     # Método para enviar email de notificação de upload de faturamento/compra
@@ -235,6 +236,7 @@ class FedhubService:
         
     def buscar_pessoa_por_cnpj(self, cnpj: str):
         try:
+            logger.info(f"Endpoint de chamada: {f'{self.base_url}/api/pessoas/cnpj/{cnpj}'}")
             response = requests.get(
                 f"{self.base_url}/api/pessoas/cnpj/{cnpj}",
                 headers=get_headers(),
