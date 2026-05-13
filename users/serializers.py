@@ -28,7 +28,6 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         user.save()
         return user
 
-
 class CustomUserSerializer(serializers.ModelSerializer):
     administradora_id = serializers.IntegerField(source='administradora.id', read_only=True)
     administradora_nome = serializers.CharField(source='administradora.razao_social', read_only=True)
@@ -37,6 +36,11 @@ class CustomUserSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = ['id', 'username', 'email', 'tipo', 'administradora', 'administradora_id', 'administradora_nome', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
+        extra_kwargs = {
+            'username': {'required': False},  # Tornar opcional
+            'email': {'required': False},     # Tornar opcional
+            'tipo': {'required': False},      # Tornar opcional
+        }
     
     def update(self, instance, validated_data):
         # Tratamento especial para senha
@@ -46,12 +50,13 @@ class CustomUserSerializer(serializers.ModelSerializer):
         
         # Atualizar administradora (pode ser None para desvincular)
         administradora = validated_data.pop('administradora', None)
-        if administradora is not None:
+        if administradora is not None:  # Se veio no payload, atualizar
             instance.administradora = administradora
         
-        # Atualizar outros campos
+        # Atualizar outros campos apenas se presentes
         for attr, value in validated_data.items():
-            setattr(instance, attr, value)
+            if value is not None:  # Só atualizar se veio no payload
+                setattr(instance, attr, value)
         
         instance.save()
         return instance

@@ -101,14 +101,57 @@ class UserDetailUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
     queryset = CustomUser.objects.all()
     serializer_class = CustomUserSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminUserType]
+    http_method_names = ['get', 'put', 'patch', 'delete'] 
 
     def update(self, request, *args, **kwargs):
         logger.info(f"✏️ Atualizando usuário ID {kwargs.get('pk')}. Payload: {request.data}")
         return super().update(request, *args, **kwargs)
     
+    def partial_update(self, request, *args, **kwargs):
+        """Permite atualização parcial dos campos"""
+        logger.info(f"📝 Atualização parcial usuário ID {kwargs.get('pk')}. Payload: {request.data}")
+        return super().partial_update(request, *args, **kwargs)
+    
     def perform_update(self, serializer):
         serializer.save()
 
+class VincularAdministradoraView(APIView):
+    """
+    Endpoint específico para vincular/desvincular um usuário a uma administradora.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsAdminUserType]
+
+    def post(self, request, pk):
+        try:
+            user = CustomUser.objects.get(pk=pk)
+            administradora_id = request.data.get('administradora_id')
+            
+            if administradora_id:
+                try:
+                    administradora = Administradora.objects.get(id=administradora_id)
+                    user.administradora = administradora
+                    message = f"Usuário {user.email} vinculado à administradora {administradora.razao_social}"
+                except Administradora.DoesNotExist:
+                    return Response(
+                        {"error": "Administradora não encontrada."},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+            else:
+                user.administradora = None
+                message = f"Usuário {user.email} desvinculado da administradora"
+            
+            user.save()
+            logger.info(f"✅ {message}")
+            return Response(
+                {"message": message, "administradora_id": administradora_id},
+                status=status.HTTP_200_OK
+            )
+        except CustomUser.DoesNotExist:
+            return Response(
+                {"error": "Usuário não encontrado."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+                  
 class DesvincularAdministradoraView(APIView):
     """
     Remove o vínculo de um usuário com sua administradora.
