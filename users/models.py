@@ -1,17 +1,12 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 
-from entidades.models import Administradora
-
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
         if not email:
             raise ValueError('O email deve ser fornecido')
         
         email = self.normalize_email(email)
-        
-        if not extra_fields.get('administradora'):
-            extra_fields['administradora'] = Administradora.objects.filter(id=1).first()
         
         user = self.model(email=email, **extra_fields)
         user.set_password(password)
