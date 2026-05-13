@@ -231,9 +231,10 @@ class UltimaImportacaoMovimentacoesView(views.APIView):
         
         ultima_importacao = Importacao.objects.filter(
             administradora=administradora,
-            status='COMPLETED' or 'FATURADO'
+            status__in=['COMPLETED', 'FATURADO'] # O correto é o sufixo __in
         ).order_by('-data_importacao').first()
-
+   
+   
         if not ultima_importacao:
             return Response(
                 {"detail": "Nenhuma importação encontrada para esta administradora."},
