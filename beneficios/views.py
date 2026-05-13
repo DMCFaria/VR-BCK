@@ -231,7 +231,7 @@ class UltimaImportacaoMovimentacoesView(views.APIView):
         
         ultima_importacao = Importacao.objects.filter(
             administradora=administradora,
-            status='COMPLETED'
+            status='COMPLETED' or 'FATURADO'
         ).order_by('-data_importacao').first()
 
         if not ultima_importacao:
