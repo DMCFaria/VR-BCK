@@ -152,6 +152,52 @@ class DownloadArquivoOriginalView(views.APIView):
             return HttpResponse("Arquivo não encontrado.", status=404)
 
 
+class DownloadTodosOriginaisView(views.APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, faturamento_id):
+        try:
+            faturamento = Faturamento.objects.get(id=faturamento_id)
+        except Faturamento.DoesNotExist:
+            return HttpResponse("Faturamento não encontrado.", status=404)
+
+        admin_nome = faturamento.administradora.razao_social if faturamento.administradora else "Sem Administradora"
+        s3_prefix = f"{faturamento_id} - {admin_nome}"
+
+        s3 = boto3.client(
+            's3',
+            aws_access_key_id=getattr(settings, 'ACCESS_KEY_S3', ''),
+            aws_secret_access_key=getattr(settings, 'SECRET_KEY_S3', ''),
+            region_name='us-east-2'
+        )
+        bucket = getattr(settings, 'BUCKET_S3', 'fedcorp-prod')
+
+        tipos = [
+            ('boleto', 'Boleto'),
+            ('nota_debito', 'Nota de débito'),
+            ('nota_fiscal', 'Nota Fiscal'),
+        ]
+
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for tipo, tipo_display in tipos:
+                nome_arquivo = f"MERGED - {admin_nome} - {faturamento_id} - {tipo_display}.pdf"
+                s3_key = f"VR - DOCS/faturamentos/{s3_prefix}/{tipo}/{nome_arquivo}"
+                try:
+                    f = io.BytesIO()
+                    s3.download_fileobj(bucket, s3_key, f)
+                    f.seek(0)
+                    zf.writestr(f"{tipo_display}.pdf", f.read())
+                except:
+                    pass
+
+        buffer.seek(0)
+        response = HttpResponse(buffer.read(), content_type='application/zip')
+        response['Content-Disposition'] = f'attachment; filename="faturamento_{faturamento_id}_originais.zip"'
+        return response
+
+
 class DownloadBoletoOriginalView(DownloadArquivoOriginalView):
     tipo = 'boleto'
 
