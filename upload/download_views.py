@@ -1,10 +1,10 @@
 import io
 import zipfile
-from rest_framework import views, status
+from rest_framework import views
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.conf import settings
-from django.http import HttpResponse, HttpResponseRedirect
+from django.http import HttpResponse
 import boto3
 from beneficios.models import Faturamento
 
@@ -142,8 +142,12 @@ class DownloadArquivoOriginalView(views.APIView):
 
         try:
             s3.head_object(Bucket=bucket, Key=s3_key)
-            url = f"https://{bucket}.s3.amazonaws.com/{s3_key}"
-            return HttpResponseRedirect(url)
+            buffer = io.BytesIO()
+            s3.download_fileobj(bucket, s3_key, buffer)
+            buffer.seek(0)
+            response = HttpResponse(buffer.read(), content_type='application/pdf')
+            response['Content-Disposition'] = f'attachment; filename="{nome_arquivo}"'
+            return response
         except:
             return HttpResponse("Arquivo não encontrado.", status=404)
 
@@ -173,12 +177,11 @@ class DownloadArquivoView(views.APIView):
             importacao = Importacao.objects.get(id=importacao_id)
             file_upload = importacao.file_upload
         except Importacao.DoesNotExist:
-            return Response({"error": "Importação não encontrada"}, status=404)
+            return HttpResponse("Importação não encontrada", status=404)
         
-        if not file_upload or not file_upload.s3_key:  # precisa armazenar o s3_key no modelo
-            return Response({"error": "Arquivo não encontrado no S3"}, status=404)
+        if not file_upload or not file_upload.s3_key:
+            return HttpResponse("Arquivo não encontrado no S3", status=404)
         
-        # Gerar URL pré-assinada (expira em 1 hora)
         s3 = boto3.client(
             's3',
             aws_access_key_id=settings.ACCESS_KEY_S3,
@@ -186,19 +189,12 @@ class DownloadArquivoView(views.APIView):
             region_name='us-east-2'
         )
         
-        url = s3.generate_presigned_url(
-            'get_object',
-            Params={
-                'Bucket': "fedcorp-prod",
-                'Key': file_upload.s3_key,
-                'ResponseContentDisposition': f'attachment; filename="{quote(file_upload.original_filename)}"'
-            },
-            ExpiresIn=3600  # 1 hora
-        )
-        
-        # Redirecionar para a URL pré-assinada
-        return Response({
-            "download_url": url,
-            "expires_in": 3600,
-            "filename": file_upload.original_filename
-        })
+        try:
+            buffer = io.BytesIO()
+            s3.download_fileobj(settings.BUCKET_S3, file_upload.s3_key, buffer)
+            buffer.seek(0)
+            response = HttpResponse(buffer.read(), content_type='application/octet-stream')
+            response['Content-Disposition'] = f'attachment; filename="{quote(file_upload.original_filename)}"'
+            return response
+        except:
+            return HttpResponse("Arquivo não encontrado no S3.", status=404)
