@@ -132,8 +132,8 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
 
         try:
             from beneficios.models import Importacao, MovimentacaoBeneficio
-            Importacao.objects.filter(id=importacao_id).update(status='COMPLETED')
-            MovimentacaoBeneficio.objects.filter(importacao=importacao_id).update(importacao_status='COMPLETED')
+            Importacao.objects.filter(id=importacao_id).update(status='FATURADO')
+            MovimentacaoBeneficio.objects.filter(importacao=importacao_id).update(importacao_status='FATURADO')
             faturamento.status = 'COMPLETED'
             faturamento.save(update_fields=['status'])
             MovimentacaoBeneficio.objects.filter(importacao=importacao_id).update(fat_status='COMPLETED')

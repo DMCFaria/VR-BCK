@@ -13,7 +13,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from entidades.models import Condominio, Funcionario, Administradora, VinculoCondominio
-from beneficios.models import MovimentacaoBeneficio, Produto
+from beneficios.models import MovimentacaoBeneficio, Produto, Importacao
 
 
 def gerar_txt_compra(administradora_cnpj, data_competencia=None):
@@ -276,7 +276,9 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
             'periodos': periodos.split('-')[0],
             'periodo2': periodos.split('-')[1]
         })
-    
+        importacao = Importacao.objects.get(id=importacao_id)
+        importacao.status = 'EM_FATURAMENTO'
+        importacao.save()
     return dados
 
 

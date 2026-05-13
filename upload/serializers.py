@@ -454,23 +454,7 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
             VinculoCondominio.objects.bulk_create(vinculos, ignore_conflicts=True)
             logger.info(f"Criados {len(vinculos)} vínculos condomínio-administradora")
         
-        # ========== 11. CRIAR IMPORTAÇÃO ==========
-        importacao = Importacao.objects.create(
-            file_upload_id=file_upload_id,
-            usuario=processed_by_user,
-            administradora=administradora,
-            status='AGUARDANDO_FATURAMENTO',
-            total_registros=0,
-            registros_processados=0,
-            valor_total=valor_total_payload,
-            total_funcionarios=total_funcionarios,
-            data_vencimento=validated_data.get('data_vencimento'),
-            vigencia_inicio=validated_data.get('vigencia_inicio') or validated_data.get('periodo_inicio'),
-            vigencia_fim=validated_data.get('vigencia_fim') or validated_data.get('periodo_fim')
-        )
-        logger.info(f"Importação {importacao.id} criada. Valor total: {valor_total_payload}")
-        
-        # ========== 12. SALVAR MOVIMENTAÇÕES ==========
+        # ========== 11-13. CRIAR IMPORTAÇÃO + MOVIMENTAÇÕES + ESTATÍSTICAS (ATÔMICO) ==========
         movimentacoes_to_create = []
         registros_count = 0
 
@@ -515,8 +499,7 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                         continue
                     
                     movimentacoes_to_create.append(MovimentacaoBeneficio(
-                        importacao=importacao,
-                        importacao_status=importacao.status,
+                        importacao=None,
                         empresa_cnpj=condo_obj,
                         funcionario_cpf=func_obj,
                         produto_codigo=prod_obj,
@@ -526,33 +509,56 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                     ))
                     registros_count += 1
 
-        # Salvar movimentações
         movimentacoes_salvas = 0
-        logger.info(f"Total de movimentações para salvar: {len(movimentacoes_to_create)}")
-        if movimentacoes_to_create:
-            try:
-                result = MovimentacaoBeneficio.objects.bulk_create(
-                    movimentacoes_to_create,
-                    ignore_conflicts=True,
-                    batch_size=500
-                )
-                movimentacoes_salvas = len(result) if result else len(movimentacoes_to_create)
-                logger.info(f"Salvas {movimentacoes_salvas} movimentações via bulk_create")
-            except Exception as e:
-                logger.error(f"Erro no bulk_create: {e}", exc_info=True)
+
+        with transaction.atomic():
+            importacao = Importacao.objects.create(
+                file_upload_id=file_upload_id,
+                usuario=processed_by_user,
+                administradora=administradora,
+                status='AGUARDANDO_FATURAMENTO',
+                total_registros=0,
+                registros_processados=0,
+                valor_total=valor_total_payload,
+                total_funcionarios=total_funcionarios,
+                data_vencimento=validated_data.get('data_vencimento'),
+                vigencia_inicio=validated_data.get('vigencia_inicio') or validated_data.get('periodo_inicio'),
+                vigencia_fim=validated_data.get('vigencia_fim') or validated_data.get('periodo_fim')
+            )
+
+            if movimentacoes_to_create:
                 for mov in movimentacoes_to_create:
-                    try:
-                        mov.save()
-                        movimentacoes_salvas += 1
-                    except Exception as e2:
-                        logger.error(f"Erro ao salvar individual: {e2}", exc_info=True)
-        else:
-            logger.warning("Nenhuma movimentação para salvar")
-        
-        # ========== 13. ATUALIZAR ESTATÍSTICAS ==========
-        importacao.total_registros = registros_count
-        importacao.registros_processados = movimentacoes_salvas
-        importacao.save()
+                    mov.importacao = importacao
+
+                try:
+                    result = MovimentacaoBeneficio.objects.bulk_create(
+                        movimentacoes_to_create,
+                        ignore_conflicts=True,
+                        batch_size=500
+                    )
+                    movimentacoes_salvas = len(result)
+                    logger.info(f"Salvas {movimentacoes_salvas} movimentações via bulk_create")
+                except Exception as e:
+                    logger.error(f"Erro no bulk_create: {e}", exc_info=True)
+                    for mov in movimentacoes_to_create:
+                        try:
+                            mov.save()
+                            movimentacoes_salvas += 1
+                        except Exception as e2:
+                            logger.error(f"Erro ao salvar individual: {e2}", exc_info=True)
+            else:
+                logger.warning("Nenhuma movimentação para salvar")
+
+            if movimentacoes_salvas == 0:
+                raise serializers.ValidationError(
+                    "Nenhuma movimentação foi registrada. Verifique os dados do arquivo e tente novamente."
+                )
+
+            importacao.total_registros = registros_count
+            importacao.registros_processados = movimentacoes_salvas
+            importacao.save()
+
+        logger.info(f"Importação {importacao.id} criada. Valor total: {valor_total_payload}")
         
         # ========== 14. ATUALIZAR FILEUPLOAD ==========
         with transaction.atomic():
