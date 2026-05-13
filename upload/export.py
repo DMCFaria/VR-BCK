@@ -256,7 +256,7 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
             'PRODUTO': produto_display,
             'BENEFICIO': None,
             'CEP_FUNC': func.cep or '',
-            'ENDERECO_FUNC': func.endereco_rua or '',
+            'ENDERECO_FUNC': f'{func.endereco_rua}, {func.endereco_numero}, {func.endereco_complemento}' or '',
             'NUMERO_FUNC': func.endereco_numero or '',
             'COMPLEMENTO_FUNC': func.endereco_complemento or '',
             'BAIRRO_FUNC': func.endereco_bairro or '',
