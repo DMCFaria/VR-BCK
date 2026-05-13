@@ -1,5 +1,13 @@
 from django.urls import path
-from .views import DesvincularAdministradoraView, UserRegistrationAPIView, CurrentUserView, LoginApiView, UserListView, UserDetailUpdateDeleteView
+from .views import (
+    DesvincularAdministradoraView,
+    UserRegistrationAPIView, 
+    CurrentUserView, 
+    LoginApiView, 
+    UserListView, 
+    UserDetailUpdateDeleteView, 
+    VincularAdministradoraView
+)
 
 urlpatterns = [
     path('login/', LoginApiView.as_view(), name='user-login'),
@@ -9,5 +17,6 @@ urlpatterns = [
     # As rotas abaixo parecem estar faltando no seu urls.py:
     path('list/', UserListView.as_view(), name='user_list'),
     path('<int:pk>/', UserDetailUpdateDeleteView.as_view(), name='user_detail'),
+    path('<int:pk>/vincular-adm/', VincularAdministradoraView.as_view(), name='vincular-adm'),
     path('<int:pk>/desvincular-adm/', DesvincularAdministradoraView.as_view(), name='desvincular-adm'),
 ]
