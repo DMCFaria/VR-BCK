@@ -4,6 +4,15 @@ from decimal import Decimal, InvalidOperation
 from ..RB.parsers import cpf_valido_matematicamente
 import openpyxl
 
+
+def _safe_str(val, default=''):
+    if val is None:
+        return default
+    s = str(val).strip()
+    if s.lower() in ('none', 'nan', ''):
+        return default
+    return s
+
 def parse_excel_layout(file_path, file_upload_id):
     result = {
         "file_upload_id": file_upload_id,
@@ -129,21 +138,25 @@ def parse_excel_layout(file_path, file_upload_id):
                     except:
                         data_nasc_validada = None
             
-            produto = str(row.get('nome_produto', '')).strip()
-            codigo_produto = str(row.get('codigo_produto', '')).strip() or None
+            produto = _safe_str(row.get('nome_produto'))
+            codigo_produto_raw = row.get('codigo_produto')
+            if codigo_produto_raw is not None and _safe_str(codigo_produto_raw):
+                codigo_produto = _safe_str(codigo_produto_raw)[:50]
+            else:
+                codigo_produto = None
 
             if raw_cnpj not in condominios_data:
                 condominios_data[raw_cnpj] = {
-                    "nome": str(row.get('nome_condominio', '')).strip(),
+                    "nome": _safe_str(row.get('nome_condominio')),
                     "cnpj": raw_cnpj,
                     "valor_condo": Decimal('0.00'),
-                    "rua": str(row.get('endereco_condominio', '')).strip(),
-                    "numero": str(row.get('numero_condominio', '')).strip(),
-                    "complemento": str(row.get('complemento_condominio', '')).strip(),
-                    "bairro": str(row.get('bairro_condominio', '')).strip(),
-                    "cidade": str(row.get('cidade_condominio', '')).strip(),
-                    "estado": str(row.get('estado_condominio', '')).strip(),
-                    "cep": str(row.get('cep_condominio', '')).strip(),
+                    "rua": _safe_str(row.get('endereco_condominio')),
+                    "numero": _safe_str(row.get('numero_condominio')),
+                    "complemento": _safe_str(row.get('complemento_condominio')),
+                    "bairro": _safe_str(row.get('bairro_condominio')),
+                    "cidade": _safe_str(row.get('cidade_condominio')),
+                    "estado": _safe_str(row.get('estado_condominio')),
+                    "cep": _safe_str(row.get('cep_condominio')),
                     "funcionarios": {}
                 }
 
@@ -156,11 +169,11 @@ def parse_excel_layout(file_path, file_upload_id):
                     "departamento": departamento,
                     "funcao": funcao,
                     "data_nascimento": data_nasc_validada,
-                    "cep": str(row.get('cep_funcionario', '')).strip() or None,
-                    "endereco_rua": str(row.get('endereco_rua_funcionario', '')).strip() or None,
-                    "endereco_numero": str(row.get('endereco_numero_funcionario', '')).strip() or None,
-                    "endereco_complemento": str(row.get('endereco_complemento_funcionario', '')).strip() or None,
-                    "endereco_bairro": str(row.get('endereco_bairro_funcionario', '')).strip() or None,
+                    "cep": _safe_str(row.get('cep_funcionario')) or None,
+                    "endereco_rua": _safe_str(row.get('endereco_rua_funcionario')) or None,
+                    "endereco_numero": _safe_str(row.get('endereco_numero_funcionario')) or None,
+                    "endereco_complemento": _safe_str(row.get('endereco_complemento_funcionario')) or None,
+                    "endereco_bairro": _safe_str(row.get('endereco_bairro_funcionario')) or None,
                     "valor_bene": Decimal('0.00'),
                     "movimentacoes": []
                 }

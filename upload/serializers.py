@@ -200,6 +200,15 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 logger.info(f"Data de competência definida pela vigência início: {data_competencia}")
 
         if not data_competencia:
+            competencia_arquivo = validated_data.get('summary', {}).get('data_competencia_arquivo')
+            if competencia_arquivo:
+                try:
+                    data_competencia = datetime.strptime(competencia_arquivo, '%Y-%m-%d').date().replace(day=1)
+                    logger.info(f"Data de competência do arquivo: {data_competencia}")
+                except Exception as e:
+                    logger.error(f"Erro ao parsear data_competencia_arquivo: {e}")
+
+        if not data_competencia:
             data_competencia = date.today().replace(day=1)
             logger.warning(f"Usando data atual como competência: {data_competencia}")
         
@@ -313,14 +322,22 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 
                 # Normalizar data de nascimento
                 data_nascimento = f.get('data_nascimento')
-                if data_nascimento and isinstance(data_nascimento, str):
-                    try:
-                        data_nascimento = datetime.strptime(data_nascimento, '%Y-%m-%d').date()
-                    except ValueError:
-                        try:
-                            data_nascimento = datetime.strptime(data_nascimento, '%d/%m/%Y').date()
-                        except ValueError:
-                            data_nascimento = None
+                if isinstance(data_nascimento, str):
+                    val = data_nascimento.strip()
+                    if val:
+                        formats = ['%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y', '%Y/%m/%d', '%d.%m.%Y', '%Y.%m.%d']
+                        parsed = None
+                        for fmt in formats:
+                            try:
+                                parsed = datetime.strptime(val, fmt).date()
+                                break
+                            except ValueError:
+                                continue
+                        data_nascimento = parsed
+                    else:
+                        data_nascimento = None
+                elif not data_nascimento:
+                    data_nascimento = None
                 
                 if cpf_normalizado not in existing_funcs:
                     # CRIAR novo funcionário com vínculo
@@ -475,7 +492,9 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 movimentacoes_fonte = func_data.get('movimentacoes', [])
                 
                 for mov_data in movimentacoes_fonte:
-                    codigo_produto = mov_data.get('codigo_produto', '').strip() or mov_data.get('codigo', '').strip()
+                    codigo_produto = (mov_data.get('codigo_produto') or '').strip() or (mov_data.get('codigo') or '').strip()
+                    if not codigo_produto:
+                        codigo_produto = (mov_data.get('produto') or '').strip()[:50] or 'SEM_PRODUTO'
                     valor_beneficio = Decimal(str(mov_data.get('valor', 0)))
                     
                     if valor_beneficio == 0:
