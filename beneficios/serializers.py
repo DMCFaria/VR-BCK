@@ -75,10 +75,12 @@ class ImportacaoListSerializer(serializers.ModelSerializer):
     Serializer simplificado para listar histórico de importações.
     """
     nome_usuario = serializers.CharField(source='usuario.email', read_only=True)
+    nome_administradora = serializers.CharField(source='administradora.razao_social', read_only=True)
+  
 
     class Meta:
         model = Importacao
-        fields = ['id', 'data_importacao', 'status', 'total_registros', 'registros_processados', 'nome_usuario', 'data_vencimento', 'vigencia_inicio', 'vigencia_fim']
+        fields = ['id', 'data_importacao','nome_administradora', 'status', 'total_registros', 'registros_processados', 'nome_usuario', 'data_vencimento', 'vigencia_inicio', 'vigencia_fim']
 
 class ImportacaoDetailSerializer(serializers.ModelSerializer):
     """
@@ -97,7 +99,7 @@ class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
 
     valor_total = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
     total_funcionarios = serializers.IntegerField(required=False)
-
+    nome_administradora = serializers.CharField(source='administradora.razao_social', read_only=True)
     class Meta:
         model = Importacao
         fields = [
@@ -105,6 +107,7 @@ class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
             'data_importacao',
             'status',
             'total_registros',
+            'nome_administradora',
             'registros_processados',
             'nome_usuario',
             'data_vencimento',
