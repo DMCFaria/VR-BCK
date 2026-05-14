@@ -11,6 +11,8 @@ from .models import FileUpload
 from beneficios.models import Importacao
 from django.utils import timezone
 
+from django.conf import settings
+
 logger = logging.getLogger(__name__)
 
 class ConfirmationView(views.APIView):
@@ -86,10 +88,14 @@ class ConfirmationView(views.APIView):
                 logger.info(f"Dados para email - file_upload_id: {file_id}, total_condominios: {total_condominios}, total_funcionarios: {total_funcionarios}, total_movimentacoes: {total_movimentacoes}, valor_total: {valor_total}, competencia: {competencia_str}, tipo_processamento: {tipo_display}")
 
                 fedhub_service = FedhubService()
+                email_faturamento = settings.EMAIL_FATURAMENTO
+                
+                logger.info(f"Enviando email para {email_faturamento} com os dados do processamento para file_upload_id: {file_id}")
                 
                 # Envia email com dados REAIS
                 email_enviado = fedhub_service.enviar_email_upload(
-                    email=request.user.email,
+                    # email=request.user.email,
+                    email=email_faturamento,
                     user=request.user,
                     dados_processamento={
                         "arquivo_nome": file_upload.file.name if file_upload.file else "arquivo.xlsx",
@@ -106,7 +112,7 @@ class ConfirmationView(views.APIView):
                         "periodo_fim": payload.get('periodo_fim', '')
                     }
                 )
-                logger.info(f"Email de notificação enviado para {request.user.email}: {email_enviado}")
+                logger.info(f"Email de notificação enviado para {email_faturamento}: {email_enviado}")
                 
                 # email_enviado = True  # Simulando envio de email para fins de teste
                 

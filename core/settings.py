@@ -16,6 +16,8 @@ FEDHUB_X_API_KEY = config('FEDHUB_X_API_KEY', default='')
 
 FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173')
 
+EMAIL_FATURAMENTO= config('EMAIL_FATURAMENTO', default='faturamento@fedcorp.com')
+
 DEBUG = True
 
 ALLOWED_HOSTS = ["localhost","vr-beneficios-backend-fedcorp-ju482.ondigitalocean.app", "127.0.0.1"]

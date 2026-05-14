@@ -6,7 +6,8 @@ from .views import (
     MovimentacaoBeneficioViewSet,
     UltimaImportacaoMovimentacoesView,
     ImportacaoListView,
-    ImportacaoDetailView
+    ImportacaoDetailView,
+    UltimaMovimentacaoDashboard
 )
 
 router = DefaultRouter()
@@ -19,4 +20,6 @@ urlpatterns = [
     path('importacoes/', ImportacaoListView.as_view(), name='importacao-list'),
     path('importacoes/<int:pk>/', ImportacaoDetailView.as_view(), name='importacao-detail'),
     path('importacoes/<int:pk>/status/', AlterarStatusImportacaoView.as_view(), name='alterar-status-importacao'),
+    
+    path('importacoes/ultima-movimentacao/', UltimaMovimentacaoDashboard.as_view(), name='ultima-movimentacao'),
 ]

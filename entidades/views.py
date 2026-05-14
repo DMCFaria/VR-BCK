@@ -27,31 +27,31 @@ class CondominioViewSet(viewsets.ModelViewSet):
             queryset = super().get_queryset()
             administradora_id = self.request.query_params.get('administradora')
 
-            logger.info(
-                f'[CondominioViewSet] GET queryset | administradora={administradora_id}'
-            )
+            # logger.info(
+            #     f'[CondominioViewSet] GET queryset | administradora={administradora_id}'
+            # )
 
             if administradora_id:
                 queryset = queryset.filter(
                     vinculocondominio__administradora_id=administradora_id
                 ).distinct()
 
-            logger.info(
-                f'[CondominioViewSet] Total encontrados: {queryset.count()}'
-            )
+            # logger.info(
+            #     f'[CondominioViewSet] Total encontrados: {queryset.count()}'
+            # )
 
             return queryset
 
         except Exception as e:
-            logger.exception(
-                f'[CondominioViewSet] Erro no get_queryset: {str(e)}'
-            )
+            # logger.exception(
+            #     f'[CondominioViewSet] Erro no get_queryset: {str(e)}'
+            # )
             return Condominio.objects.none()
 
     def create(self, request, *args, **kwargs):
-        logger.info(
-            f'[CondominioViewSet] Payload recebido: {request.data}'
-        )
+        # logger.info(
+        #     f'[CondominioViewSet] Payload recebido: {request.data}'
+        # )
 
         serializer = self.get_serializer(data=request.data)
 
@@ -68,9 +68,9 @@ class CondominioViewSet(viewsets.ModelViewSet):
         try:
             self.perform_create(serializer)
 
-            logger.info(
-                f'[CondominioViewSet] Condomínio criado com sucesso: {serializer.data}'
-            )
+            # logger.info(
+            #     f'[CondominioViewSet] Condomínio criado com sucesso: {serializer.data}'
+            # )
 
             return Response(
                 serializer.data,
@@ -94,7 +94,7 @@ class FuncionarioViewSet(viewsets.ModelViewSet):
     lookup_field = 'cpf'
 
     def create(self, request, *args, **kwargs):
-        logger.info(f'[FuncionarioViewSet][CREATE] payload={request.data}')
+        # logger.info(f'[FuncionarioViewSet][CREATE] payload={request.data}')
 
         serializer = self.get_serializer(data=request.data)
 
@@ -106,14 +106,14 @@ class FuncionarioViewSet(viewsets.ModelViewSet):
 
         self.perform_create(serializer)
 
-        logger.info(
-            f'[FuncionarioViewSet][CREATE] salvo={serializer.data}'
-        )
+        # logger.info(
+        #     f'[FuncionarioViewSet][CREATE] salvo={serializer.data}'
+        # )
 
         return Response(serializer.data, status=201)
 
     def update(self, request, *args, **kwargs):
-        logger.info(f'[FuncionarioViewSet][UPDATE] payload={request.data}')
+        # logger.info(f'[FuncionarioViewSet][UPDATE] payload={request.data}')
 
         partial = kwargs.pop('partial', False)
 
@@ -133,9 +133,9 @@ class FuncionarioViewSet(viewsets.ModelViewSet):
 
         self.perform_update(serializer)
 
-        logger.info(
-            f'[FuncionarioViewSet][UPDATE] salvo={serializer.data}'
-        )
+        # logger.info(
+        #     f'[FuncionarioViewSet][UPDATE] salvo={serializer.data}'
+        # )
 
         return Response(serializer.data)
 
@@ -145,33 +145,33 @@ class AdministradoraViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        logger.info(f'[AdministradoraViewSet][LIST] Iniciando consulta')
+        # logger.info(f'[AdministradoraViewSet][LIST] Iniciando consulta')
         
         queryset = super().get_queryset()
         ativo = self.request.query_params.get('ativo')
         
-        logger.info(f'[AdministradoraViewSet][LIST] Filtro ativo: {ativo}')
+        # logger.info(f'[AdministradoraViewSet][LIST] Filtro ativo: {ativo}')
         
         if ativo is not None:
             ativo_bool = ativo.lower() == 'true'
-            logger.info(f'[AdministradoraViewSet][LIST] Aplicando filtro ativo={ativo_bool}')
+            # logger.info(f'[AdministradoraViewSet][LIST] Aplicando filtro ativo={ativo_bool}')
             queryset = queryset.filter(ativo=ativo_bool)
         
-        logger.info(f'[AdministradoraViewSet][LIST] Total encontrado: {queryset.count()}')
+        # logger.info(f'[AdministradoraViewSet][LIST] Total encontrado: {queryset.count()}')
         
         return queryset
 
     def create(self, request, *args, **kwargs):
-        logger.info('='*60)
-        logger.info('[AdministradoraViewSet][CREATE] INICIANDO CRIAÇÃO')
-        logger.info(f'[AdministradoraViewSet][CREATE] Usuário: {request.user}')
-        logger.info(f'[AdministradoraViewSet][CREATE] Payload recebido: {json.dumps(request.data, indent=2, ensure_ascii=False)}')
+        # logger.info('='*60)
+        # logger.info('[AdministradoraViewSet][CREATE] INICIANDO CRIAÇÃO')
+        # logger.info(f'[AdministradoraViewSet][CREATE] Usuário: {request.user}')
+        # logger.info(f'[AdministradoraViewSet][CREATE] Payload recebido: {json.dumps(request.data, indent=2, ensure_ascii=False)}')
         
         # Log específico para campos importantes
-        logger.info(f'[AdministradoraViewSet][CREATE] CNPJ: {request.data.get("cnpj")}')
-        logger.info(f'[AdministradoraViewSet][CREATE] Razão Social: {request.data.get("razao_social")}')
-        logger.info(f'[AdministradoraViewSet][CREATE] Ativo: {request.data.get("ativo")} (tipo: {type(request.data.get("ativo"))})')
-        logger.info(f'[AdministradoraViewSet][CREATE] cartao_admin: {request.data.get("cartao_admin")} (tipo: {type(request.data.get("cartao_admin"))})')
+        # logger.info(f'[AdministradoraViewSet][CREATE] CNPJ: {request.data.get("cnpj")}')
+        # logger.info(f'[AdministradoraViewSet][CREATE] Razão Social: {request.data.get("razao_social")}')
+        # logger.info(f'[AdministradoraViewSet][CREATE] Ativo: {request.data.get("ativo")} (tipo: {type(request.data.get("ativo"))})')
+        # logger.info(f'[AdministradoraViewSet][CREATE] cartao_admin: {request.data.get("cartao_admin")} (tipo: {type(request.data.get("cartao_admin"))})')
         
         # Validação manual antes do serializer
         if not request.data.get('cnpj'):
@@ -195,7 +195,7 @@ class AdministradoraViewSet(viewsets.ModelViewSet):
             elif cartao_admin_value.lower() == 'false':
                 cartao_admin_value = False
             else:
-                logger.error(f"[AdministradoraViewSet][CREATE] cartao_admin inválido: {cartao_admin_value}")
+                # logger.error(f"[AdministradoraViewSet][CREATE] cartao_admin inválido: {cartao_admin_value}")
                 return Response({'error': 'cartao_admin deve ser true ou false'}, status=400)
             # Atualiza o request com o valor convertido
             request.data._mutable = True
@@ -204,12 +204,12 @@ class AdministradoraViewSet(viewsets.ModelViewSet):
         
         # Agora valida se é boolean
         if not isinstance(cartao_admin_value, bool):
-            logger.error(f"[AdministradoraViewSet][CREATE] cartao_admin deve ser boolean, recebido: {type(cartao_admin_value)}")
+            # logger.error(f"[AdministradoraViewSet][CREATE] cartao_admin deve ser boolean, recebido: {type(cartao_admin_value)}")
             return Response({'error': 'cartao_admin deve ser true (administradora) ou false (condominio)'}, status=400)
         
         serializer = self.get_serializer(data=request.data)
         
-        logger.info('[AdministradoraViewSet][CREATE] Validando serializer...')
+        # logger.info('[AdministradoraViewSet][CREATE] Validando serializer...')
         
         if not serializer.is_valid():
             logger.error('[AdministradoraViewSet][CREATE] Erros de validação:')
@@ -221,18 +221,18 @@ class AdministradoraViewSet(viewsets.ModelViewSet):
                 'details': serializer.errors
             }, status=400)
         
-        logger.info('[AdministradoraViewSet][CREATE] Dados validados com sucesso')
-        logger.info(f'[AdministradoraViewSet][CREATE] Dados limpos: {json.dumps(serializer.validated_data, indent=2, ensure_ascii=False, default=str)}')
+        # logger.info('[AdministradoraViewSet][CREATE] Dados validados com sucesso')
+        # logger.info(f'[AdministradoraViewSet][CREATE] Dados limpos: {json.dumps(serializer.validated_data, indent=2, ensure_ascii=False, default=str)}')
         
         try:
-            logger.info('[AdministradoraViewSet][CREATE] Tentando salvar no banco de dados...')
+            # logger.info('[AdministradoraViewSet][CREATE] Tentando salvar no banco de dados...')
             
             self.perform_create(serializer)
             
-            logger.info(f'[AdministradoraViewSet][CREATE] ✅ Administradora criada com ID: {serializer.instance.id}')
-            logger.info(f'[AdministradoraViewSet][CREATE] cartao_admin salvo como: {serializer.instance.cartao_admin} ({"Administradora" if serializer.instance.cartao_admin else "Condomínio"})')
-            logger.info(f'[AdministradoraViewSet][CREATE] Dados salvos: {json.dumps(serializer.data, indent=2, ensure_ascii=False)}')
-            logger.info('='*60)
+            # logger.info(f'[AdministradoraViewSet][CREATE] ✅ Administradora criada com ID: {serializer.instance.id}')
+            # logger.info(f'[AdministradoraViewSet][CREATE] cartao_admin salvo como: {serializer.instance.cartao_admin} ({"Administradora" if serializer.instance.cartao_admin else "Condomínio"})')
+            # logger.info(f'[AdministradoraViewSet][CREATE] Dados salvos: {json.dumps(serializer.data, indent=2, ensure_ascii=False)}')
+            # logger.info('='*60)
             
             return Response(serializer.data, status=201)
             
@@ -246,13 +246,13 @@ class AdministradoraViewSet(viewsets.ModelViewSet):
             }, status=500)
 
     def update(self, request, *args, **kwargs):
-        logger.info(f'[AdministradoraViewSet][UPDATE] ID: {kwargs.get("pk")}')
-        logger.info(f'[AdministradoraViewSet][UPDATE] Payload: {request.data}')
+        # logger.info(f'[AdministradoraViewSet][UPDATE] ID: {kwargs.get("pk")}')
+        # logger.info(f'[AdministradoraViewSet][UPDATE] Payload: {request.data}')
         
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
         
-        logger.info(f'[AdministradoraViewSet][UPDATE] Instância atual: {instance}')
+        # logger.info(f'[AdministradoraViewSet][UPDATE] Instância atual: {instance}')
         
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         
@@ -262,7 +262,7 @@ class AdministradoraViewSet(viewsets.ModelViewSet):
         
         try:
             self.perform_update(serializer)
-            logger.info(f'[AdministradoraViewSet][UPDATE] ✅ Atualizado com sucesso')
+            # logger.info(f'[AdministradoraViewSet][UPDATE] ✅ Atualizado com sucesso')
             return Response(serializer.data)
         except Exception as e:
             logger.exception(f'[AdministradoraViewSet][UPDATE] ❌ Erro: {str(e)}')
@@ -270,12 +270,12 @@ class AdministradoraViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'])
     def condominios(self, request, pk=None):
-        logger.info(f'[AdministradoraViewSet][CONDOMINIOS] ID: {pk}')
+        # logger.info(f'[AdministradoraViewSet][CONDOMINIOS] ID: {pk}')
         
         administradora = self.get_object()
         vinculos = VinculoCondominio.objects.filter(administradora=administradora)
         
-        logger.info(f'[AdministradoraViewSet][CONDOMINIOS] Encontrados {vinculos.count()} vínculos')
+        # logger.info(f'[AdministradoraViewSet][CONDOMINIOS] Encontrados {vinculos.count()} vínculos')
         
         serializer = VinculoCondominioSerializer(vinculos, many=True)
         return Response(serializer.data)
