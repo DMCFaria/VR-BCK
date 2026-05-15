@@ -38,6 +38,8 @@ class CustomUser(AbstractUser):
         ("adm", "Usuário da Administradora"),
         ("cli", "Cliente(Condomínio)"),
     ]
+    
+    nome = models.CharField(max_length=255, verbose_name="Nome Completo", null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

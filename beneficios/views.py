@@ -428,7 +428,8 @@ class UltimaMovimentacaoDashboard(views.APIView):
         logger.info(f"Dashboard - Última importação: ID {ultima_importacao.id}, "
                    f"Valor Total: {response_data['valor_total']}, "
                    f"Condomínios: {response_data['total_condominios']}, "
-                   f"Funcionários: {response_data['total_funcionarios']}")
+                   f"Funcionários: {response_data['total_funcionarios']}, "
+                   f"Movimentações: {response_data['total_movimentacoes']}")
         
         return Response(response_data, status=status.HTTP_200_OK)
             
