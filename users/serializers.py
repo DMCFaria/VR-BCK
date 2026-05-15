@@ -13,7 +13,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomUser
-        fields = ['id', 'username', 'email', 'password', 'tipo', 'administradora']
+        fields = ['id', 'nome', 'username', 'email', 'password', 'tipo', 'administradora']
         extra_kwargs = {
             'password': {'write_only': True},
             'administradora': {'required': False, 'allow_null': True}
@@ -34,12 +34,12 @@ class CustomUserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomUser
-        fields = ['id', 'username', 'email', 'tipo', 'administradora', 'administradora_id', 'administradora_nome', 'created_at', 'updated_at']
+        fields = ['id', 'nome', 'username', 'email', 'tipo', 'administradora', 'administradora_id', 'administradora_nome', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
         extra_kwargs = {
-            'username': {'required': False},  # Tornar opcional
-            'email': {'required': False},     # Tornar opcional
-            'tipo': {'required': False},      # Tornar opcional
+            'username': {'required': False}, 
+            'email': {'required': False},   
+            'tipo': {'required': False},  
         }
     
     def update(self, instance, validated_data):
@@ -48,14 +48,14 @@ class CustomUserSerializer(serializers.ModelSerializer):
         if password:
             instance.set_password(password)
         
-        # Atualizar administradora (pode ser None para desvincular)
+        # Atualizar administradora 
         administradora = validated_data.pop('administradora', None)
         if administradora is not None:  # Se veio no payload, atualizar
             instance.administradora = administradora
         
         # Atualizar outros campos apenas se presentes
         for attr, value in validated_data.items():
-            if value is not None:  # Só atualizar se veio no payload
+            if value is not None: 
                 setattr(instance, attr, value)
         
         instance.save()
