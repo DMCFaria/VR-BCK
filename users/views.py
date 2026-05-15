@@ -1,13 +1,20 @@
 # users/views.py
+from datetime import timezone
+
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
+
+from core.fedhub.services.fedhub_service import FedhubService
 from .models import CustomUser
 from .serializers import CustomUserSerializer, UserRegistrationSerializer
 from .permissions import IsAdminUserType
 from entidades.models import Administradora
 import logging
+
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.permissions import AllowAny, IsAuthenticated
 
 logger = logging.getLogger(__name__)
 
@@ -173,3 +180,188 @@ class DesvincularAdministradoraView(APIView):
                 {"error": "Usuário não encontrado."},
                 status=status.HTTP_404_NOT_FOUND
             )
+            
+class PasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def post(self, request):
+        user = request.user
+        old_password = request.data.get("old_password")
+        new_password = request.data.get("new_password")
+        if not user.check_password(old_password):
+            return Response(
+                {"detail": "Senha antiga incorreta."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user.set_password(new_password)
+        user.save()
+        return Response(
+            {"detail": "Senha alterada com sucesso."}, status=status.HTTP_200_OK
+        )
+
+class SolicitarResetSenhaView(APIView):
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        email = request.data.get("email")
+        
+        logger.info(f"Solicitação de reset de senha para email: {email}")
+        
+        if not email:
+            return Response(
+                {"detail": "E-mail é obrigatório."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            user = CustomUser.objects.get(email=email)
+            logger.info(f"Usuário encontrado: {user.email}")
+        except CustomUser.DoesNotExist:
+            logger.warning(f"Usuário não encontrado para o email: {email}")
+            return Response(
+                {"detail": "Se o e-mail estiver cadastrado, você receberá as instruções."},
+                status=status.HTTP_200_OK
+            )
+        
+        # Enviar email via Gateway
+        try:
+            
+            service = FedhubService()
+            
+            email_enviado = service.enviar_email_recuperacao_senha(
+                email=user.email,
+                user=user
+            )
+            
+            if email_enviado:
+                logger.info(f"E-mail de recuperação enviado com sucesso para: {user.email}")
+            else:
+                logger.error(f"Falha ao enviar e-mail de recuperação para: {user.email}")
+                
+            return Response(
+                {
+                    "status": "success",
+                    "message": "Em breve você receberá um e-mail com as instruções para resetar sua senha. Cheque sua caixa de entrada e também a caixa de spam.",
+                    "email_enviado": email_enviado
+                }
+            )
+                    
+        except Exception as e:
+            logger.error(f"Erro ao chamar Gateway: {str(e)}")
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Falha ao processar a solicitação. Tente novamente mais tarde.",
+                    "email_enviado": email_enviado
+                }
+            )
+                
+class ValidarTokenResetView(APIView):
+    permission_classes = [AllowAny]
+    
+    def get(self, request, token):
+        """Valida se o token de reset é válido (busca pelo token diretamente)"""
+        logger.info(f"Validando token de reset: {token[:20]}...")
+        
+        # Buscar usuário pelo token
+        try:
+            user = CustomUser.objects.get(reset_password_token=token)
+        except CustomUser.DoesNotExist:
+            logger.warning(f"Token não encontrado: {token[:20]}...")
+            return Response(
+                {"valid": False, "detail": "Link inválido ou expirado."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Verificar se o token não expirou
+        if not user.reset_password_token_expires_at:
+            logger.warning(f"Token sem data de expiração para usuário: {user.email}")
+            return Response(
+                {"valid": False, "detail": "Link inválido."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if user.reset_password_token_expires_at < timezone.now():
+            logger.warning(f"Token expirado para usuário: {user.email}")
+            return Response(
+                {"valid": False, "detail": "Link expirado. Solicite um novo."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        logger.info(f"Token válido para usuário: {user.email}")
+        return Response(
+            {"valid": True, "detail": "Token válido.", "user_id": user.id},
+            status=status.HTTP_200_OK
+        )
+
+class ResetarSenhaView(APIView):
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        token = request.data.get("token")
+        nova_senha = request.data.get("nova_senha")
+        
+        logger.info(f"Solicitação de reset de senha para token: {token[:20] if token else 'None'}...")
+        
+        if not token or not nova_senha:
+            return Response(
+                {"detail": "Dados incompletos."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if len(nova_senha) < 6:
+            return Response(
+                {"detail": "A senha deve ter no mínimo 6 caracteres."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Buscar usuário pelo token
+        try:
+            user = CustomUser.objects.get(reset_password_token=token)
+        except CustomUser.DoesNotExist:
+            logger.warning(f"Token não encontrado: {token[:20]}...")
+            return Response(
+                {"detail": "Link inválido ou expirado."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Verificar expiração
+        if not user.reset_password_token_expires_at:
+            logger.warning(f"Token sem data de expiração para usuário: {user.email}")
+            return Response(
+                {"detail": "Link inválido."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if user.reset_password_token_expires_at < timezone.now():
+            logger.warning(f"Token expirado para usuário: {user.email}")
+            return Response(
+                {"detail": "Link expirado. Solicite um novo."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Redefinir a senha
+        user.set_password(nova_senha)
+        user.last_password_reset = timezone.now()
+        user.password_reset_count += 1
+        
+        # Limpar o token após uso (IMPORTANTE: não pode reusar)
+        user.reset_password_token = None
+        user.reset_password_token_created_at = None
+        user.reset_password_token_expires_at = None
+        user.save(update_fields=[
+            'reset_password_token',
+            'reset_password_token_created_at',
+            'reset_password_token_expires_at',
+            'password',
+            'last_password_reset',
+            'password_reset_count'
+        ])
+        
+        logger.info(f"Senha redefinida com sucesso para usuário: {user.email}")
+        
+        return Response(
+            {"detail": "Senha redefinida com sucesso."},
+            status=status.HTTP_200_OK
+        )
