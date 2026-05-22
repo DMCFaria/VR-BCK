@@ -79,10 +79,11 @@ class UserListView(generics.ListAPIView):
     Lista todos os usuários com opção de filtrar por administradora.
     """
     serializer_class = CustomUserSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminUserType]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         queryset = CustomUser.objects.all()
+        
         
         # Filtro por administradora (via query param)
         administradora_id = self.request.query_params.get('administradora')
@@ -95,8 +96,10 @@ class UserListView(generics.ListAPIView):
         
         # Filtro por tipo de usuário
         tipo = self.request.query_params.get('tipo')
+        logger.info(self.request.query_params)
+        logger.info(f"Filtrando usuários por tipo: {tipo}")
         if tipo:
-            queryset = queryset.filter(tipo=tipo)
+            queryset = queryset.filter(tipo!= 'fat' or tipo != 'dev')
         
         logger.info(f"Total de usuários encontrados: {queryset.count()}")
         return queryset

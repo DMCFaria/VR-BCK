@@ -444,6 +444,8 @@ class ImportacaoListView(views.APIView):
     def get(self, request):
         user = request.user
         administradora = getattr(user, 'administradora', None)
+        tipo = getattr(user, 'tipo', None)
+
 
         if not administradora:
             return Response(
@@ -456,12 +458,17 @@ class ImportacaoListView(views.APIView):
             'funcionario_cpf',
             'produto_codigo'
         )
-
-        importacoes = Importacao.objects.filter(
-            administradora=administradora
-        ).prefetch_related(
-            Prefetch('movimentacoes', queryset=movimentacoes_qs)
-        ).order_by('-data_importacao')
+        if tipo in ['fat', 'dev']:  # Condomínio
+            
+            importacoes = Importacao.objects.all().prefetch_related(
+                Prefetch('movimentacoes', queryset=movimentacoes_qs)
+                ).order_by('-data_importacao')
+        else:
+            importacoes = Importacao.objects.filter(
+                administradora=administradora
+            ).prefetch_related(
+                Prefetch('movimentacoes', queryset=movimentacoes_qs)
+                ).order_by('-data_importacao')
 
         serializer = ImportacaoComMovimentacoesSerializer(importacoes, many=True)
         
