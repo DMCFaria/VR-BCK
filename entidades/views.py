@@ -3,6 +3,8 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.exceptions import ValidationError
 import logging
 
 from .models import Condominio, Funcionario, Administradora, VinculoCondominio, Gerente
@@ -16,36 +18,44 @@ from .serializers import (
 
 logger = logging.getLogger(__name__)
 
+class CondominioPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
 class CondominioViewSet(viewsets.ModelViewSet):
     queryset = Condominio.objects.all()
     serializer_class = CondominioSerializer
     permission_classes = [IsAuthenticated]
     lookup_field = 'cnpj'
+    pagination_class = CondominioPagination
 
     def get_queryset(self):
         try:
             queryset = super().get_queryset()
-            administradora_id = self.request.query_params.get('administradora')
 
-            # logger.info(
-            #     f'[CondominioViewSet] GET queryset | administradora={administradora_id}'
-            # )
+            administradora_id = self.request.user.administradora_id
+            cnpj = self.request.query_params.get('cnpj')
 
-            if administradora_id:
-                queryset = queryset.filter(
-                    vinculocondominio__administradora_id=administradora_id
-                ).distinct()
+            if not administradora_id:
+                raise ValidationError({"error": "O parâmetro 'administradora' é obrigatório."})
 
-            # logger.info(
-            #     f'[CondominioViewSet] Total encontrados: {queryset.count()}'
-            # )
+            if self.request.user.tipo in ['fat', 'dev']:
+                if cnpj:
+                    queryset = queryset.filter(cnpj__icontains=cnpj)
+                return queryset
+
+            if cnpj:
+                queryset = queryset.filter(cnpj__icontains=cnpj)
+
+            queryset = queryset.filter(
+                vinculocondominio__administradora_id=administradora_id,
+            ).distinct()
 
             return queryset
 
         except Exception as e:
-            # logger.exception(
-            #     f'[CondominioViewSet] Erro no get_queryset: {str(e)}'
-            # )
             return Condominio.objects.none()
 
     def create(self, request, *args, **kwargs):
