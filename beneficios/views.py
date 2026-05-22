@@ -436,7 +436,7 @@ class UltimaMovimentacaoDashboard(views.APIView):
             
 class ImportacaoListView(views.APIView):
     """
-    Rota para listar o histórico de importações da administradora do usuário.
+    Rota para listar o histórico de importações.
     """
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
@@ -444,8 +444,6 @@ class ImportacaoListView(views.APIView):
     def get(self, request):
         user = request.user
         administradora = getattr(user, 'administradora', None)
-        tipo = getattr(user, 'tipo', None)
-
 
         if not administradora:
             return Response(
@@ -458,25 +456,20 @@ class ImportacaoListView(views.APIView):
             'funcionario_cpf',
             'produto_codigo'
         )
-        if tipo in ['fat', 'dev']:  # Condomínio
-            
-            importacoes = Importacao.objects.all().prefetch_related(
-                Prefetch('movimentacoes', queryset=movimentacoes_qs)
-                ).order_by('-data_importacao')
-        else:
-            importacoes = Importacao.objects.filter(
-                administradora=administradora
-            ).prefetch_related(
-                Prefetch('movimentacoes', queryset=movimentacoes_qs)
-                ).order_by('-data_importacao')
+
+        importacoes = Importacao.objects.filter(
+            administradora=administradora
+        ).prefetch_related(
+            Prefetch('movimentacoes', queryset=movimentacoes_qs)
+        ).order_by('-data_importacao')
 
         serializer = ImportacaoComMovimentacoesSerializer(importacoes, many=True)
-        
+
         data = serializer.data
-        
+
         logger.debug(f"Dados formatados para resposta: {data}")
 
-        return Response(serializer.data)
+        return Response(data)
 
 
 class ImportacaoDetailView(views.APIView):

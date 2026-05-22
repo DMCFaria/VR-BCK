@@ -16,6 +16,10 @@ import logging
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
+from google.oauth2 import id_token
+from google.auth.transport import requests
+from rest_framework_simplejwt.tokens import RefreshToken
+
 logger = logging.getLogger(__name__)
 
 class UserRegistrationAPIView(generics.CreateAPIView):
@@ -298,6 +302,58 @@ class ValidarTokenResetView(APIView):
             status=status.HTTP_200_OK
         )
 
+class GoogleLoginView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        credential = request.data.get("credential")
+
+        if not credential:
+            return Response(
+                {"detail": "Credential não enviada."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # valida token google
+            idinfo = id_token.verify_oauth2_token(
+                credential,
+                requests.Request(),
+                "765602112412-336nt6annegl11j5s3ffm5lie68a975q.apps.googleusercontent.com"
+            )
+
+            email = idinfo.get("email")
+            nome = idinfo.get("name")
+
+            if not email:
+                return Response(
+                    {"detail": "Email não encontrado."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # cria ou pega usuário
+            user, created = CustomUser.objects.get_or_create(
+                email=email,
+                defaults={
+                    "username": email,
+                    "nome": nome,
+                }
+            )
+
+            # gera jwt
+            refresh = RefreshToken.for_user(user)
+
+            return Response({
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+            })
+
+        except ValueError:
+            return Response(
+                {"detail": "Token Google inválido."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+                      
 class ResetarSenhaView(APIView):
     permission_classes = [AllowAny]
     
