@@ -442,13 +442,24 @@ class ImportacaoListView(views.APIView):
     authentication_classes = [JWTAuthentication]
 
     def get(self, request):
+        user = request.user
+        administradora = getattr(user, 'administradora', None)
+
+        if not administradora:
+            return Response(
+                {"detail": "Usuário não possui administradora vinculada."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         movimentacoes_qs = MovimentacaoBeneficio.objects.select_related(
             'empresa_cnpj',
             'funcionario_cpf',
             'produto_codigo'
         )
 
-        importacoes = Importacao.objects.prefetch_related(
+        importacoes = Importacao.objects.filter(
+            administradora=administradora
+        ).prefetch_related(
             Prefetch('movimentacoes', queryset=movimentacoes_qs)
         ).order_by('-data_importacao')
 
