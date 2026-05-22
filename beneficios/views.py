@@ -436,40 +436,29 @@ class UltimaMovimentacaoDashboard(views.APIView):
             
 class ImportacaoListView(views.APIView):
     """
-    Rota para listar o histórico de importações da administradora do usuário.
+    Rota para listar o histórico de importações.
     """
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
     def get(self, request):
-        user = request.user
-        administradora = getattr(user, 'administradora', None)
-
-        if not administradora:
-            return Response(
-                {"detail": "Usuário não possui administradora vinculada."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
         movimentacoes_qs = MovimentacaoBeneficio.objects.select_related(
             'empresa_cnpj',
             'funcionario_cpf',
             'produto_codigo'
         )
 
-        importacoes = Importacao.objects.filter(
-            administradora=administradora
-        ).prefetch_related(
+        importacoes = Importacao.objects.prefetch_related(
             Prefetch('movimentacoes', queryset=movimentacoes_qs)
         ).order_by('-data_importacao')
 
         serializer = ImportacaoComMovimentacoesSerializer(importacoes, many=True)
-        
+
         data = serializer.data
-        
+
         logger.debug(f"Dados formatados para resposta: {data}")
 
-        return Response(serializer.data)
+        return Response(data)
 
 
 class ImportacaoDetailView(views.APIView):

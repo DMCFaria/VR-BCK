@@ -1,6 +1,7 @@
 from django.urls import path
 from .views import (
     DesvincularAdministradoraView,
+    GoogleLoginView,
     PasswordView,
     UserRegistrationAPIView, 
     CurrentUserView, 
@@ -21,4 +22,6 @@ urlpatterns = [
     path('<int:pk>/', UserDetailUpdateDeleteView.as_view(), name='user_detail'),
     path('<int:pk>/vincular-adm/', VincularAdministradoraView.as_view(), name='vincular-adm'),
     path('<int:pk>/desvincular-adm/', DesvincularAdministradoraView.as_view(), name='desvincular-adm'),
+    
+    path('google-login/', GoogleLoginView.as_view(), name='google-login'),
 ]

@@ -33,8 +33,8 @@ class CustomUser(AbstractUser):
     
     TYPE_CHOICES = [
         ("dev", "Desenvolvedor"),
-        ("fin", "Financeiro Fedcorp"),
-        ("fat", "Faturista Fedcorp"),
+        ("fin", "Financeiro"),
+        ("fat", "Faturista"),
         ("adm", "Usuário da Administradora"),
         ("cli", "Cliente(Condomínio)"),
     ]

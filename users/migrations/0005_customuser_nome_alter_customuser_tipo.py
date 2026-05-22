@@ -18,6 +18,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='customuser',
             name='tipo',
-            field=models.CharField(choices=[('dev', 'Desenvolvedor'), ('fin', 'Financeiro Fedcorp'), ('fat', 'Faturista Fedcorp'), ('adm', 'Usuário da Administradora'), ('cli', 'Cliente(Condomínio)')], default='adm', max_length=3),
+            field=models.CharField(choices=[('dev', 'Desenvolvedor'), ('fin', 'Financeiro'), ('fat', 'Faturista'), ('adm', 'Usuário da Administradora'), ('cli', 'Cliente(Condomínio)')], default='adm', max_length=3),
         ),
     ]
