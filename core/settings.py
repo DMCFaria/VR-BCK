@@ -142,6 +142,7 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@seusite.com')
 EMAIL_FROM_NAME = os.getenv('EMAIL_FROM_NAME', 'Sistema')
 
 
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
