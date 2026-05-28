@@ -20,7 +20,12 @@ EMAIL_FATURAMENTO= config('EMAIL_FATURAMENTO', default='faturamento@fedcorp.com'
 
 DEBUG = True
 
-ALLOWED_HOSTS = ["localhost","vr-beneficios-backend-fedcorp-ju482.ondigitalocean.app", "127.0.0.1"]
+ALLOWED_HOSTS = [
+    "127.0.0.1",
+    "localhost",
+    "vr-beneficios-backend-fedcorp-ju482.ondigitalocean.app", 
+    "vr-fedcorp-portal-beneficios-2kxoa.ondigitalocean.app",
+]
 
 INSTALLED_APPS = [ 
     'django.contrib.admin',
