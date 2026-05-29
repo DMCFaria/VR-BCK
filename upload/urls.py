@@ -1,4 +1,7 @@
 from django.urls import path
+
+from upload.vt_confirm import ConfirmVTView
+from upload.vt_upload import UploadVTView
 from .confirmed import ConfirmationView
 from .upload import UploadView
 from .EXCEL.template import baixar_template_excel
@@ -11,6 +14,9 @@ urlpatterns = [
     
     path('', UploadView.as_view(), name='file-upload'),
     path('confirm/', ConfirmationView.as_view(), name='confirm_data'),
+    
+    path('vt/', UploadVTView.as_view(), name='vt-upload'),
+    path('vt/confirm/', ConfirmVTView.as_view(), name='vt-confirm'),
     
     #EXCEL ROUTE
     path('download-excel-template/', baixar_template_excel, name='download_template'),

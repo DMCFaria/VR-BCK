@@ -606,3 +606,10 @@ class FaturamentoExportSerializer(serializers.Serializer):
     vencimento = serializers.DateField(required=False, allow_null=True)
     periodos = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     periodo2 = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    
+class VTCofirmationSerializer(serializers.Serializer):
+    file_upload_id = serializers.IntegerField(required=True)
+    summary = serializers.DictField(required=False)
+    dados_validados = serializers.ListField(required=False)
+    status = serializers.CharField(required=False, default='VALIDATED')
+    detail = serializers.CharField(required=False)
