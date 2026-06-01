@@ -4,7 +4,7 @@ from upload.vt_confirm import ConfirmVTView
 from upload.vt_upload import UploadVTView
 from .confirmed import ConfirmationView
 from .upload import UploadView
-from .EXCEL.template import baixar_template_excel
+from .EXCEL.template import baixar_template_VR, baixar_template_VT
 from .export import ExportTxtCompraView, ExportFaturamentoView
 from .faturamento import UploadFaturamentoView, StatusFaturamentoView
 from .download_views import DownloadArquivoView, DownloadFaturamentoView, DownloadBoletosView, DownloadNotasDebitoView, DownloadNotasFiscaisView, DownloadBoletoOriginalView, DownloadNotaDebitoOriginalView, DownloadNotaFiscalOriginalView, DownloadTodosOriginaisView
@@ -19,8 +19,9 @@ urlpatterns = [
     path('vt/confirm/', ConfirmVTView.as_view(), name='vt-confirm'),
     
     #EXCEL ROUTE
-    path('download-excel-template/', baixar_template_excel, name='download_template'),
-    
+    path('download-excel-vr/', baixar_template_VR, name='download_template'),
+    path('download-excel-vt/', baixar_template_VT, name='download_template'),
+
     # EXPORT ROUTES
     path('export/txt-compra/', ExportTxtCompraView.as_view(), name='export_txt_compra'),
     path('export/faturamento/', ExportFaturamentoView.as_view(), name='export_faturamento'),
