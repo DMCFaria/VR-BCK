@@ -318,8 +318,6 @@ def parse_rb_layout(file_path, file_upload_id):
     return result
 
 
-
-
 def cpf_valido_matematicamente(cpf: str) -> bool:
     """
     Valida o CPF usando o cálculo dos dígitos verificadores.
