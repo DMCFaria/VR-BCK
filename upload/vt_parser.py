@@ -100,10 +100,7 @@ def parse_vt_excel(file_path, upload_id):
             
             if nome_condominio:
                 condominios_set.add(nome_condominio)
-            
-            # 🔥 EXTRAI OS ITENS (colunas a partir do índice 23 - ITEM 1)
-            # Estrutura correta: ITEM 1 ocupa 4 colunas: CÓD., QTD., DIAS., VALOR
-            # A coluna 23 (índice 23) é o primeiro CÓD.
+                
             itens = []
             for item_num in range(1, 11):  # ITEM 1 a ITEM 10
                 base_col = 23 + ((item_num - 1) * 4)
@@ -204,7 +201,7 @@ def parse_vt_excel(file_path, upload_id):
             "valido": len(dados_validados) > 0,
             "mensagem_validacao": "Arquivo validado com sucesso",
             "linhas_com_erro": [],
-            "total_por_beneficiario": total_por_beneficiario  # 🔥 ADICIONADO: necessário para o preview
+            "total_por_beneficiario": total_por_beneficiario
         }
         
         logger.info(f"VT Parser resultado para upload {upload_id}: total_registros={result['total_registros']}, valido={result['valido']}, valor_total={result['valor_total_vt']}, total_por_beneficiario={len(result['total_por_beneficiario'])}")

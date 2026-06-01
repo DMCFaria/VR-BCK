@@ -76,7 +76,7 @@ class UploadView(views.APIView):
             beneficiary_summary = get_beneficiary_summary(parsed_data)
             
             # logger.info(f"Beneficiary summary: {beneficiary_summary}")
-            
+             
             frontend_summary = {
                 "administradora_id": administradora_id,
                 "total_condominios": parsed_data.get("summary", {}).get("total_condominios", 0),
