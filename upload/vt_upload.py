@@ -11,6 +11,7 @@ from .utils import convert_decimals_to_json_safe
 from datetime import datetime
 import boto3   
 from django.conf import settings
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -51,13 +52,40 @@ class UploadVTView(views.APIView):
             if "error" in parsed_data:
                 return self._handle_error(upload_instance, parsed_data["error"])
 
-            # Gera summary específico para VT (apenas validação, sem beneficiários)
+            # Obtém os dados validados (movimentações)
+            dados_validados = parsed_data.get("dados_validados", [])
+            total_por_beneficiario = parsed_data.get("total_por_beneficiario", [])
+
+            # Se não veio do parser, gera (fallback)
+            if not total_por_beneficiario and dados_validados:
+                from collections import defaultdict
+                temp_map = defaultdict(lambda: {
+                    "nome_funcionario": "",
+                    "cpf": "",
+                    "condominio": "",
+                    "valor_total": 0.0,
+                    "quantidade_dias": 0
+                })
+                for mov in dados_validados:
+                    cpf = mov.get("cpf_funcionario", "")
+                    if not cpf:
+                        continue
+                    temp_map[cpf]["nome_funcionario"] = mov.get("nome_funcionario", "")
+                    temp_map[cpf]["cpf"] = cpf
+                    temp_map[cpf]["condominio"] = mov.get("nome_condominio", "")
+                    temp_map[cpf]["valor_total"] += float(mov.get("valor_beneficio_total", 0))
+                    temp_map[cpf]["quantidade_dias"] += int(mov.get("quantidade_dias", 0))
+                total_por_beneficiario = list(temp_map.values())
+
+            # Cria o summary
             vt_summary = {
                 "administradora_id": administradora_id,
-                "total_registros": parsed_data.get("total_registros", 0),
-                "total_funcionarios": parsed_data.get("total_funcionarios", 0),
                 "total_condominios": parsed_data.get("total_condominios", 0),
-                "valor_total_vt": parsed_data.get("valor_total_vt", 0),
+                "total_funcionarios": parsed_data.get("total_funcionarios", 0),
+                "total_movimentacoes": parsed_data.get("total_registros", 0),
+                "valor_total_beneficios": parsed_data.get("valor_total_vt", 0),
+                "total_por_beneficiario": total_por_beneficiario,
+                "total_registros": parsed_data.get("total_registros", 0),
                 "total_dias_trabalhados": parsed_data.get("total_dias_trabalhados", 0),
                 "valido": parsed_data.get("valido", False),
                 "mensagem_validacao": parsed_data.get("mensagem_validacao", "Arquivo validado com sucesso")
@@ -67,10 +95,20 @@ class UploadVTView(views.APIView):
             
             frontend_summary_safe = convert_decimals_to_json_safe(vt_summary)
 
+            # Cria o data_to_backend no mesmo formato que o UploadView
+            data_to_backend = {
+                "movimentacoes_detalhada": dados_validados,
+                "summary": vt_summary,
+                "file_upload_id": upload_instance.id
+            }
+            
+            data_to_backend_safe = convert_decimals_to_json_safe(data_to_backend)
+
             upload_instance.process_status = "PARSED"
             upload_instance.summary_data = frontend_summary_safe
             upload_instance.save()
 
+            # Upload para S3
             if file_obj:
                 original_name = file_obj.name.split('.')[0]
                 user = request.user
@@ -84,26 +122,108 @@ class UploadVTView(views.APIView):
                 file_obj.seek(0)
                 s3.upload_fileobj(file_obj, "fedcorp-prod", f"VR - DOCS/importacoes_vt/{new_file_name}")
 
+            # 🔥 FECHA O ARQUIVO ANTES DE TENTAR REMOVER
+            try:
+                # Força o fechamento do arquivo se estiver aberto
+                if hasattr(upload_instance.file, 'close'):
+                    upload_instance.file.close()
+            except:
+                pass
+            
+            # Aguarda um pouco para garantir que o arquivo foi liberado
+            time.sleep(0.1)
+            
+            # Remove o arquivo local
             if os.path.exists(file_path):
-                os.remove(file_path)
+                try:
+                    os.remove(file_path)
+                    logger.info(f"Arquivo removido com sucesso: {file_path}")
+                except PermissionError as perm_err:
+                    logger.warning(f"Não foi possível remover o arquivo {file_path}: {perm_err}")
+                    # Tenta novamente após 1 segundo
+                    time.sleep(1)
+                    try:
+                        os.remove(file_path)
+                    except:
+                        pass
 
-            # Retorna os dados validados (apenas validação, sem processamento de benefícios)
+            # Retorna no mesmo formato que o UploadView de benefícios
             return Response(
                 {
                     "file_upload_id": upload_instance.id,
-                    "status": "VALIDATED",
+                    "status": "PARSED",
                     "summary": frontend_summary_safe,
-                    "dados_validados": parsed_data.get("dados_validados", []),
+                    "data_to_backend": data_to_backend_safe,
+                    "movimentacoes_detalhada": dados_validados,
+                     "dados_validados": dados_validados,
                     "linhas_com_erro": parsed_data.get("linhas_com_erro", []),
-                    "detail": "Arquivo de Vale Transporte validado com sucesso. Nenhum benefício foi processado."
+                    "detail": "Arquivo de Vale Transporte processado com sucesso."
                 },
                 status=status.HTTP_202_ACCEPTED,
             )
 
         except Exception as e:
-            if os.path.exists(file_path):
-                os.remove(file_path)
+            logger.error(f"Erro no processamento: {str(e)}", exc_info=True)
+            try:
+                if os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                    except:
+                        pass
+            except:
+                pass
             return self._handle_error(upload_instance, f"Erro inesperado: {str(e)}")
+
+    def _get_beneficiary_summary(self, movimentacoes):
+        """Agrupa movimentações por beneficiário (CPF)"""
+        from collections import defaultdict
+        
+        summary_map = defaultdict(lambda: {
+            "nome_funcionario": "",
+            "cpf": "",
+            "condominio": "",
+            "valor_total": 0.0,
+            "quantidade_dias": 0
+        })
+        
+        for mov in movimentacoes:
+            cpf = mov.get("cpf_funcionario", "")
+            if not cpf:
+                continue
+                
+            nome = mov.get("nome_funcionario", "")
+            condominio = mov.get("nome_condominio", "")
+            
+            valor = mov.get("valor_beneficio_total", 0)
+            if valor is None:
+                valor = 0
+            valor = float(valor)
+            
+            dias = mov.get("quantidade_dias", 0)
+            if dias is None:
+                dias = 0
+            dias = int(dias)
+            
+            logger.info(f"Processando mov: cpf={cpf}, nome={nome}, valor={valor}, dias={dias}")
+            
+            summary_map[cpf]["nome_funcionario"] = nome
+            summary_map[cpf]["cpf"] = cpf
+            summary_map[cpf]["condominio"] = condominio
+            summary_map[cpf]["valor_total"] += valor
+            summary_map[cpf]["quantidade_dias"] += dias
+        
+        result = []
+        for item in summary_map.values():
+            result.append({
+                "nome_funcionario": item["nome_funcionario"],
+                "cpf": item["cpf"],
+                "condominio": item["condominio"],
+                "valor_total": float(item["valor_total"]),
+                "quantidade_dias": item["quantidade_dias"]
+            })
+        
+        logger.info(f"Beneficiary summary gerado: {result}")
+        return result
 
     def _handle_error(self, instance, message):
         instance.process_status = "FAILED"
