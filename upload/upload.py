@@ -48,7 +48,7 @@ class UploadView(views.APIView):
         )
         
         # 2. Busca o valor máximo por funcionário da administradora
-        valor_max = Decimal('2499.99')
+        valor_max = Decimal('9999.99')
         if administradora_id:
             try:
                 adm = Administradora.objects.get(id=administradora_id)
