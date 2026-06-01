@@ -38,7 +38,9 @@ def _validar_campos_obrigatorios(row, line_num):
     return errors
 
 
-def parse_excel_layout(file_path, file_upload_id):
+def parse_excel_layout(file_path, file_upload_id, valor_max_beneficio=None):
+    if valor_max_beneficio is None:
+        valor_max_beneficio = Decimal('2499.99')
     result = {
         "file_upload_id": file_upload_id,
         "condominios": [],
@@ -257,8 +259,8 @@ def parse_excel_layout(file_path, file_upload_id):
             result['summary']['valor_total_beneficios'] += v_total
             result['summary']['total_movimentacoes'] += 1
             
-            if condominios_data[raw_cnpj]["funcionarios"][func_key]["valor_bene"] > Decimal('2499.99'):
-                result['errors'].append(f"Linha {line_num}: Valor total do funcionário R$ {condominios_data[raw_cnpj]['funcionarios'][func_key]['valor_bene']} excede limite de R$ 2499,99.")
+            if condominios_data[raw_cnpj]["funcionarios"][func_key]["valor_bene"] > valor_max_beneficio:
+                result['errors'].append(f"Linha {line_num}: Valor total do funcionário R$ {condominios_data[raw_cnpj]['funcionarios'][func_key]['valor_bene']} excede limite de R$ {valor_max_beneficio}.")
                 result['linhas_com_erro'].append({
                     "tipo_erro": "VALOR_EXCEDIDO",
                     "linha": line_num,
