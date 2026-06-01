@@ -17,6 +17,12 @@ class Importacao(models.Model):
         ('FAILED', 'Falhou'),
     ]
 
+    MODEL_CHOICES = [
+        ('VR-BENEFICIOS', 'VR Benefícios'),
+        ('VR-AUTO', 'VR Auto'),
+        ('OUTRO', 'Outro')
+    ]
+
     id = models.AutoField(primary_key=True, verbose_name="ID")
     file_upload = models.ForeignKey(
         'upload.FileUpload',
@@ -59,6 +65,12 @@ class Importacao(models.Model):
     vigencia_inicio = models.DateField(verbose_name="Início da Vigência", null=True, blank=True)
     vigencia_fim = models.DateField(verbose_name="Fim da Vigência", null=True, blank=True)
     
+    modelo_importacao = models.CharField(
+        max_length=20,
+        choices=MODEL_CHOICES,
+        verbose_name="Modelo de Importação",
+    )
+
     valor_total = models.DecimalField(
         max_digits=15, 
         decimal_places=2, 
