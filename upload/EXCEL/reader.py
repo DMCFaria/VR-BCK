@@ -5,6 +5,17 @@ from ..RB.parsers import cpf_valido_matematicamente
 import openpyxl
 
 
+CAMPO_OBRIGATORIO = {
+    'cnpj_condominio': 'CNPJ do condomínio',
+    'nome_condominio': 'Nome do condomínio',
+    'cpf_funcionario': 'CPF do funcionário',
+    'nome_funcionario': 'Nome do funcionário',
+    'matricula_funcionario': 'Matrícula do funcionário',
+    'valor_beneficio(total)': 'Valor do benefício',
+    'data_competencia': 'Data de competência',
+}
+
+
 def _safe_str(val, default=''):
     if val is None:
         return default
@@ -12,6 +23,20 @@ def _safe_str(val, default=''):
     if s.lower() in ('none', 'nan', ''):
         return default
     return s
+
+
+def _validar_campos_obrigatorios(row, line_num):
+    errors = []
+    for campo, label in CAMPO_OBRIGATORIO.items():
+        valor = row.get(campo)
+        if valor is None or (isinstance(valor, str) and not valor.strip()) or (isinstance(valor, (int, float)) and pd.isna(valor)):
+            errors.append({
+                'campo': campo,
+                'label': label,
+                'linha': line_num,
+            })
+    return errors
+
 
 def parse_excel_layout(file_path, file_upload_id):
     result = {
@@ -50,6 +75,35 @@ def parse_excel_layout(file_path, file_upload_id):
 
         for index, row in df.iterrows():
             line_num = index + 2
+
+            erros_campos = _validar_campos_obrigatorios(row, line_num)
+            if erros_campos:
+                campos_faltantes = ', '.join(e['label'] for e in erros_campos)
+                result['errors'] = [
+                    f"Planilha não preenchida conforme esperado. "
+                    f"Linha {line_num}: campos obrigatórios ausentes: {campos_faltantes}."
+                ]
+                result['linhas_com_erro'] = [{
+                    "tipo_erro": "PLANILHA_INVALIDA",
+                    "linha": line_num,
+                    "dados": {
+                        "campos_ausentes": [e['campo'] for e in erros_campos],
+                        "cpf": str(row.get('cpf_funcionario', '')),
+                        "cnpj": str(row.get('cnpj_condominio', '')),
+                        "nome_funcionario": str(row.get('nome_funcionario', '')),
+                        "matricula": str(row.get('matricula_funcionario', ''))
+                    }
+                }]
+                result['condominios'] = []
+                result['summary'] = {
+                    "total_condominios": 0,
+                    "total_funcionarios": 0,
+                    "total_movimentacoes": 0,
+                    "valor_total_beneficios": Decimal('0.00'),
+                    "data_competencia_arquivo": None,
+                    "primeiro_cnpj_processado": "N/A"
+                }
+                return result
 
             raw_cpf = re.sub(r'\D', '', str(row.get('cpf_funcionario', '')))
             if raw_cpf and len(raw_cpf) != 11:
