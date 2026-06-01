@@ -9,7 +9,12 @@ class Administradora(models.Model):
     ativo = models.BooleanField(default=True, verbose_name="Ativo")
     
     cartao_admin = models.BooleanField(default=True, verbose_name="Cartão Admin")
-    
+
+    valor_max_beneficio = models.DecimalField(
+        max_digits=10, decimal_places=2, default=9999.99,
+        verbose_name="Valor máximo por funcionário"
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

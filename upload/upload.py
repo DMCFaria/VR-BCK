@@ -11,9 +11,10 @@ import boto3
 from django.conf import settings
 
 # Aqui você importará os parsers conforme sua estrutura de pastas
+from decimal import Decimal
 from .RB.parsers import parse_rb_layout
 from .EXCEL.reader import parse_excel_layout
-# from .excel.parsers import parse_excel_layout
+from entidades.models import Administradora
 
 logger = logging.getLogger(__name__)
 
@@ -46,15 +47,22 @@ class UploadView(views.APIView):
             region_name='us-east-2'
         )
         
+        # 2. Busca o valor máximo por funcionário da administradora
+        valor_max = Decimal('2499.99')
+        if administradora_id:
+            try:
+                adm = Administradora.objects.get(id=administradora_id)
+                valor_max = adm.valor_max_beneficio
+            except Administradora.DoesNotExist:
+                pass
+
         try:
-            # 2. Roteamento Dinâmico
+            # 3. Roteamento Dinâmico
             if extension == '.txt':
-                # Executa o seu parser RB original
-                parsed_data = parse_rb_layout(file_path, upload_instance.id)
+                parsed_data = parse_rb_layout(file_path, upload_instance.id, valor_max_beneficio=valor_max)
                 logger.info(f"Parsed data: {parsed_data}")
             elif extension in ['.xlsx', '.xls', '.csv']:
-                # Quando o diretor decidir o modelo, implementamos aqui
-                parsed_data = parse_excel_layout(file_path, upload_instance.id)
+                parsed_data = parse_excel_layout(file_path, upload_instance.id, valor_max_beneficio=valor_max)
                 logger.info(f"Parsed data: {parsed_data}")
             
             else:
