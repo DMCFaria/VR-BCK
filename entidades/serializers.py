@@ -47,6 +47,31 @@ class AdministradoraSerializer(serializers.ModelSerializer):
         if not isinstance(value, bool):
             raise serializers.ValidationError('cartao_admin deve ser true ou false')
         return value
+    
+    def validate_valor_max_beneficio(self, value):
+        """Valida se o valor máximo é positivo"""
+        if value is not None and value <= 0:
+            raise serializers.ValidationError('O valor máximo deve ser maior que zero')
+        return value
+    
+class RegraValorSerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)
+    administradora_id = serializers.IntegerField(source='id', read_only=True)
+    ativo = serializers.BooleanField()
+    valor_limite = serializers.DecimalField(max_digits=10, decimal_places=2, allow_null=True)
+    bloquear_acima_limite = serializers.BooleanField()
+    
+    def validate(self, data):
+        """Validações cruzadas"""
+        ativo = data.get('ativo')
+        valor_limite = data.get('valor_limite')
+        
+        if ativo and (valor_limite is None or valor_limite <= 0):
+            raise serializers.ValidationError({
+                'valor_limite': 'Quando ativa, a regra deve ter um valor limite válido (> 0)'
+            })
+        
+        return data
 
 class GerenteSerializer(serializers.ModelSerializer):
     class Meta:

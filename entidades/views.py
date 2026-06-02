@@ -23,7 +23,6 @@ class CondominioPagination(PageNumberPagination):
     page_size_query_param = 'page_size'
     max_page_size = 100
 
-
 class CondominioViewSet(viewsets.ModelViewSet):
     queryset = Condominio.objects.all()
     serializer_class = CondominioSerializer
@@ -289,6 +288,163 @@ class AdministradoraViewSet(viewsets.ModelViewSet):
         
         serializer = VinculoCondominioSerializer(vinculos, many=True)
         return Response(serializer.data)
+    
+    @action(detail=True, methods=['get'], url_path='regra-valor')
+    def buscar_regra_valor(self, request, pk=None):
+        """
+        GET /api/administradoras/{id}/regra-valor/
+        Retorna a regra de valor da administradora (baseada no campo valor_max_beneficio)
+        """
+        try:
+            administradora = self.get_object()
+            
+            # Converte o campo existente para o formato esperado pelo frontend
+            regra_valor = {
+                'id': administradora.id,
+                'administradora_id': administradora.id,
+                'ativo': administradora.valor_max_beneficio is not None and administradora.valor_max_beneficio < 9999.99,
+                'valor_limite': float(administradora.valor_max_beneficio) if administradora.valor_max_beneficio != 9999.99 else None,
+                'bloquear_acima_limite': administradora.valor_max_beneficio is not None and administradora.valor_max_beneficio < 9999.99,
+            }
+            
+            # Se o valor for o default (9999.99), considera como "sem regra"
+            if administradora.valor_max_beneficio >= 9999.98:
+                regra_valor['ativo'] = False
+                regra_valor['valor_limite'] = None
+                regra_valor['bloquear_acima_limite'] = False
+            
+            logger.info(f'[RegraValor] Buscada para admin {pk}: {regra_valor}')
+            return Response(regra_valor)
+            
+        except Exception as e:
+            logger.exception(f'[RegraValor] Erro ao buscar: {str(e)}')
+            return Response(
+                {'error': 'Erro ao buscar regra de valor', 'detail': str(e)},
+                status=500
+            )
+    
+    @buscar_regra_valor.mapping.post
+    def criar_regra_valor(self, request, pk=None):
+        """
+        POST /api/administradoras/{id}/regra-valor/
+        Cria/atualiza a regra de valor da administradora
+        """
+        try:
+            administradora = self.get_object()
+            
+            # Valida o payload
+            ativo = request.data.get('ativo', False)
+            valor_limite = request.data.get('valor_limite')
+            
+            # Validações
+            if ativo:
+                if valor_limite is None:
+                    return Response(
+                        {'error': 'Valor limite é obrigatório quando a regra está ativa'},
+                        status=400
+                    )
+                
+                try:
+                    valor_limite = float(valor_limite)
+                    if valor_limite <= 0:
+                        return Response(
+                            {'error': 'Valor limite deve ser maior que zero'},
+                            status=400
+                        )
+                except (TypeError, ValueError):
+                    return Response(
+                        {'error': 'Valor limite inválido'},
+                        status=400
+                    )
+            else:
+                # Se inativo, reseta para o valor padrão (sem bloqueio)
+                valor_limite = 9999.99
+            
+            # Atualiza o campo na administradora
+            administradora.valor_max_beneficio = valor_limite
+            administradora.save(update_fields=['valor_max_beneficio', 'updated_at'])
+            
+            # Prepara resposta no formato esperado
+            response_data = {
+                'id': administradora.id,
+                'administradora_id': administradora.id,
+                'ativo': ativo,
+                'valor_limite': float(valor_limite) if ativo and valor_limite != 9999.99 else None,
+                'bloquear_acima_limite': ativo,
+            }
+            
+            logger.info(f'[RegraValor] Criada/Atualizada para admin {pk}: {response_data}')
+            return Response(response_data, status=200 if administradora.id else 201)
+            
+        except Exception as e:
+            logger.exception(f'[RegraValor] Erro ao criar/atualizar: {str(e)}')
+            return Response(
+                {'error': 'Erro ao salvar regra de valor', 'detail': str(e)},
+                status=500
+            )
+    
+    @action(detail=True, methods=['put'], url_path='regra-valor/(?P<regra_id>[^/.]+)')
+    def atualizar_regra_valor(self, request, pk=None, regra_id=None):
+        """
+        PUT /api/administradoras/{id}/regra-valor/{regra_id}/
+        Atualiza a regra de valor (mesma lógica do POST, mas com ID explícito)
+        """
+        try:
+            administradora = self.get_object()
+            
+            # Verifica se o ID da regra corresponde à administradora
+            if int(regra_id) != administradora.id:
+                return Response(
+                    {'error': 'Regra não encontrada para esta administradora'},
+                    status=404
+                )
+            
+            # Reutiliza a mesma lógica do POST
+            ativo = request.data.get('ativo', False)
+            valor_limite = request.data.get('valor_limite')
+            
+            if ativo:
+                if valor_limite is None:
+                    return Response(
+                        {'error': 'Valor limite é obrigatório quando a regra está ativa'},
+                        status=400
+                    )
+                
+                try:
+                    valor_limite = float(valor_limite)
+                    if valor_limite <= 0:
+                        return Response(
+                            {'error': 'Valor limite deve ser maior que zero'},
+                            status=400
+                        )
+                except (TypeError, ValueError):
+                    return Response(
+                        {'error': 'Valor limite inválido'},
+                        status=400
+                    )
+            else:
+                valor_limite = 9999.99
+            
+            administradora.valor_max_beneficio = valor_limite
+            administradora.save(update_fields=['valor_max_beneficio', 'updated_at'])
+            
+            response_data = {
+                'id': administradora.id,
+                'administradora_id': administradora.id,
+                'ativo': ativo,
+                'valor_limite': float(valor_limite) if ativo and valor_limite != 9999.99 else None,
+                'bloquear_acima_limite': ativo,
+            }
+            
+            logger.info(f'[RegraValor] Atualizada via PUT para admin {pk}: {response_data}')
+            return Response(response_data)
+            
+        except Exception as e:
+            logger.exception(f'[RegraValor] Erro ao atualizar via PUT: {str(e)}')
+            return Response(
+                {'error': 'Erro ao atualizar regra de valor', 'detail': str(e)},
+                status=500
+            )
 
 class GerenteViewSet(viewsets.ModelViewSet):
     queryset = Gerente.objects.all()
