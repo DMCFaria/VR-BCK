@@ -168,6 +168,7 @@ def parse_vt_excel(file_path, upload_id):
                 # Atualiza o total do funcionário no mapa
                 funcionarios_map[funcionario_key]['valor_total'] += valor_total_item
                 funcionarios_map[funcionario_key]['quantidade_dias'] += item['dias']
+                dias_trabalhados = item['dias'] if item['dias'] > 0 else dias_trabalhados
                 
                 registro = {
                     'cnpj_condominio': str(cnpj).replace('.', '').replace('-', '').replace('/', '')[:14],
@@ -178,8 +179,8 @@ def parse_vt_excel(file_path, upload_id):
                     'funcao_funcionario': str(row[col_map['cargo']]) if pd.notna(row[col_map['cargo']]) else '',
                     'codigo_produto': item['codigo'],
                     'nome_produto': 'Vale Transporte',
-                    'valor_beneficio_total': valor_total_item,
-                    'quantidade_dias': item['dias'] if item['dias'] > 0 else dias_trabalhados,
+                    'valor_beneficio_total': round(valor_total_item*dias_trabalhados, 2),
+                    'quantidade_dias': dias_trabalhados,
                     'data_competencia': '',
                 }
                 dados_validados.append(registro)
