@@ -45,6 +45,8 @@ class CustomUser(AbstractUser):
     updated_at = models.DateTimeField(auto_now=True)
 
     email = models.EmailField(unique=True) 
+    
+    primeiro_acesso = models.BooleanField(default=True)
 
     tipo = models.CharField(max_length=3, choices=TYPE_CHOICES, default="adm")
     administradora = models.ForeignKey(
