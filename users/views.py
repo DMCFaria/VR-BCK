@@ -202,6 +202,7 @@ class PasswordView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         user.set_password(new_password)
+        user.primeiro_acesso = False
         user.save()
         return Response(
             {"detail": "Senha alterada com sucesso."}, status=status.HTTP_200_OK
