@@ -188,6 +188,7 @@ class DesvincularAdministradoraView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
             
+# users/views.py - Atualize o PasswordView
 class PasswordView(APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
@@ -196,16 +197,36 @@ class PasswordView(APIView):
         user = request.user
         old_password = request.data.get("old_password")
         new_password = request.data.get("new_password")
-        if not user.check_password(old_password):
+        
+        # Se NÃO for primeiro acesso, verifica a senha antiga
+        if not user.primeiro_acesso:
+            if not old_password or not user.check_password(old_password):
+                return Response(
+                    {"detail": "Senha antiga incorreta."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        
+        # Valida a nova senha
+        if not new_password:
             return Response(
-                {"detail": "Senha antiga incorreta."},
+                {"detail": "Nova senha é obrigatória."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        
+        if len(new_password) < 6:
+            return Response(
+                {"detail": "A senha deve ter no mínimo 6 caracteres."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        # Altera a senha e marca primeiro_acesso como False
         user.set_password(new_password)
         user.primeiro_acesso = False
         user.save()
+        
         return Response(
-            {"detail": "Senha alterada com sucesso."}, status=status.HTTP_200_OK
+            {"detail": "Senha alterada com sucesso."}, 
+            status=status.HTTP_200_OK
         )
 
 class SolicitarResetSenhaView(APIView):
