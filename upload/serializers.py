@@ -133,6 +133,7 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         from django.db import transaction
         from datetime import datetime, date
         
+        modelo_importacao = validated_data.get('modelo_importacao', 'VR-BENEFICIOS')
         condominios_data = validated_data.get('condominios', [])
         file_upload_id = validated_data.get('file_upload_id')
         importacao_id_origem = validated_data.get('importacao_id')
@@ -523,7 +524,8 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 total_funcionarios=total_funcionarios,
                 data_vencimento=validated_data.get('data_vencimento'),
                 vigencia_inicio=validated_data.get('vigencia_inicio') or validated_data.get('periodo_inicio'),
-                vigencia_fim=validated_data.get('vigencia_fim') or validated_data.get('periodo_fim')
+                vigencia_fim=validated_data.get('vigencia_fim') or validated_data.get('periodo_fim'),
+                modelo_importacao=modelo_importacao
             )
 
             if movimentacoes_to_create:

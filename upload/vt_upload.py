@@ -1,5 +1,6 @@
 import logging
 import os
+import math
 from rest_framework import views, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -14,6 +15,18 @@ from django.conf import settings
 import time
 
 logger = logging.getLogger(__name__)
+
+def sanitize_nan(obj):
+    """Recursivamente substitui NaN, Infinity e -Infinity por None"""
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    elif isinstance(obj, dict):
+        return {k: sanitize_nan(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_nan(item) for item in obj]
+    return obj
 
 class UploadVTView(views.APIView):
     permission_classes = [IsAuthenticated]
@@ -56,6 +69,9 @@ class UploadVTView(views.APIView):
             dados_validados = parsed_data.get("dados_validados", [])
             total_por_beneficiario = parsed_data.get("total_por_beneficiario", [])
 
+            # 🔥 SANITIZAR dados_validados antes de tudo
+            dados_validados = sanitize_nan(dados_validados)
+            
             # Se não veio do parser, gera (fallback)
             if not total_por_beneficiario and dados_validados:
                 from collections import defaultdict
@@ -70,20 +86,35 @@ class UploadVTView(views.APIView):
                     cpf = mov.get("cpf_funcionario", "")
                     if not cpf:
                         continue
+                    valor = mov.get("valor_beneficio_total", 0)
+                    if valor is None or (isinstance(valor, float) and math.isnan(valor)):
+                        valor = 0.0
+                    dias = mov.get("quantidade_dias", 0)
+                    if dias is None or (isinstance(dias, float) and math.isnan(dias)):
+                        dias = 0
+                    
                     temp_map[cpf]["nome_funcionario"] = mov.get("nome_funcionario", "")
                     temp_map[cpf]["cpf"] = cpf
                     temp_map[cpf]["condominio"] = mov.get("nome_condominio", "")
-                    temp_map[cpf]["valor_total"] += float(mov.get("valor_beneficio_total", 0))
-                    temp_map[cpf]["quantidade_dias"] += int(mov.get("quantidade_dias", 0))
+                    temp_map[cpf]["valor_total"] += float(valor)
+                    temp_map[cpf]["quantidade_dias"] += int(dias)
                 total_por_beneficiario = list(temp_map.values())
+
+            # 🔥 SANITIZAR total_por_beneficiario
+            total_por_beneficiario = sanitize_nan(total_por_beneficiario)
+
+            # 🔥 Garantir que valor_total_vt não seja NaN
+            valor_total_vt = parsed_data.get("valor_total_vt", 0)
+            if valor_total_vt is None or (isinstance(valor_total_vt, float) and math.isnan(valor_total_vt)):
+                valor_total_vt = 0.0
 
             # Cria o summary
             vt_summary = {
-                "administradora_id": administradora_id,
+                "administradora_id": administradora_id or "",
                 "total_condominios": parsed_data.get("total_condominios", 0),
                 "total_funcionarios": parsed_data.get("total_funcionarios", 0),
                 "total_movimentacoes": parsed_data.get("total_registros", 0),
-                "valor_total_beneficios": parsed_data.get("valor_total_vt", 0),
+                "valor_total_beneficios": float(valor_total_vt),
                 "total_por_beneficiario": total_por_beneficiario,
                 "total_registros": parsed_data.get("total_registros", 0),
                 "total_dias_trabalhados": parsed_data.get("total_dias_trabalhados", 0),
@@ -91,17 +122,22 @@ class UploadVTView(views.APIView):
                 "mensagem_validacao": parsed_data.get("mensagem_validacao", "Arquivo validado com sucesso")
             }
             
+            # 🔥 SANITIZAR summary
+            vt_summary = sanitize_nan(vt_summary)
+            
             logger.info(f"Summary gerado para VT: {vt_summary}")
             
             frontend_summary_safe = convert_decimals_to_json_safe(vt_summary)
 
-            # Cria o data_to_backend no mesmo formato que o UploadView
+            # Cria o data_to_backend
             data_to_backend = {
                 "movimentacoes_detalhada": dados_validados,
                 "summary": vt_summary,
                 "file_upload_id": upload_instance.id
             }
             
+            # 🔥 SANITIZAR data_to_backend
+            data_to_backend = sanitize_nan(data_to_backend)
             data_to_backend_safe = convert_decimals_to_json_safe(data_to_backend)
 
             upload_instance.process_status = "PARSED"
@@ -122,15 +158,13 @@ class UploadVTView(views.APIView):
                 file_obj.seek(0)
                 s3.upload_fileobj(file_obj, "fedcorp-prod", f"VR - DOCS/importacoes_vt/{new_file_name}")
 
-            # 🔥 FECHA O ARQUIVO ANTES DE TENTAR REMOVER
+            # Fecha o arquivo antes de tentar remover
             try:
-                # Força o fechamento do arquivo se estiver aberto
                 if hasattr(upload_instance.file, 'close'):
                     upload_instance.file.close()
             except:
                 pass
             
-            # Aguarda um pouco para garantir que o arquivo foi liberado
             time.sleep(0.1)
             
             # Remove o arquivo local
@@ -140,28 +174,32 @@ class UploadVTView(views.APIView):
                     logger.info(f"Arquivo removido com sucesso: {file_path}")
                 except PermissionError as perm_err:
                     logger.warning(f"Não foi possível remover o arquivo {file_path}: {perm_err}")
-                    # Tenta novamente após 1 segundo
                     time.sleep(1)
                     try:
                         os.remove(file_path)
                     except:
                         pass
 
-            # Retorna no mesmo formato que o UploadView de benefícios
+            # 🔥 Garantir que a resposta não tenha NaN
+            response_data = {
+                "file_upload_id": upload_instance.id,
+                "status": "PARSED",
+                "summary": frontend_summary_safe,
+                "data_to_backend": data_to_backend_safe,
+                "movimentacoes_detalhada": dados_validados,
+                "dados_validados": dados_validados,
+                "linhas_com_erro": parsed_data.get("linhas_com_erro", []) or [],
+                "detail": "Arquivo de Vale Transporte processado com sucesso."
+            }
+            
+            # 🔥 Última sanitização
+            response_data = sanitize_nan(response_data)
+            
             return Response(
-                {
-                    "file_upload_id": upload_instance.id,
-                    "status": "PARSED",
-                    "summary": frontend_summary_safe,
-                    "data_to_backend": data_to_backend_safe,
-                    "movimentacoes_detalhada": dados_validados,
-                     "dados_validados": dados_validados,
-                    "linhas_com_erro": parsed_data.get("linhas_com_erro", []),
-                    "detail": "Arquivo de Vale Transporte processado com sucesso."
-                },
+                response_data,
                 status=status.HTTP_202_ACCEPTED,
             )
-
+            
         except Exception as e:
             logger.error(f"Erro no processamento: {str(e)}", exc_info=True)
             try:
@@ -177,6 +215,7 @@ class UploadVTView(views.APIView):
     def _get_beneficiary_summary(self, movimentacoes):
         """Agrupa movimentações por beneficiário (CPF)"""
         from collections import defaultdict
+        import math
         
         summary_map = defaultdict(lambda: {
             "nome_funcionario": "",
@@ -195,12 +234,12 @@ class UploadVTView(views.APIView):
             condominio = mov.get("nome_condominio", "")
             
             valor = mov.get("valor_beneficio_total", 0)
-            if valor is None:
+            if valor is None or (isinstance(valor, float) and math.isnan(valor)):
                 valor = 0
             valor = float(valor)
             
             dias = mov.get("quantidade_dias", 0)
-            if dias is None:
+            if dias is None or (isinstance(dias, float) and math.isnan(dias)):
                 dias = 0
             dias = int(dias)
             
