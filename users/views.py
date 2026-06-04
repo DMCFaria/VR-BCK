@@ -54,13 +54,52 @@ class UserRegistrationAPIView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        # Salvar com a administradora específica
-        user = serializer.save(administradora=administradora)
+        # 🔐 Gerar senha temporária aleatória
+        import secrets
+        import string
+        alphabet = string.ascii_letters + string.digits
+        temporary_password = ''.join(secrets.choice(alphabet) for i in range(16))
+        
+        # Salvar com a administradora específica e senha temporária
+        user = serializer.save(
+            administradora=administradora,
+            password=temporary_password,  # Define a senha temporária
+            primeiro_acesso=True  # Marca como primeiro acesso
+        )
         
         logger.info(f"✅ Usuário criado: {user.email} - Administradora: {administradora.razao_social if administradora else 'Nenhuma'}")
         
+        # 📧 Enviar email de boas-vindas com as credenciais
+        try:
+            fedhub_service = FedhubService()
+            email_enviado = fedhub_service.enviar_email_usuario_criado(
+                email=user.email,
+                user=user,
+                senha_temporaria=temporary_password,
+                dados_usuario={
+                    'nome': user.nome,
+                    'tipo': user.tipo,
+                    'administradora': administradora.razao_social if administradora else None
+                }
+            )
+            
+            if email_enviado:
+                logger.info(f"📧 Email de boas-vindas enviado para: {user.email}")
+            else:
+                logger.warning(f"⚠️ Falha ao enviar email de boas-vindas para: {user.email}")
+                
+        except Exception as e:
+            logger.error(f"❌ Erro ao enviar email de boas-vindas: {str(e)}")
+            # Não interrompe o fluxo - o usuário ainda é criado mesmo se o email falhar
+        
         headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        
+        # Retorna os dados do usuário incluindo info do email
+        response_data = serializer.data
+        response_data['email_enviado'] = email_enviado if 'email_enviado' in locals() else False
+        response_data['primeiro_acesso'] = True
+        
+        return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
 
 class CurrentUserView(generics.RetrieveUpdateAPIView):
     """

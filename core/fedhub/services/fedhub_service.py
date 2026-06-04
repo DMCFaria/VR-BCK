@@ -224,6 +224,67 @@ class FedhubService:
             logger.error(f"Erro ao chamar serviço de email: {e}")
             return False
     
+    def enviar_email_usuario_criado(self, email: str, user: Any, senha_temporaria: str, dados_usuario: Dict = None) -> bool:
+        """
+        Envia email de boas-vindas para novo usuário com suas credenciais de acesso.
+        
+        Args:
+            email: Email do destinatário (usuário criado)
+            user: Usuário criado
+            senha_temporaria: Senha temporária gerada
+            dados_usuario: Dicionário com dados adicionais do usuário
+        """
+        try:
+            if dados_usuario is None:
+                dados_usuario = {}
+            
+            # Prepara o contexto para o template
+            context = {
+                'user_email': email,
+                'user_nome': user.nome or user.email.split('@')[0],
+                'temporary_password': senha_temporaria,
+                'portal_url': f"{settings.FRONTEND_URL}/login",
+                'manual_url': f"{settings.BASE_URL_CLOUDFLARE_R2}/documentos/manual_fedcorp.docx",
+                'logo_url': f"{settings.BASE_URL_CLOUDFLARE_R2}/imagens/logo2.png",
+                'badge_text': '🚀 Seu acesso já está disponível',
+                'hero_title': 'Bem-vindo ao',
+                'hero_description': f'Olá {user.nome or user.email.split("@")[0]}! Seu acesso ao FedHub está liberado. Centralize importações, faturamento e gestão dos seus benefícios em uma única plataforma moderna, segura e intuitiva.',
+                'security_message': 'Por segurança, altere sua senha no primeiro acesso. Essa senha é temporária e deve ser substituída por uma senha pessoal.',
+                'FRONTEND_URL': settings.FRONTEND_URL,
+            }
+            
+            # Renderiza o template HTML com os dados
+            html_body = render_to_string(
+                'email/usuario_criado.html',
+                context
+            )
+            
+            with httpx.Client() as client:
+                response = client.post(
+                    f"{self.base_url}/api/email/send/gmail",
+                    json={
+                        "to_email": email,
+                        "subject": f"Bem-vindo ao FedHub - Suas credenciais de acesso",
+                        "body": html_body,
+                        "is_html": True
+                    },
+                    timeout=30.0
+                )
+                
+                if response.status_code == 200:
+                    logger.info(f"Email de boas-vindas enviado com sucesso para: {email}")
+                    return True
+                else:
+                    logger.error(f"Gateway retornou erro {response.status_code}: {response.text}")
+                    return False
+
+        except httpx.RequestError as e:
+            logger.error(f"Erro ao chamar serviço de email: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Erro inesperado ao enviar email de boas-vindas: {e}")
+            return False
+    
     # Administradoras
     def buscar_administradoras(self):
             try:

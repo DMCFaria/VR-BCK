@@ -10,6 +10,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = config('SECRET_KEY')
 
+BASE_URL_CLOUDFLARE_R2 = config('BASE_URL_CLOUDFLARE_R2', default='https://pub-8810a11ea9cf4103bdd7883df14db4de.r2.dev')
+
 # Credenciais Fedhub
 FEDHUB_URL = config('FEDHUB_URL', default='http://localhost:8090')
 FEDHUB_X_API_KEY = config('FEDHUB_X_API_KEY', default='')
