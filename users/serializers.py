@@ -13,7 +13,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomUser
-        fields = ['id', 'nome', 'username', 'email', 'password', 'tipo', 'administradora']
+        fields = ['id', 'nome', 'email', 'password', 'tipo', 'administradora']
         extra_kwargs = {
             'password': {'write_only': True},
             'administradora': {'required': False, 'allow_null': True}
@@ -34,7 +34,7 @@ class CustomUserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomUser
-        fields = ['id', 'nome', 'username', 'email', 'tipo', 'administradora', 'administradora_id', 'administradora_nome', 'created_at', 'updated_at', 'primeiro_acesso']
+        fields = ['id', 'nome', 'email', 'tipo', 'administradora', 'administradora_id', 'administradora_nome', 'created_at', 'updated_at', 'primeiro_acesso']
         read_only_fields = ['id', 'created_at', 'updated_at', 'primeiro_acesso']
         extra_kwargs = {
             'username': {'required': False}, 
