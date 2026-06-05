@@ -112,7 +112,7 @@ def parse_vt_excel(file_path, upload_id):
         if header_row_idx is None:
             return {"error": "Não foi possível localizar o cabeçalho (CNPJ*)"}
         
-        # Mapeamento das colunas fixas
+        # Mapeamento das colunas fixas (Template_VT.xlsx layout)
         col_map = {
             'cnpj': 0,
             'matricula': 1,
@@ -123,13 +123,25 @@ def parse_vt_excel(file_path, upload_id):
             'endereco': 6,
             'cargo': 7,
             'departamento': 8,
-            'dias_trabalhados': 9,
-            'cpf': 10,
-            'rg': 11,
-            'digito_rg': 12,
-            'estado_rg': 13,
-            'data_nascimento': 14,
-            'nome_mae': 15,
+            'cep_departamento': 9,
+            'cidade_departamento': 10,
+            'bairro_departamento': 11,
+            'uf_departamento': 12,
+            'endereco_departamento': 13,
+            'dias_trabalhados': 14,
+            'cpf': 15,
+            'rg': 16,
+            'digito_rg': 17,
+            'estado_rg': 18,
+            'data_nascimento': 19,
+            'nome_mae': 20,
+            'logradouro': 21,
+            'numero': 22,
+            'complemento': 23,
+            'bairro': 24,
+            'cep': 25,
+            'cidade': 26,
+            'estado': 27,
         }
         
         # Encontra onde começam os itens (coluna com "CÓD.")
@@ -142,8 +154,8 @@ def parse_vt_excel(file_path, upload_id):
                 break
         
         if item_start_col is None:
-            # Fallback: assume que começam na coluna 23
-            item_start_col = 23
+            # Fallback: assume que começam na coluna 28
+            item_start_col = 28
             logger.info(f"Usando fallback: itens começam na coluna {item_start_col}")
         
         # Processa as linhas de dados
@@ -155,10 +167,23 @@ def parse_vt_excel(file_path, upload_id):
         funcionarios_map = defaultdict(lambda: {
             "nome_funcionario": "",
             "cpf": "",
+            "cnpj_condominio": "",
             "condominio": "",
             "valor_total": 0.0,
             "quantidade_dias": 0,
-            "itens": []
+            "itens": [],
+            "endereco_departamento": "",
+            "bairro_departamento": "",
+            "cidade_departamento": "",
+            "uf_departamento": "",
+            "cep_departamento": "",
+            "logradouro": "",
+            "numero": "",
+            "complemento": "",
+            "bairro": "",
+            "cep": "",
+            "cidade": "",
+            "estado": "",
         })
         
         condominios_set = set()
@@ -214,21 +239,29 @@ def parse_vt_excel(file_path, upload_id):
                 except:
                     dias_trabalhados = 0
                 
-                # Departamento / Condomínio
+                # Departamento / Condomínio (formato: "CNPJ - NOME DO CONDOMÍNIO")
                 depto_val = row[col_map['departamento']] if col_map['departamento'] < len(row) and pd.notna(row[col_map['departamento']]) else ''
+                cnpj_condominio = ''
                 nome_condominio = ''
                 if depto_val:
                     depto_str = str(depto_val).strip()
                     if ' - ' in depto_str:
-                        nome_condominio = depto_str.split(' - ', 1)[1].strip()
+                        parts = depto_str.split(' - ', 1)
+                        cnpj_raw = re.sub(r'[^0-9]', '', parts[0])
+                        cnpj_condominio = cnpj_raw.zfill(14)[:14]
+                        nome_condominio = parts[1].strip()
                     else:
                         nome_condominio = depto_str
+                
+                # Fallback: usa CNPJ da coluna 0 se não veio do departamento
+                if not cnpj_condominio:
+                    cnpj_condominio = re.sub(r'[^0-9]', '', cnpj)[:14]
                 
                 if nome_condominio:
                     condominios_set.add(nome_condominio)
                 
                 # Chave única para o funcionário
-                funcionario_key = f"{cpf}_{nome_condominio}"
+                funcionario_key = f"{cpf}_{cnpj_condominio}"
                 
                 # Processa os itens (cada item tem 4 colunas: CÓD, QTD, DIAS, VALOR)
                 itens = []
@@ -301,7 +334,26 @@ def parse_vt_excel(file_path, upload_id):
                 # Atualiza o mapa do funcionário
                 funcionarios_map[funcionario_key]["nome_funcionario"] = nome
                 funcionarios_map[funcionario_key]["cpf"] = cpf
+                funcionarios_map[funcionario_key]["cnpj_condominio"] = cnpj_condominio
                 funcionarios_map[funcionario_key]["condominio"] = nome_condominio
+                funcionarios_map[funcionario_key]["matricula"] = str(row[col_map['matricula']]) if col_map['matricula'] < len(row) and pd.notna(row[col_map['matricula']]) else ''
+                funcionarios_map[funcionario_key]["funcao"] = str(row[col_map['cargo']]) if col_map['cargo'] < len(row) and pd.notna(row[col_map['cargo']]) else ''
+                
+                # Endereço do departamento (condomínio)
+                funcionarios_map[funcionario_key]["endereco_departamento"] = str(row[col_map['endereco_departamento']]) if col_map['endereco_departamento'] < len(row) and pd.notna(row[col_map['endereco_departamento']]) else ''
+                funcionarios_map[funcionario_key]["bairro_departamento"] = str(row[col_map['bairro_departamento']]) if col_map['bairro_departamento'] < len(row) and pd.notna(row[col_map['bairro_departamento']]) else ''
+                funcionarios_map[funcionario_key]["cidade_departamento"] = str(row[col_map['cidade_departamento']]) if col_map['cidade_departamento'] < len(row) and pd.notna(row[col_map['cidade_departamento']]) else ''
+                funcionarios_map[funcionario_key]["uf_departamento"] = str(row[col_map['uf_departamento']]) if col_map['uf_departamento'] < len(row) and pd.notna(row[col_map['uf_departamento']]) else ''
+                funcionarios_map[funcionario_key]["cep_departamento"] = str(row[col_map['cep_departamento']]) if col_map['cep_departamento'] < len(row) and pd.notna(row[col_map['cep_departamento']]) else ''
+                
+                # Endereço do funcionário
+                funcionarios_map[funcionario_key]["logradouro"] = str(row[col_map['logradouro']]) if col_map['logradouro'] < len(row) and pd.notna(row[col_map['logradouro']]) else ''
+                funcionarios_map[funcionario_key]["numero"] = str(row[col_map['numero']]) if col_map['numero'] < len(row) and pd.notna(row[col_map['numero']]) else ''
+                funcionarios_map[funcionario_key]["complemento"] = str(row[col_map['complemento']]) if col_map['complemento'] < len(row) and pd.notna(row[col_map['complemento']]) else ''
+                funcionarios_map[funcionario_key]["bairro"] = str(row[col_map['bairro']]) if col_map['bairro'] < len(row) and pd.notna(row[col_map['bairro']]) else ''
+                funcionarios_map[funcionario_key]["cep"] = str(row[col_map['cep']]) if col_map['cep'] < len(row) and pd.notna(row[col_map['cep']]) else ''
+                funcionarios_map[funcionario_key]["cidade"] = str(row[col_map['cidade']]) if col_map['cidade'] < len(row) and pd.notna(row[col_map['cidade']]) else ''
+                funcionarios_map[funcionario_key]["estado"] = str(row[col_map['estado']]) if col_map['estado'] < len(row) and pd.notna(row[col_map['estado']]) else ''
                 
                 # Para cada item, adiciona movimentação
                 for item in itens:
@@ -313,7 +365,8 @@ def parse_vt_excel(file_path, upload_id):
                     funcionarios_map[funcionario_key]["itens"].append(item)
                     
                     dados_validados.append({
-                        "cnpj_condominio": re.sub(r'[^0-9]', '', cnpj)[:14],
+                        "data_nascimento": str(row[col_map['data_nascimento']]) if col_map['data_nascimento'] < len(row) and pd.notna(row[col_map['data_nascimento']]) else '',
+                        "cnpj_condominio": cnpj_condominio,
                         "nome_condominio": nome_condominio,
                         "cpf_funcionario": cpf,
                         "matricula_funcionario": str(row[col_map['matricula']]) if col_map['matricula'] < len(row) and pd.notna(row[col_map['matricula']]) else '',
@@ -324,7 +377,21 @@ def parse_vt_excel(file_path, upload_id):
                         "valor_beneficio_total": round(item['valor_total'], 2),
                         "quantidade_dias": item['dias'],
                         "quantidade": item['quantidade'],
-                        "valor_unitario": item['valor_unitario']
+                        "valor_unitario": item['valor_unitario'],
+                        # Endereço do departamento (condomínio)
+                        "endereco_departamento": str(row[col_map['endereco_departamento']]) if col_map['endereco_departamento'] < len(row) and pd.notna(row[col_map['endereco_departamento']]) else '',
+                        "bairro_departamento": str(row[col_map['bairro_departamento']]) if col_map['bairro_departamento'] < len(row) and pd.notna(row[col_map['bairro_departamento']]) else '',
+                        "cidade_departamento": str(row[col_map['cidade_departamento']]) if col_map['cidade_departamento'] < len(row) and pd.notna(row[col_map['cidade_departamento']]) else '',
+                        "uf_departamento": str(row[col_map['uf_departamento']]) if col_map['uf_departamento'] < len(row) and pd.notna(row[col_map['uf_departamento']]) else '',
+                        "cep_departamento": str(row[col_map['cep_departamento']]) if col_map['cep_departamento'] < len(row) and pd.notna(row[col_map['cep_departamento']]) else '',
+                        # Endereço do funcionário
+                        "logradouro": str(row[col_map['logradouro']]) if col_map['logradouro'] < len(row) and pd.notna(row[col_map['logradouro']]) else '',
+                        "numero": str(row[col_map['numero']]) if col_map['numero'] < len(row) and pd.notna(row[col_map['numero']]) else '',
+                        "complemento": str(row[col_map['complemento']]) if col_map['complemento'] < len(row) and pd.notna(row[col_map['complemento']]) else '',
+                        "bairro": str(row[col_map['bairro']]) if col_map['bairro'] < len(row) and pd.notna(row[col_map['bairro']]) else '',
+                        "cep": str(row[col_map['cep']]) if col_map['cep'] < len(row) and pd.notna(row[col_map['cep']]) else '',
+                        "cidade": str(row[col_map['cidade']]) if col_map['cidade'] < len(row) and pd.notna(row[col_map['cidade']]) else '',
+                        "estado": str(row[col_map['estado']]) if col_map['estado'] < len(row) and pd.notna(row[col_map['estado']]) else '',
                     })
                     
             except Exception as e:
@@ -346,6 +413,7 @@ def parse_vt_excel(file_path, upload_id):
                 total_por_beneficiario.append({
                     "nome_funcionario": data["nome_funcionario"],
                     "cpf": data["cpf"],
+                    "cnpj_condominio": data["cnpj_condominio"],
                     "condominio": data["condominio"],
                     "valor_total": round(data["valor_total"], 2),
                     "quantidade_dias": data["quantidade_dias"]

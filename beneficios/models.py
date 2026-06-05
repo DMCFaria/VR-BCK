@@ -19,7 +19,7 @@ class Importacao(models.Model):
 
     MODEL_CHOICES = [
         ('VR-BENEFICIOS', 'VR Benefícios'),
-        ('VR-AUTO', 'VR Auto'),
+        ('VT-AUTO', 'VT Auto'),
         ('OUTRO', 'Outro')
     ]
 

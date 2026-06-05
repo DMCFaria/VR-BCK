@@ -45,6 +45,7 @@ class MovimentacaoSerializer(serializers.Serializer):
     produto = serializers.CharField(max_length=255)
     codigo_produto = serializers.CharField(max_length=50, required=False, allow_blank=True, allow_null=True)
     valor = serializers.DecimalField(max_digits=12, decimal_places=2)
+    quantidade = serializers.IntegerField(required=False, default=1)
 
 class FuncionarioSerializer(serializers.Serializer):
     nome = serializers.CharField(max_length=255)
@@ -101,6 +102,7 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
     competencia_mes = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     competencia_ano = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     tipo_processamento = serializers.CharField(required=False, default='compra')
+    modelo_importacao = serializers.CharField(required=False, default='VR-BENEFICIOS')
     origem = serializers.CharField(required=False, default='importacao_faturamento')
     status = serializers.CharField(required=False, default='PARSED')
     detail = serializers.CharField(required=False)
