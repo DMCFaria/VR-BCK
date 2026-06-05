@@ -5,7 +5,7 @@ from upload.vt_upload import UploadVTView
 from .confirmed import ConfirmationView
 from .upload import UploadView
 from .EXCEL.template import baixar_template_VR, baixar_template_VT
-from .export import ExportTxtCompraView, ExportFaturamentoView
+from .export import ExportTxtCompraView, ExportFaturamentoView, ExportVTCompraView
 from .faturamento import UploadFaturamentoView, StatusFaturamentoView
 from .download_views import DownloadArquivoView, DownloadFaturamentoView, DownloadBoletosView, DownloadNotasDebitoView, DownloadNotasFiscaisView, DownloadBoletoOriginalView, DownloadNotaDebitoOriginalView, DownloadNotaFiscalOriginalView, DownloadTodosOriginaisView
 
@@ -25,6 +25,7 @@ urlpatterns = [
     # EXPORT ROUTES
     path('export/txt-compra/', ExportTxtCompraView.as_view(), name='export_txt_compra'),
     path('export/faturamento/', ExportFaturamentoView.as_view(), name='export_faturamento'),
+    path('export/vt-compra/', ExportVTCompraView.as_view(), name='export_vt_compra'),
 
     # FATURAMENTO ROUTES
     path('faturamento/upload/', UploadFaturamentoView.as_view(), name='upload_faturamento'),

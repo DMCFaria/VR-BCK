@@ -422,7 +422,8 @@ class UltimaMovimentacaoDashboard(views.APIView):
             'total_condominios': len(condominios),
             'total_funcionarios': sum(len(c['funcionarios']) for c in condominios),
             'total_movimentacoes': movimentacoes.count(),
-            'importacao_nome': f"IMP-{ultima_importacao.id}"
+            'importacao_nome': f"IMP-{ultima_importacao.id}",
+            'tipo_importacao': ultima_importacao.modelo_importacao
         }
         
         logger.info(f"Dashboard - Última importação: ID {ultima_importacao.id}, "

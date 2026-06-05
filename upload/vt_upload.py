@@ -119,7 +119,8 @@ class UploadVTView(views.APIView):
                 "total_registros": parsed_data.get("total_registros", 0),
                 "total_dias_trabalhados": parsed_data.get("total_dias_trabalhados", 0),
                 "valido": parsed_data.get("valido", False),
-                "mensagem_validacao": parsed_data.get("mensagem_validacao", "Arquivo validado com sucesso")
+                "mensagem_validacao": parsed_data.get("mensagem_validacao", "Arquivo validado com sucesso"),
+                "modelo_faturamento":"VT-AUTO" 
             }
             
             # 🔥 SANITIZAR summary

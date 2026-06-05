@@ -115,7 +115,8 @@ class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
             'vigencia_fim',
             'valor_total',
             'total_funcionarios',
-            'movimentacoes'
+            'movimentacoes',
+            'modelo_importacao'
         ]
 
 class MovimentacaoReuseSerializer(serializers.Serializer):

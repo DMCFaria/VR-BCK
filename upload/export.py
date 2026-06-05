@@ -348,6 +348,293 @@ class ExportTxtCompraView(views.APIView):
         return response
 
 
+def gerar_planilha_compra_vt(importacao_id):
+    from beneficios.models import Importacao, MovimentacaoBeneficio, Produto
+    from entidades.models import Condominio, Funcionario
+    from django.db.models import Sum
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    try:
+        importacao = Importacao.objects.select_related('administradora', 'file_upload').get(id=importacao_id)
+    except Importacao.DoesNotExist:
+        return None, "Importação não encontrada"
+
+    movimentacoes = MovimentacaoBeneficio.objects.filter(
+        importacao_id=importacao_id
+    ).select_related(
+        'funcionario_cpf', 'empresa_cnpj', 'produto_codigo'
+    ).order_by('empresa_cnpj', 'funcionario_cpf')
+
+    if not movimentacoes:
+        return None, "Nenhuma movimentação encontrada"
+
+    admin_cnpj = importacao.administradora.cnpj if importacao.administradora else ''
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'USUARIOS'
+
+    # Styles
+    font_header = Font(name='Arial', size=10, bold=True)
+    font_section = Font(name='Arial', size=10, bold=True, color='FFFFFF')
+    fill_section = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+    font_data = Font(name='Arial', size=10)
+    thin_border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+
+    # Fixed columns (old template layout, no department address)
+    FIXED_COLS = 23
+    ITEM_BLOCKS = 10
+    ITEM_COLS_PER_BLOCK = 4
+    TOTAL_COLS = FIXED_COLS + (ITEM_BLOCKS * ITEM_COLS_PER_BLOCK)
+
+    # Row 1: Title
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=TOTAL_COLS)
+    cell = ws.cell(row=1, column=1, value='CADASTRO DE USUÁRIOS')
+    cell.font = Font(name='Arial', size=14, bold=True)
+    cell.alignment = Alignment(horizontal='center')
+
+    # Row 2: Required fields note
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=TOTAL_COLS)
+    cell = ws.cell(row=2, column=1, value='*CAMPOS OBRIGATÓRIOS')
+    cell.font = Font(name='Arial', size=9, italic=True, color='FF0000')
+
+    # Row 3: Section headers
+    section_headers = {
+        1: 'IDENTIFICAÇÃO DO USUÁRIO',
+        9: 'DADOS DO USUÁRIO',
+        17: 'ENDEREÇO DO USUÁRIO',
+    }
+    merge_ranges = {
+        1: (1, 8),
+        9: (9, 16),
+        17: (17, 23),
+    }
+    for col, text in section_headers.items():
+        cell = ws.cell(row=3, column=col, value=text)
+        cell.font = font_section
+        cell.fill = fill_section
+        cell.alignment = Alignment(horizontal='center')
+        start_c, end_c = merge_ranges[col]
+        ws.merge_cells(start_row=3, start_column=start_c, end_row=3, end_column=end_c)
+
+    item_start = FIXED_COLS + 1
+    for item_num in range(ITEM_BLOCKS):
+        col = item_start + (item_num * ITEM_COLS_PER_BLOCK)
+        cell = ws.cell(row=3, column=col, value=f'ITEM {item_num + 1}')
+        cell.font = Font(name='Arial', size=9, bold=True, color='FFFFFF')
+        cell.fill = PatternFill(start_color='5B9BD5', end_color='5B9BD5', fill_type='solid')
+        cell.alignment = Alignment(horizontal='center')
+        ws.merge_cells(
+            start_row=3, start_column=col,
+            end_row=3, end_column=col + 3
+        )
+
+    # Row 4: Column headers
+    col_headers = [
+        ('CNPJ*', 1), ('MATRÍCULA*', 2), ('NOME COMPLETO*', 3),
+        ('EMAIL', 4), ('CELULAR', 5), ('ATIVO', 6),
+        ('ENDEREÇO*', 7), ('CARGO', 8),
+        ('DEPARTAMENTO', 9),
+        ('DIAS TRABALHADOS*', 10), ('CPF*', 11),
+        ('RG.', 12), ('DG.', 13), ('EST.RG', 14),
+        ('DATA DE NASCIMENTO', 15), ('NOME DA MÃE', 16),
+        ('LOGRADOURO', 17), ('NÚMERO', 18), ('COMPLEMENTO', 19),
+        ('BAIRRO', 20), ('CEP', 21), ('CIDADE', 22), ('ESTADO', 23),
+    ]
+    for text, col in col_headers:
+        cell = ws.cell(row=4, column=col, value=text)
+        cell.font = font_header
+        cell.alignment = Alignment(horizontal='center', wrap_text=True)
+        cell.border = thin_border
+
+    item_headers = ['CÓD.', 'QTD.', 'DIAS.', 'VALOR']
+    for item_num in range(ITEM_BLOCKS):
+        base_col = item_start + (item_num * ITEM_COLS_PER_BLOCK)
+        for i, h in enumerate(item_headers):
+            cell = ws.cell(row=4, column=base_col + i, value=h)
+            cell.font = font_header
+            cell.alignment = Alignment(horizontal='center')
+            cell.border = thin_border
+
+    # Group movimentacoes by employee (CPF + CNPJ)
+    from collections import OrderedDict
+    emp_map = OrderedDict()
+
+    for mov in movimentacoes:
+        func = mov.funcionario_cpf
+        cond = mov.empresa_cnpj
+        prod = mov.produto_codigo
+        key = f"{cond.cnpj}_{func.cpf}"
+
+        if key not in emp_map:
+            emp_map[key] = {
+                'cnpj_cond': cond.cnpj,
+                'nome_cond': cond.nome,
+                'matricula': func.matricula or '',
+                'nome': func.nome or '',
+                'cpf': func.cpf,
+                'funcao': func.funcao or '',
+                'data_nascimento': func.data_nascimento,
+                'logradouro': func.endereco_rua or '',
+                'numero': func.endereco_numero or '',
+                'complemento': func.endereco_complemento or '',
+                'bairro': func.endereco_bairro or '',
+                'cep': func.cep or '',
+                'dias_trabalhados': 0,
+                'itens': {},
+            }
+
+        dias = mov.quantidade_dias if mov.quantidade_dias else 0
+        emp_map[key]['dias_trabalhados'] = max(emp_map[key]['dias_trabalhados'], dias)
+
+        cod_prod = (prod.codigo_produto or '').strip()[:50]
+        qtd = max(1, dias)  # quantidade = dias for VT
+        if cod_prod not in emp_map[key]['itens']:
+            emp_map[key]['itens'][cod_prod] = {
+                'codigo': cod_prod,
+                'quantidade': 0,
+                'dias': 0,
+                'valor_total': 0,
+            }
+        emp_map[key]['itens'][cod_prod]['quantidade'] += 1
+        emp_map[key]['itens'][cod_prod]['dias'] += dias
+        emp_map[key]['itens'][cod_prod]['valor_total'] += float(mov.valor_beneficio)
+
+    row_num = 5
+    admin_cnpj_clean = re.sub(r'[^0-9]', '', admin_cnpj).zfill(14)[:14]
+
+    for emp_key, emp_data in emp_map.items():
+        itens_list = list(emp_data['itens'].values())
+
+        data_nasc = ''
+        if emp_data['data_nascimento']:
+            if isinstance(emp_data['data_nascimento'], date):
+                data_nasc = emp_data['data_nascimento'].strftime('%d/%m/%Y')
+            else:
+                data_nasc = str(emp_data['data_nascimento'])
+
+        data_row = [
+            admin_cnpj_clean,                                          # 1: CNPJ*
+            emp_data['matricula'],                                     # 2: MATRÍCULA*
+            emp_data['nome'],                                          # 3: NOME COMPLETO*
+            '',                                                         # 4: EMAIL
+            '',                                                         # 5: CELULAR
+            'SIM',                                                      # 6: ATIVO
+            emp_data['logradouro'],                                    # 7: ENDEREÇO*
+            emp_data['funcao'],                                        # 8: CARGO
+            f"{emp_data['cnpj_cond']} - {emp_data['nome_cond']}",      # 9: DEPARTAMENTO
+            emp_data['dias_trabalhados'],                               # 10: DIAS TRABALHADOS*
+            emp_data['cpf'],                                           # 11: CPF*
+            '',                                                         # 12: RG.
+            '',                                                         # 13: DG.
+            '',                                                         # 14: EST.RG
+            data_nasc,                                                  # 15: DATA DE NASCIMENTO
+            '',                                                         # 16: NOME DA MÃE
+            emp_data['logradouro'],                                     # 17: LOGRADOURO
+            emp_data['numero'],                                         # 18: NÚMERO
+            emp_data['complemento'],                                    # 19: COMPLEMENTO
+            emp_data['bairro'],                                         # 20: BAIRRO
+            emp_data['cep'],                                            # 21: CEP
+            '',                                                         # 22: CIDADE
+            '',                                                         # 23: ESTADO
+        ]
+
+        for col_idx, value in enumerate(data_row, start=1):
+            cell = ws.cell(row=row_num, column=col_idx, value=value)
+            cell.font = font_data
+            cell.border = thin_border
+
+        # Items
+        for item_idx in range(ITEM_BLOCKS):
+            base_col = item_start + (item_idx * ITEM_COLS_PER_BLOCK)
+            if item_idx < len(itens_list):
+                item = itens_list[item_idx]
+                ws.cell(row=row_num, column=base_col, value=item['codigo']).font = font_data
+                ws.cell(row=row_num, column=base_col + 1, value=item['quantidade']).font = font_data
+                ws.cell(row=row_num, column=base_col + 2, value=item['dias']).font = font_data
+                valor_cell = ws.cell(row=row_num, column=base_col + 3, value=round(item['valor_total'], 2))
+                valor_cell.font = font_data
+                valor_cell.number_format = '#,##0.00'
+            else:
+                for i in range(4):
+                    ws.cell(row=row_num, column=base_col + i, value='').font = font_data
+
+            for i in range(4):
+                ws.cell(row=row_num, column=base_col + i).border = thin_border
+
+        row_num += 1
+
+    # Column widths
+    col_widths = {1: 18, 2: 15, 3: 35, 4: 30, 5: 15, 6: 8, 7: 40, 8: 20,
+                  9: 45, 10: 15, 11: 15, 12: 10, 13: 8, 14: 8,
+                  15: 18, 16: 30, 17: 35, 18: 10, 19: 20, 20: 25,
+                  21: 15, 22: 25, 23: 10}
+    for col, width in col_widths.items():
+        ws.column_dimensions[get_column_letter(col)].width = width
+
+    item_width = 10
+    for item_num in range(ITEM_BLOCKS):
+        base_col = item_start + (item_num * ITEM_COLS_PER_BLOCK)
+        ws.column_dimensions[get_column_letter(base_col)].width = item_width
+        ws.column_dimensions[get_column_letter(base_col + 1)].width = item_width
+        ws.column_dimensions[get_column_letter(base_col + 2)].width = item_width
+        ws.column_dimensions[get_column_letter(base_col + 3)].width = item_width
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output, None
+
+
+class ExportVTCompraView(views.APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, *args, **kwargs):
+        importacao_id = request.query_params.get('importacao_id')
+
+        if not importacao_id:
+            return Response(
+                {'detail': 'Parâmetro importacao_id é obrigatório.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        from beneficios.models import Importacao
+        try:
+            importacao = Importacao.objects.get(id=importacao_id)
+        except Importacao.DoesNotExist:
+            return Response(
+                {'detail': 'Importação não encontrada.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if importacao.modelo_importacao != 'VT-AUTO':
+            return Response(
+                {'detail': 'Esta importação não é do tipo VT.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        output, error = gerar_planilha_compra_vt(importacao_id)
+
+        if error:
+            return Response({'detail': error}, status=status.HTTP_400_BAD_REQUEST)
+
+        response = HttpResponse(
+            output.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        filename = f"PEDIDO_VT_{importacao_id}_{date.today().strftime('%Y%m%d')}.xlsx"
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
+
 class ExportFaturamentoView(views.APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
