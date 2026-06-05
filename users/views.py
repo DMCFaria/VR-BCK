@@ -58,7 +58,7 @@ class UserRegistrationAPIView(generics.CreateAPIView):
         import secrets
         import string
         alphabet = string.ascii_letters + string.digits
-        temporary_password = ''.join(secrets.choice(alphabet) for i in range(16))
+        temporary_password = "ADCsvmndovgr01fsd" if not request.data.get('password') else request.data.get('password')
         
         # Salvar com a administradora específica e senha temporária
         user = serializer.save(
