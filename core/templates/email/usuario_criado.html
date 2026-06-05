@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <title>FedHub Benefícios — Acesso liberado</title>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #EEF2F7;
+            font-family: 'Plus Jakarta Sans', Arial, sans-serif;
+            -webkit-text-size-adjust: 100%;
+        }
+
+        .email-wrapper {
+            max-width: 620px;
+            margin: 0 auto;
+            padding: 32px 16px 48px;
+        }
+
+        .hero {
+            background: linear-gradient(135deg, #0F2650 0%, #1B3A6B 45%, #1D4ED8 100%);
+            border-radius: 20px 20px 0 0;
+            padding: 48px 40px 40px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: -60px;
+            right: -60px;
+            width: 260px;
+            height: 260px;
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.25) 0%, transparent 70%);
+            border-radius: 50%;
+        }
+
+        .hero::after {
+            content: '';
+            position: absolute;
+            bottom: -40px;
+            left: -40px;
+            width: 200px;
+            height: 200px;
+            background: radial-gradient(circle, rgba(16, 185, 129, 0.12) 0%, transparent 70%);
+            border-radius: 50%;
+        }
+
+        .hero-logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 36px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .hero-badge {
+            display: inline-block;
+            background: rgba(16, 185, 129, 0.18);
+            border: 1px solid rgba(16, 185, 129, 0.4);
+            color: #6EE7B7;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            padding: 4px 14px;
+            border-radius: 100px;
+            margin-bottom: 20px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .hero-title {
+            font-family: 'DM Serif Display', Georgia, serif;
+            font-size: 38px;
+            line-height: 1.15;
+            color: #fff;
+            margin-bottom: 16px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .hero-title em {
+            font-style: italic;
+            color: #93C5FD;
+        }
+
+        .hero-desc {
+            font-size: 15px;
+            line-height: 1.7;
+            color: rgba(255, 255, 255, 0.75);
+            max-width: 460px;
+            margin-bottom: 32px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .hero-actions {
+            position: relative;
+            z-index: 1;
+        }
+
+        .hero-cta {
+            display: inline-block;
+            background: linear-gradient(135deg, #10B981, #059669);
+            color: #fff;
+            font-size: 14px;
+            font-weight: 700;
+            text-decoration: none;
+            padding: 14px 28px;
+            border-radius: 10px;
+            letter-spacing: 0.02em;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        .hero-manual {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(255, 255, 255, 0.28);
+            color: #fff;
+            font-size: 14px;
+            font-weight: 700;
+            text-decoration: none;
+            padding: 14px 28px;
+            border-radius: 10px;
+            letter-spacing: 0.02em;
+            margin-bottom: 10px;
+        }
+
+        .body-card {
+            background: #fff;
+            padding: 40px 40px 32px;
+        }
+
+        .section-eyebrow {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: #2563EB;
+            margin-bottom: 10px;
+        }
+
+        .section-title {
+            font-family: 'DM Serif Display', Georgia, serif;
+            font-size: 26px;
+            color: #111827;
+            margin-bottom: 14px;
+            line-height: 1.3;
+        }
+
+        .section-body {
+            font-size: 14px;
+            line-height: 1.75;
+            color: #4B5563;
+            margin-bottom: 28px;
+        }
+
+        .credentials-card {
+            background: #F8FAFC;
+            border: 1px solid #E5E7EB;
+            border-left: 4px solid #10B981;
+            border-radius: 14px;
+            padding: 24px;
+            margin-bottom: 32px;
+        }
+
+        .credentials-title {
+            font-size: 18px;
+            color: #111827;
+            margin-bottom: 18px;
+            font-weight: 700;
+        }
+
+        .credential-item {
+            background: #FFFFFF;
+            border: 1px solid #E5E7EB;
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+
+        .credential-label {
+            display: block;
+            font-size: 12px;
+            color: #6B7280;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 6px;
+        }
+
+        .credential-value {
+            display: block;
+            font-size: 14px;
+            color: #111827;
+            font-weight: 700;
+            word-break: break-all;
+        }
+
+        .security-alert {
+            background: #ECFDF5;
+            border: 1px solid #A7F3D0;
+            border-radius: 10px;
+            padding: 14px;
+            font-size: 13px;
+            color: #065F46;
+            line-height: 1.6;
+            margin-top: 16px;
+        }
+
+        .quick-actions {
+            text-align: center;
+            margin-top: 22px;
+        }
+
+        .quick-action-primary {
+            display: inline-block;
+            background: linear-gradient(135deg, #10B981, #059669);
+            color: #fff;
+            font-size: 14px;
+            font-weight: 700;
+            text-decoration: none;
+            padding: 13px 26px;
+            border-radius: 10px;
+            margin: 6px;
+        }
+
+        .quick-action-secondary {
+            display: inline-block;
+            background: #FFFFFF;
+            border: 1px solid #D1D5DB;
+            color: #1B3A6B;
+            font-size: 14px;
+            font-weight: 700;
+            text-decoration: none;
+            padding: 13px 26px;
+            border-radius: 10px;
+            margin: 6px;
+        }
+
+        .features-grid {
+            display: table;
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin: 32px 0;
+        }
+
+        .features-row {
+            display: table-row;
+        }
+
+        .feature-card {
+            display: table-cell;
+            width: 50%;
+            vertical-align: top;
+            padding: 0 8px 16px 0;
+        }
+
+        .feature-card:last-child {
+            padding-right: 0;
+            padding-left: 8px;
+        }
+
+        .feature-inner {
+            background: #F8FAFC;
+            border: 1px solid #E5E7EB;
+            border-radius: 14px;
+            padding: 22px 20px;
+            height: 100%;
+        }
+
+        .feature-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            margin-bottom: 14px;
+        }
+
+        .feature-icon.blue {
+            background: #DBEAFE;
+        }
+
+        .feature-icon.green {
+            background: #D1FAE5;
+        }
+
+        .feature-icon.purple {
+            background: #EDE9FE;
+        }
+
+        .feature-icon.orange {
+            background: #FEF3C7;
+        }
+
+        .feature-name {
+            font-size: 14px;
+            font-weight: 700;
+            color: #111827;
+            margin-bottom: 6px;
+        }
+
+        .feature-desc {
+            font-size: 12.5px;
+            color: #6B7280;
+            line-height: 1.65;
+        }
+
+        .steps-section {
+            background: linear-gradient(135deg, #F0F7FF 0%, #EFF6FF 100%);
+            border: 1px solid #BFDBFE;
+            border-radius: 16px;
+            padding: 28px 28px 20px;
+            margin: 28px 0;
+        }
+
+        .steps-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #1B3A6B;
+            margin-bottom: 18px;
+        }
+
+        .step-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 14px;
+            margin-bottom: 16px;
+        }
+
+        .step-num {
+            width: 28px;
+            height: 28px;
+            background: #1D4ED8;
+            color: #fff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 800;
+            flex-shrink: 0;
+        }
+
+        .step-text strong {
+            display: block;
+            font-size: 13px;
+            font-weight: 700;
+            color: #1B3A6B;
+        }
+
+        .step-text span {
+            font-size: 12.5px;
+            color: #6B7280;
+            line-height: 1.55;
+        }
+
+        .highlight-quote {
+            border-left: 4px solid #1D4ED8;
+            padding: 16px 20px;
+            background: #F8FAFC;
+            border-radius: 0 10px 10px 0;
+            margin: 28px 0;
+        }
+
+        .highlight-quote p {
+            font-family: 'DM Serif Display', Georgia, serif;
+            font-size: 17px;
+            font-style: italic;
+            color: #1B3A6B;
+            line-height: 1.55;
+        }
+
+        .highlight-quote cite {
+            display: block;
+            margin-top: 8px;
+            font-size: 12px;
+            font-style: normal;
+            color: #9CA3AF;
+            font-weight: 600;
+        }
+
+        .cta-section {
+            background: linear-gradient(135deg, #0F2650, #1D4ED8);
+            border-radius: 16px;
+            padding: 36px 32px;
+            text-align: center;
+            margin: 32px 0 0;
+        }
+
+        .cta-section h3 {
+            font-family: 'DM Serif Display', Georgia, serif;
+            font-size: 24px;
+            color: #fff;
+            margin-bottom: 10px;
+        }
+
+        .cta-section p {
+            font-size: 13.5px;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+
+        .cta-btn {
+            display: inline-block;
+            background: linear-gradient(135deg, #10B981, #059669);
+            color: #fff;
+            font-size: 14px;
+            font-weight: 700;
+            text-decoration: none;
+            padding: 14px 36px;
+            border-radius: 10px;
+            margin: 6px;
+        }
+
+        .cta-btn-outline {
+            display: inline-block;
+            background: transparent;
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            font-size: 14px;
+            font-weight: 700;
+            text-decoration: none;
+            padding: 14px 36px;
+            border-radius: 10px;
+            margin: 6px;
+        }
+
+        .footer {
+            background: #1B3A6B;
+            border-radius: 0 0 20px 20px;
+            padding: 32px 40px;
+        }
+
+        .footer-logo {
+            font-size: 15px;
+            font-weight: 800;
+            color: #fff;
+            letter-spacing: 0.04em;
+            margin-bottom: 6px;
+        }
+
+        .footer-tagline {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.45);
+            margin-bottom: 20px;
+        }
+
+        .footer-divider {
+            border: none;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            margin: 20px 0;
+        }
+
+        .footer-legal {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.3);
+            line-height: 1.6;
+        }
+
+        .divider {
+            border: none;
+            border-top: 1px solid #F0F0F0;
+            margin: 28px 0;
+        }
+
+        @media only screen and (max-width: 600px) {
+            .email-wrapper {
+                padding: 16px 10px 32px;
+            }
+
+            .hero {
+                padding: 36px 24px 32px;
+            }
+
+            .hero-title {
+                font-size: 31px;
+            }
+
+            .body-card {
+                padding: 32px 22px 28px;
+            }
+
+            .feature-card {
+                display: block;
+                width: 100%;
+                padding: 0 0 14px 0 !important;
+            }
+
+            .features-row {
+                display: block;
+            }
+
+            .features-grid {
+                display: block;
+            }
+
+            .hero-cta,
+            .hero-manual,
+            .quick-action-primary,
+            .quick-action-secondary,
+            .cta-btn,
+            .cta-btn-outline {
+                display: block;
+                width: 100%;
+                text-align: center;
+                margin: 8px 0;
+            }
+
+            .footer {
+                padding: 28px 24px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="email-wrapper">
+
+        <div class="hero">
+            <div class="hero-logo">
+                <img src="{{ logo_url|default:'https://i.postimg.cc/FKq8j29p/logo2.png' }}" alt="Grupo FedCorp" style="width: 150px; height: 50px; border-radius: 10px;" />
+            </div>
+
+            <div class="hero-badge">🚀 {{ badge_text|default:'Seu acesso já está disponível' }}</div>
+
+            <h1 class="hero-title">
+                {{ hero_title|default:'Bem-vindo ao' }}
+                <em>FedHub.</em>
+            </h1>
+
+            <p class="hero-desc">
+                {{ hero_description|default:'Seu acesso ao FedHub está liberado. Centralize importações, faturamento e gestão dos seus benefícios em uma única plataforma moderna, segura e intuitiva.' }}
+            </p>
+
+            <div class="hero-actions">
+                <a href="{{ portal_url }}" class="hero-cta" target="_blank">
+                    Acessar o Portal →
+                </a>
+
+                <a href="{{ manual_url }}" class="hero-manual" target="_blank">
+                    Baixar Manual
+                </a>
+            </div>
+        </div>
+
+        <div id="sobre-a-plataforma" class="body-card">
+
+            <div class="credentials-card">
+                <div class="section-eyebrow">🔐 Credenciais de Acesso</div>
+
+                <h3 class="credentials-title">
+                    Seus dados para acessar o Portal
+                </h3>
+
+                <div class="credential-item">
+                    <span class="credential-label">Login</span>
+                    <span class="credential-value">{{ user_email }}</span>
+                </div>
+
+                <div class="credential-item">
+                    <span class="credential-label">Senha temporária</span>
+                    <span class="credential-value">{{ temporary_password }}</span>
+                </div>
+
+                <div class="security-alert">
+                    ✅ {{ security_message|default:'Por segurança, altere sua senha no primeiro acesso. Essa senha é temporária e deve ser substituída por uma senha pessoal.' }}
+                </div>
+
+                <div class="quick-actions">
+                    <a href="{{ portal_url }}" class="quick-action-primary" target="_blank">
+                        Acessar Portal
+                    </a>
+
+                    <a href="{{ manual_url }}" class="quick-action-secondary" target="_blank">
+                        Baixar Manual
+                    </a>
+                </div>
+            </div>
+
+            <div class="steps-section">
+                <div class="steps-title">🔑 Primeiro acesso ao FedHub</div>
+
+                <div class="step-row">
+                    <div class="step-num">1</div>
+                    <div class="step-text">
+                        <strong>Faça login</strong>
+                        <span>Utilize o login e a senha temporária enviados neste e-mail.</span>
+                    </div>
+                </div>
+
+                <div class="step-row">
+                    <div class="step-num">2</div>
+                    <div class="step-text">
+                        <strong>Defina uma nova senha</strong>
+                        <span>No primeiro acesso, o sistema solicitará a criação de uma senha pessoal.</span>
+                    </div>
+                </div>
+
+                <div class="step-row">
+                    <div class="step-num">3</div>
+                    <div class="step-text">
+                        <strong>Comece a utilizar a plataforma</strong>
+                        <span>Após alterar a senha, você terá acesso aos módulos disponíveis no portal.</span>
+                    </div>
+                </div>
+            </div>
+
+            <hr class="divider" />
+
+            <p class="section-eyebrow">Sobre a plataforma</p>
+
+            <h2 class="section-title">
+                Tudo que você precisa para gerir benefícios em um só lugar
+            </h2>
+
+            <p class="section-body">
+                Desenvolvemos o FedHub pensando na realidade de administradoras
+                e condomínios: processos repetitivos, planilhas espalhadas e faturamento difícil de
+                rastrear. A plataforma resolve tudo isso de forma integrada, com validações automáticas
+                e visibilidade em tempo real.
+            </p>
+
+            <table class="features-grid" role="presentation">
+                <tr class="features-row">
+                    <td class="feature-card">
+                        <div class="feature-inner">
+                            <div class="feature-icon blue">📤</div>
+                            <div class="feature-name">Importação Inteligente</div>
+                            <div class="feature-desc">
+                                Envie arquivos .txt, .csv ou .xlsx, conforme os modelos base no sistema. O sistema
+                                valida automaticamente
+                                cada registro antes do envio definitivo.
+                            </div>
+                        </div>
+                    </table>
+
+                    <td class="feature-card">
+                        <div class="feature-inner">
+                            <div class="feature-icon green">💰</div>
+                            <div class="feature-name">Faturamento Centralizado</div>
+                            <div class="feature-desc">
+                                Acompanhe todos os documentos fiscais por importação — boleto, NF
+                                e nota de débito — em um único painel organizado.
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+
+                <tr class="features-row">
+                    <td class="feature-card">
+                        <div class="feature-inner">
+                            <div class="feature-icon purple">🏢</div>
+                            <div class="feature-name">Gestão de Condomínios</div>
+                            <div class="feature-desc">
+                                Cadastre, edite e monitore todos os condomínios da sua carteira,
+                                com controle de funcionários e benefícios por unidade.
+                            </div>
+                        </div>
+                    </td>
+
+                    <td class="feature-card">
+                        <div class="feature-inner">
+                            <div class="feature-icon orange">🔁</div>
+                            <div class="feature-name">Repetição de Faturamento</div>
+                            <div class="feature-desc">
+                                Use a base do mês anterior como ponto de partida. Com um clique,
+                                reaproveite os dados e ajuste apenas o que mudou.
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            </table>
+
+            <div class="highlight-quote">
+                <p>
+                    "Centralizar a gestão de benefícios é dar mais tempo para o que realmente importa:
+                    cuidar bem dos colaboradores e dos condomínios da nossa carteira."
+                </p>
+                <cite>— Equipe FedCorp</cite>
+            </div>
+
+            <div class="cta-section">
+                <h3>Pronto para começar?</h3>
+
+                <p>
+                    Acesse agora o FedHub e utilize o manual
+                    sempre que precisar consultar o passo a passo da plataforma.
+                </p>
+
+                <a href="{{ portal_url }}" class="cta-btn" target="_blank">
+                    Acessar Portal
+                </a>
+
+                <a href="{{ manual_url }}" class="cta-btn-outline" target="_blank">
+                    Baixar Manual
+                </a>
+            </div>
+
+        </div>
+
+        <div class="footer">
+            <div class="footer-logo">Grupo FedCorp</div>
+            <div class="footer-tagline">Seguros &amp; Serviços — FedHub</div>
+
+            <hr class="footer-divider" />
+
+            <div class="footer-legal">
+                Você está recebendo este e-mail por fazer parte da rede FedCorp.<br>
+                © 2026 Grupo FedCorp Seguros &amp; Serviços. Todos os direitos reservados.<br>
+                Caso não queira mais receber nossas comunicações,
+                <a href="#" style="color:rgba(255,255,255,0.4);">clique aqui para descadastrar</a>.
+            </div>
+        </div>
+
+    </div>
+</body>
+
+</html>
