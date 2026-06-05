@@ -29,6 +29,7 @@ ALLOWED_HOSTS = [
     "localhost",
     "vr-beneficios-backend-fedcorp-ju482.ondigitalocean.app", 
     "vr-fedcorp-portal-beneficios-2kxoa.ondigitalocean.app",
+    "beneficios.fedhub.com.br"
 ]
 
 INSTALLED_APPS = [ 
@@ -205,6 +206,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
     "https://vr-beneficios-backend-fedcorp-ju482.ondigitalocean.app", 
     "https://vr-fedcorp-portal-beneficios-2kxoa.ondigitalocean.app",
+    "https://beneficios.fedhub.com.br"
 ]
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_METHODS = [
