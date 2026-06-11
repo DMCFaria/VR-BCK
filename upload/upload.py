@@ -14,6 +14,8 @@ from django.conf import settings
 from decimal import Decimal
 from .RB.parsers import parse_rb_layout
 from .EXCEL.reader import parse_excel_layout
+from .AHREAS.parsers import parse_ahreas_layout
+from .layout_detector import detect_txt_layout
 from entidades.models import Administradora
 
 logger = logging.getLogger(__name__)
@@ -58,10 +60,19 @@ class UploadView(views.APIView):
 
         try:
             # 3. Roteamento Dinâmico
+            import_mode = None
             if extension == '.txt':
-                parsed_data = parse_rb_layout(file_path, upload_instance.id, valor_max_beneficio=valor_max)
+                import_mode = detect_txt_layout(file_path)
+                logger.info(f"Detected TXT layout: {import_mode}")
+                if import_mode == 'RB':
+                    parsed_data = parse_rb_layout(file_path, upload_instance.id, valor_max_beneficio=valor_max)
+                elif import_mode == 'AHREAS':
+                    parsed_data = parse_ahreas_layout(file_path, upload_instance.id, valor_max_beneficio=valor_max)
+                else:
+                    return self._handle_error(upload_instance, f"Layout TXT '{import_mode}' não reconhecido.")
                 logger.info(f"Parsed data: {parsed_data}")
             elif extension in ['.xlsx', '.xls', '.csv']:
+                import_mode = None
                 parsed_data = parse_excel_layout(file_path, upload_instance.id, valor_max_beneficio=valor_max)
                 logger.info(f"Parsed data: {parsed_data}")
             
@@ -155,15 +166,19 @@ class UploadView(views.APIView):
             if os.path.exists(file_path):
                 os.remove(file_path)
 
+            response_data = {
+                "file_upload_id": upload_instance.id,
+                "status": "PARSED",
+                "summary": frontend_summary_safe,
+                "data_to_backend": data_to_backend_safe,
+                "linhas_com_erro": parsed_data.get("linhas_com_erro", []),
+                "detail": "Arquivo processado. Confirme os dados para gravação.",
+            }
+            if import_mode:
+                response_data["importMode"] = import_mode
+
             return Response(
-                {
-                    "file_upload_id": upload_instance.id,
-                    "status": "PARSED",
-                    "summary": frontend_summary_safe,
-                    "data_to_backend": data_to_backend_safe,
-                    "linhas_com_erro": parsed_data.get("linhas_com_erro", []),
-                    "detail": "Arquivo processado. Confirme os dados para gravação."
-                },
+                response_data,
                 status=status.HTTP_202_ACCEPTED,
             )
 
