@@ -3,6 +3,7 @@ from .models import Condominio, Funcionario, Administradora, VinculoCondominio, 
 
 
 class CondominioSerializer(serializers.ModelSerializer):
+    administradoras = serializers.SerializerMethodField(read_only=True)
 
     def validate_cnpj(self, value):
         cnpj = ''.join(filter(str.isdigit, str(value)))
@@ -14,6 +15,18 @@ class CondominioSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('CNPJ inválido.')
 
         return cnpj
+
+    def get_administradoras(self, obj):
+        vinculos = getattr(obj, 'vinculocondominio_set', None)
+        if vinculos is None:
+            return []
+        return [
+            {
+                'id': v.administradora_id,
+                'nome': v.administradora.razao_social,
+            }
+            for v in vinculos.all()
+        ]
 
     class Meta:
         model = Condominio

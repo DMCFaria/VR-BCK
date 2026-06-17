@@ -1,4 +1,6 @@
 import json
+from django.db.models import Prefetch
+
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -32,7 +34,11 @@ class CondominioViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         try:
-            queryset = super().get_queryset()
+            vinculos_prefetch = Prefetch(
+                'vinculocondominio_set',
+                queryset=VinculoCondominio.objects.select_related('administradora')
+            )
+            queryset = super().get_queryset().prefetch_related(vinculos_prefetch)
 
             administradora_id = self.request.user.administradora_id
             cnpj = self.request.query_params.get('cnpj')
@@ -47,10 +53,9 @@ class CondominioViewSet(viewsets.ModelViewSet):
 
             if cnpj:
                 queryset = queryset.filter(cnpj__icontains=cnpj)
-
-            queryset = queryset.filter(
-                vinculocondominio__administradora_id=administradora_id,
-            ).distinct()
+                queryset = queryset.filter(
+                    vinculocondominio__administradora_id=administradora_id,
+                ).distinct()
 
             return queryset
 
