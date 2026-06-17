@@ -98,6 +98,11 @@ class Produto(models.Model):
         ('MULTI_MOBILIDADE', 'Multi Mobilidade'),
         ('MULTI_PREMIACAO', 'Multi Premiação'),
     ]
+    FORNECEDORA_CHOICES = [
+        ('VR', 'VR'),
+        ('TICKET', 'Ticket'),
+        ('OUTRO', 'Outro')
+    ]
 
     codigo_produto = models.CharField(
         max_length=50, # Aumentado por segurança
@@ -112,6 +117,13 @@ class Produto(models.Model):
         null=True,
         verbose_name="Tipo do Produto"
     )
+    fornecedora = models.CharField(
+        max_length=20,
+        choices=FORNECEDORA_CHOICES,
+        verbose_name="Fornecedora",
+        default="VR"
+    )
+    cod_fornecedora = models.CharField(max_length=50, verbose_name="Código da Fornecedora", default='000000')
 
     class Meta:
         verbose_name = "Produto/Benefício"
