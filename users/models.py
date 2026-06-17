@@ -31,6 +31,14 @@ class CustomUserManager(BaseUserManager):
 
 class CustomUser(AbstractUser):
     
+    username = models.CharField(
+        max_length=150,
+        unique=False,
+        blank=True,
+        null=True,
+        verbose_name="Username"
+    )
+    
     TYPE_CHOICES = [
         ("dev", "Desenvolvedor"),
         ("fin", "Financeiro"),
@@ -60,7 +68,7 @@ class CustomUser(AbstractUser):
     objects = CustomUserManager() 
     
     USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['username', 'tipo'] 
+    REQUIRED_FIELDS = ['tipo']
     
     groups = models.ManyToManyField(
         'auth.Group',
