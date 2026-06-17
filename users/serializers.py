@@ -23,6 +23,10 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         password = validated_data.pop('password')
         administradora = validated_data.pop('administradora', None)
+        username = validated_data.get('username')
+        if username:
+            validated_data.setdefault('nome', username)
+            validated_data.setdefault('first_name', username)
         user = CustomUser(**validated_data)
         user.set_password(password)
         user.administradora = administradora
