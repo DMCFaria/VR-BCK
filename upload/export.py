@@ -235,6 +235,9 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
 
     movimentacoes = query.order_by('empresa_cnpj', 'funcionario_cpf', 'data_competencia')
     
+    if importacao_id:
+        Importacao.objects.filter(id=importacao_id).update(status='EM_FATURAMENTO')
+
     dados = []
     for mov in movimentacoes:
         func = mov.funcionario_cpf
@@ -276,9 +279,6 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
             'periodos': periodos.split('-')[0],
             'periodo2': periodos.split('-')[1]
         })
-        importacao = Importacao.objects.get(id=importacao_id)
-        importacao.status = 'EM_FATURAMENTO'
-        importacao.save()
     return dados
 
 

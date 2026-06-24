@@ -54,6 +54,7 @@ class Importacao(models.Model):
         max_length=30,
         choices=STATUS_CHOICES,
         default='PENDING',
+        db_index=True,
         verbose_name="Status"
     )
     total_funcionarios = models.IntegerField(default=0, verbose_name="Total de Registros")
@@ -82,6 +83,9 @@ class Importacao(models.Model):
         verbose_name = "Importação"
         verbose_name_plural = "Importações"
         ordering = ['-data_importacao']
+        indexes = [
+            models.Index(fields=['administradora', 'status'], name='idx_importacao_adm_status'),
+        ]
 
     def __str__(self):
         return f"Importação #{self.id} - {self.data_importacao.strftime('%d/%m/%Y %H:%M')}"
@@ -248,7 +252,7 @@ class MovimentacaoBeneficio(models.Model):
     )
 
     # Dados da Transação
-    data_competencia = models.DateField(verbose_name="Data de Competência")
+    data_competencia = models.DateField(db_index=True, verbose_name="Data de Competência")
     valor_beneficio = models.DecimalField(
         max_digits=12, 
         decimal_places=2, 

@@ -19,6 +19,7 @@ class FileUpload(models.Model):
         max_length=30, 
         choices=STATUS_CHOICES, 
         default='PENDING',
+        db_index=True,
         verbose_name="Status do Processamento"
     )
     summary_data = models.JSONField(blank=True, null=True) 

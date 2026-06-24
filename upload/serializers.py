@@ -163,10 +163,7 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
 
         # ========== 2. GARANTIR FILE_UPLOAD_ID ==========
         if not file_upload_id and importacao_id_origem:
-            last_fu = FileUpload.objects.order_by('-id').first()
-            new_id = (last_fu.id + 1) if last_fu else 1
             fu = FileUpload.objects.create(
-                id=new_id,
                 uploaded_by=processed_by_user,
                 process_status='PENDING'
             )
@@ -287,14 +284,13 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         
         if condos_to_create:
             Condominio.objects.bulk_create(condos_to_create, ignore_conflicts=True)
+            for c in condos_to_create:
+                existing_condos[c.cnpj] = c
             logger.info(f"Criados {len(condos_to_create)} novos condomínios")
 
         if condos_to_update:
             Condominio.objects.bulk_update(condos_to_update, ['nome', 'endereco'])
             logger.info(f"Atualizados {len(condos_to_update)} condomínios existentes")
-        
-        # Recarregar condomínios após criação
-        existing_condos = {c.cnpj: c for c in Condominio.objects.filter(cnpj__in=cnpj_list)}
         
         # ========== 8. CRIAR/ATUALIZAR FUNCIONÁRIOS COM VÍNCULO (CORREÇÃO PRINCIPAL) ==========
         funcs_to_create = []
@@ -400,18 +396,19 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         if funcs_to_create:
             try:
                 Funcionario.objects.bulk_create(funcs_to_create, ignore_conflicts=True)
+                for f in funcs_to_create:
+                    existing_funcs[f.cpf] = f
                 logger.info(f"Criados {len(funcs_to_create)} novos funcionários com vínculo")
             except Exception as e:
                 logger.error(f"Erro ao criar funcionários: {e}")
-                # Fallback: criar um por um
                 for func in funcs_to_create:
                     try:
                         func.save()
+                        existing_funcs[func.cpf] = func
                         logger.info(f"Criado funcionário {func.nome} via fallback")
                     except Exception as e2:
                         logger.error(f"Erro ao criar {func.nome}: {e2}")
 
-        # Atualizar funcionários existentes
         if funcs_to_update:
             try:
                 Funcionario.objects.bulk_update(
@@ -428,9 +425,6 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                     except Exception as e2:
                         logger.error(f"Erro ao atualizar {func.nome}: {e2}")
         
-        # Recarregar funcionários após criação/atualização
-        existing_funcs = {f.cpf: f for f in Funcionario.objects.filter(cpf__in=cpf_list)}
-        
         # ========== 9. CRIAR PRODUTOS QUE NÃO EXISTEM ==========
         prod_map = {}
         for key, nome in produtos_raw:
@@ -444,14 +438,15 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         
         if prods_to_create:
             Produto.objects.bulk_create(prods_to_create, ignore_conflicts=True)
+            for p in prods_to_create:
+                existing_prods[p.codigo_produto] = p
             logger.info(f"Criados {len(prods_to_create)} novos produtos")
         
-        # Recarregar produtos
-        existing_prods = {p.codigo_produto: p for p in Produto.objects.filter(codigo_produto__in=prod_key_list)}
-        
         # ========== 10. CRIAR VÍNCULOS CONDOMÍNIO-ADMINISTRADORA ==========
-        condos_to_vinc = [c for c in cnpj_list if c and not VinculoCondominio.objects.filter(
-            administradora=administradora, condominio_id=c).exists()]
+        existing_vinculos = set(VinculoCondominio.objects.filter(
+            administradora=administradora, condominio_id__in=cnpj_list
+        ).values_list('condominio_id', flat=True))
+        condos_to_vinc = [c for c in cnpj_list if c and c not in existing_vinculos]
         if condos_to_vinc:
             vinculos = [VinculoCondominio(administradora=administradora, condominio_id=c) for c in condos_to_vinc]
             VinculoCondominio.objects.bulk_create(vinculos, ignore_conflicts=True)
@@ -562,17 +557,13 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
             importacao.registros_processados = movimentacoes_salvas
             importacao.save()
 
-        logger.info(f"Importação {importacao.id} criada. Valor total: {valor_total_payload}")
-        
-        # ========== 14. ATUALIZAR FILEUPLOAD ==========
-        with transaction.atomic():
+            # ========== 14. ATUALIZAR FILEUPLOAD (DENTRO DA MESMA TRANSAÇÃO) ==========
             try:
-                file_upload_instance = FileUpload.objects.select_for_update().get(id=file_upload_id)
-                if file_upload_instance.process_status != 'COMPLETED':
-                    file_upload_instance.process_status = 'AGUARDANDO_FATURAMENTO'
-                    file_upload_instance.summary_data = summary
-                    file_upload_instance.save()
-                    logger.info(f"FileUpload {file_upload_id} atualizado para AGUARDANDO_FATURAMENTO")
+                FileUpload.objects.filter(id=file_upload_id).update(
+                    process_status='AGUARDANDO_FATURAMENTO',
+                    summary_data=summary
+                )
+                logger.info(f"FileUpload {file_upload_id} atualizado para AGUARDANDO_FATURAMENTO")
             except FileUpload.DoesNotExist:
                 logger.warning(f"FileUpload {file_upload_id} não encontrado")
         
