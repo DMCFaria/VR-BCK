@@ -446,6 +446,7 @@ class ImportacaoListView(views.APIView):
         user = request.user
         administradora = getattr(user, 'administradora', None)
 
+        
         if not administradora:
             return Response(
                 {"detail": "Usuário não possui administradora vinculada."},
@@ -457,12 +458,14 @@ class ImportacaoListView(views.APIView):
             'funcionario_cpf',
             'produto_codigo'
         )
-
-        importacoes = Importacao.objects.filter(
-            administradora=administradora
-        ).prefetch_related(
-            Prefetch('movimentacoes', queryset=movimentacoes_qs)
-        ).order_by('-data_importacao')
+        if user.tipo == "dev" or user.tipo == "fat":
+            importacoes = Importacao.objects.all().prefetch_related(
+                Prefetch('movimentacoes', queryset=movimentacoes_qs)
+            ).order_by('-data_importacao')
+        else:
+            importacoes = Importacao.objects.filter(administradora=administradora).prefetch_related(
+                Prefetch('movimentacoes', queryset=movimentacoes_qs)
+            ).order_by('-data_importacao')
 
         serializer = ImportacaoComMovimentacoesSerializer(importacoes, many=True)
 
