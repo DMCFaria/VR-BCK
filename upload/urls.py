@@ -8,6 +8,7 @@ from .EXCEL.template import baixar_template_VR, baixar_template_VT
 from .export import ExportTxtCompraView, ExportFaturamentoView, ExportVTCompraView
 from .faturamento import UploadFaturamentoView, StatusFaturamentoView
 from .download_views import DownloadArquivoView, DownloadFaturamentoView, DownloadBoletosView, DownloadNotasDebitoView, DownloadNotasFiscaisView, DownloadBoletoOriginalView, DownloadNotaDebitoOriginalView, DownloadNotaFiscalOriginalView, DownloadTodosOriginaisView
+from .views_nfse import NfseWebhookView
 
 
 urlpatterns = [
@@ -42,5 +43,8 @@ urlpatterns = [
     path('faturamento/<int:faturamento_id>/download/originais/', DownloadTodosOriginaisView.as_view(), name='download_originais'),
 
     path('importacao/<int:importacao_id>/download/', DownloadArquivoView.as_view(), name='download_importacao_arquivo'),
+
+    # NFSE ROUTES
+    path('nfse/webhook/', NfseWebhookView.as_view(), name='nfse_webhook'),
 
 ]

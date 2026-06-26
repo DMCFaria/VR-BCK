@@ -4,6 +4,7 @@ import base64
 import logging
 from celery import shared_task
 import boto3
+from django.db import models
 from django.conf import settings
 from pypdf import PdfReader, PdfWriter
 
@@ -129,6 +130,37 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
             atualizar_progresso(faturamento.id, progresso_banco)
 
         atualizar_progresso(faturamento.id, 100, 'COMPLETED')
+
+        try:
+            from beneficios.models import Importacao, MovimentacaoBeneficio
+            from upload.nfse_service import emitir_nfse_lote
+
+            dados_condominios = []
+            for cnpj, docs in condominios_encontrados.items():
+                try:
+                    condominio = Condominio.objects.get(cnpj=cnpj)
+                except Condominio.DoesNotExist:
+                    logger.warning(f"NFSe: Condomínio {cnpj} não encontrado, pulando...")
+                    continue
+
+                total_valor = MovimentacaoBeneficio.objects.filter(
+                    importacao=importacao,
+                    empresa_cnpj=condominio,
+                ).aggregate(total=models.Sum('valor_beneficio'))['total'] or 0
+
+                servico_discriminacao = (
+                    f"Serviços de administração de benefícios - "
+                    f"Competência {faturamento.competencia.strftime('%m/%Y')} - "
+                    f"Faturamento #{faturamento.id}"
+                )
+
+                dados_condominios.append((condominio, float(total_valor), servico_discriminacao))
+
+            if dados_condominios:
+                emitir_nfse_lote(faturamento, dados_condominios)
+                logger.info(f"Lote NFSe enviado para {len(dados_condominios)} condomínios")
+        except Exception:
+            logger.exception("Erro ao emitir NFSe para condomínios")
 
         try:
             from beneficios.models import Importacao, MovimentacaoBeneficio
