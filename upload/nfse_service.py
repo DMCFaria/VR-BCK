@@ -5,7 +5,7 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 
-def _build_nota_payload(faturamento, condominio, valor_servico, servico_discriminacao, servico_codigo):
+def _build_nota_payload(faturamento, condominio, valor_servico, servico_discriminacao, servico_codigo, numero_fatura):
     prestador_cpf_cnpj = getattr(settings, 'NFSE_PRESTADOR_CPF_CNPJ', '35315360000167')
     prestador_razao_social = getattr(settings, 'NFSE_PRESTADOR_RAZAO_SOCIAL', 'FEDCORP ADMINISTRADORA DE CARTOES LTDA')
     tomador_codigo = getattr(settings, 'NFSE_TOMADOR_CODIGO_PADRAO', '3550308')
@@ -27,8 +27,8 @@ def _build_nota_payload(faturamento, condominio, valor_servico, servico_discrimi
         "servico_codigo": servico_codigo,
         "servico_discriminacao": servico_discriminacao,
         "valor_servico": float(valor_servico),
-        "fatura": str(faturamento.id),
-        "documento": f"NF{faturamento.id}",
+        "fatura": numero_fatura,
+        "documento": f"NF{numero_fatura}",
     }
 
 
@@ -40,9 +40,10 @@ def emitir_nfse_lote(faturamento, dados_condominios, servico_codigo=None):
     notas_payload = []
     notas_fiscais_criadas = []
 
-    for condominio, valor_servico, discriminacao in dados_condominios:
+    for item in dados_condominios:
+        condominio, valor_servico, discriminacao, numero_fatura = item
         nota_data = _build_nota_payload(
-            faturamento, condominio, valor_servico, discriminacao, servico_codigo
+            faturamento, condominio, valor_servico, discriminacao, servico_codigo, numero_fatura
         )
         notas_payload.append(nota_data)
 

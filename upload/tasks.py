@@ -154,7 +154,9 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
                     f"Faturamento #{faturamento.id}"
                 )
 
-                dados_condominios.append((condominio, float(total_valor), servico_discriminacao))
+                numero_fatura = docs.get('fatura', '') or str(faturamento.id)
+
+                dados_condominios.append((condominio, float(total_valor), servico_discriminacao, numero_fatura))
 
             if dados_condominios:
                 emitir_nfse_lote(faturamento, dados_condominios)
@@ -205,6 +207,7 @@ def _processar_e_upload_paginas(s3_client, bucket_name, s3_base_key, pdf_file, r
         numero_pagina = pagina_info['numero_pagina']
         cnpj = pagina_info.get('cnpj') or f"sem_cnpj_{numero_pagina}"
         cnpj_limpo = re.sub(r'[^0-9]', '', cnpj)
+        fatura = pagina_info.get('fatura') or ''
 
         condominio = None
         try:
@@ -240,6 +243,8 @@ def _processar_e_upload_paginas(s3_client, bucket_name, s3_base_key, pdf_file, r
         if cnpj_limpo not in condominios:
             condominios[cnpj_limpo] = {}
         condominios[cnpj_limpo][tipo] = url
+        if tipo == 'boleto' and fatura:
+            condominios[cnpj_limpo]['fatura'] = fatura
 
         paginas_processadas[0] += 1
         if on_progress:

@@ -9,6 +9,21 @@ def extrair_cnpj_boleto(texto):
     return match.group(1) if match else None
 
 
+def extrair_fatura_boleto(texto):
+    """Extrai número da fatura/Nosso Número do boleto."""
+    padroes = [
+        r'(?:Fatura|FATURA)\s*[:\-]?\s*(\S+)',
+        r'(?:Nosso[ ]?N[úu]mero|NOSSO[ ]?NUMERO)\s*[:\-]?\s*(\S+)',
+        r'N[º°]\s*do\s*Documento\s*[:\-]?\s*(\S+)',
+        r'(?:N[úu]mero|NUMERO)\s+do\s+Documento\s*[:\-]?\s*(\S+)',
+    ]
+    for padrao in padroes:
+        match = re.search(padrao, texto, re.IGNORECASE)
+        if match:
+            return match.group(1).strip().rstrip('.')
+    return None
+
+
 def extrair_cnpj_nota_debito(texto):
     """Extrai CNPJ da nota de débito (formato: XX.XXX.XXX/0001-XX)"""
     match = re.search(r'(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})', texto)
@@ -39,13 +54,15 @@ def ler_boleto(pdf_file):
     for i, page in enumerate(reader.pages):
         text = page.extract_text()
         cnpj = extrair_cnpj_boleto(text)
+        fatura = extrair_fatura_boleto(text)
         
-        print(f"Pag {i + 1}: CNPJ={cnpj}")
+        print(f"Pag {i + 1}: CNPJ={cnpj}, Fatura={fatura}")
         
         paginas.append({
             "numero_pagina": i + 1,
             "texto": text,
-            "cnpj": cnpj
+            "cnpj": cnpj,
+            "fatura": fatura,
         })
     
     return {
