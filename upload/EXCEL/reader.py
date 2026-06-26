@@ -57,20 +57,16 @@ def parse_excel_layout(file_path, file_upload_id, valor_max_beneficio=None):
     }
 
     try:
-        df = pd.read_excel(file_path, dtype={
-            'cnpj_condominio': str,
-            'cpf_funcionario': str,
-            'cep_condominio': str,
-            'matricula_funcionario': str,
-            'codigo_produto': str,
-            'cep_funcionario': str,
-            'endereco_rua_funcionario': str,
-            'endereco_numero_funcionario': str,
-            'endereco_complemento_funcionario': str,
-            'endereco_bairro_funcionario': str
-        })
-
+        df = pd.read_excel(file_path)
         df.columns = df.columns.str.strip().str.rstrip('*')
+
+        for col in ['cnpj_condominio', 'cpf_funcionario', 'cep_condominio',
+                     'matricula_funcionario', 'codigo_produto', 'cep_funcionario',
+                     'endereco_rua_funcionario', 'endereco_numero_funcionario',
+                     'endereco_complemento_funcionario', 'endereco_bairro_funcionario']:
+            if col in df.columns:
+                df[col] = df[col].astype(str)
+
         df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
         df = df.where(pd.notnull(df), None)
 
@@ -109,6 +105,8 @@ def parse_excel_layout(file_path, file_upload_id, valor_max_beneficio=None):
                 return result
 
             raw_cpf = re.sub(r'\D', '', str(row.get('cpf_funcionario', '')))
+            if raw_cpf and len(raw_cpf) < 11:
+                raw_cpf = raw_cpf.zfill(11)
             if raw_cpf and len(raw_cpf) != 11:
                 result['errors'].append(f"Linha {line_num}: CPF com tamanho inválido ({len(raw_cpf)} dígitos).")
                 result['linhas_com_erro'].append({
