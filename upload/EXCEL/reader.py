@@ -70,6 +70,7 @@ def parse_excel_layout(file_path, file_upload_id, valor_max_beneficio=None):
             'endereco_bairro_funcionario': str
         })
 
+        df.columns = df.columns.str.strip().str.rstrip('*')
         df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
         df = df.where(pd.notnull(df), None)
 
