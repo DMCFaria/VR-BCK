@@ -35,7 +35,7 @@ def _build_nota_payload(faturamento, condominio, valor_servico, servico_discrimi
 def emitir_nfse_lote(faturamento, dados_condominios, servico_codigo=None):
     from beneficios.models import NotaFiscal
 
-    api_url = getattr(settings, 'NFSE_API_URL', 'https://fedcorp-nfs-e-django-ebh2e.ondigitalocean.app/api/nfse/emissao/vr/')
+    api_url = getattr(settings, 'NFSE_API_URL', 'https://localhost:8001/api/nfse/emissao/vr/')
 
     notas_payload = []
     notas_fiscais_criadas = []
