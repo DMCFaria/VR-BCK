@@ -1,6 +1,7 @@
 import pandas as pd
 import re
 from decimal import Decimal, InvalidOperation
+from datetime import datetime
 from ..RB.parsers import cpf_valido_matematicamente
 import openpyxl
 
@@ -134,6 +135,8 @@ def parse_excel_layout(file_path, file_upload_id, valor_max_beneficio=None):
                 continue
 
             raw_cnpj = re.sub(r'\D', '', str(row.get('cnpj_condominio', '')))
+            if raw_cnpj and len(raw_cnpj) < 14:
+                raw_cnpj = raw_cnpj.zfill(14)
             if not raw_cnpj:
                 result['errors'].append(f"Linha {line_num}: CNPJ do condomínio ausente.")
                 result['linhas_com_erro'].append({
@@ -165,7 +168,7 @@ def parse_excel_layout(file_path, file_upload_id, valor_max_beneficio=None):
                 result['errors'].append(f"Linha {line_num}: Valor de benefício inválido.")
 
             comp = row.get('data_competencia')
-            if isinstance(comp, pd.Timestamp):
+            if isinstance(comp, (pd.Timestamp, datetime)):
                 data_iso = comp.strftime('%Y-%m-%d')
             else:
                 data_iso = str(comp) if comp else None
@@ -177,17 +180,15 @@ def parse_excel_layout(file_path, file_upload_id, valor_max_beneficio=None):
             data_nasc = row.get('data_nascimento_funcionario')
             if data_nasc is None or str(data_nasc).strip() in ['', 'None', 'nan']:
                 data_nasc_validada = None
-            elif isinstance(data_nasc, pd.Timestamp):
+            elif isinstance(data_nasc, (pd.Timestamp, datetime)):
                 data_nasc_validada = data_nasc.strftime('%Y-%m-%d')
             else:
                 data_nasc_str = str(data_nasc).strip()
                 try:
-                    from datetime import datetime
                     parsed = datetime.strptime(data_nasc_str, '%Y-%m-%d')
                     data_nasc_validada = parsed.strftime('%Y-%m-%d')
                 except:
                     try:
-                        from datetime import datetime
                         parsed = datetime.strptime(data_nasc_str, '%d/%m/%Y')
                         data_nasc_validada = parsed.strftime('%Y-%m-%d')
                     except:
