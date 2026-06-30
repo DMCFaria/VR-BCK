@@ -7,21 +7,38 @@ import openpyxl
 CODIGO_PRODUTO_PADRAO = '207'
 
 COLUNAS_PRODUTO = {
+    # ===== Sem prefixo "VR " (VR-exemplo.xlsm / Template_VR_OLD.xlsx) =====
+    'Refeição': CODIGO_PRODUTO_PADRAO,
+    'Multi Refeição': CODIGO_PRODUTO_PADRAO,
+    'Alimentação': '27',
+    'Multi Alimentação': '27',
+    'Auto': '28',
+    'Cesta': '201',
+    'Boas Festas': '202',
+    'Auxílio Alimentação': '204',
+    'Multi Auxílio Alimentação': '204',
+    'Auxílio Refeição': CODIGO_PRODUTO_PADRAO,
+    'Multi Auxílio Refeição': CODIGO_PRODUTO_PADRAO,
+    'Multibenefício': CODIGO_PRODUTO_PADRAO,
+    'Multibenefícios': CODIGO_PRODUTO_PADRAO,
+    'Auxílio VR+VA': CODIGO_PRODUTO_PADRAO,
+    'Multi Auxílio VR+VA': CODIGO_PRODUTO_PADRAO,
+    'Multi Premiação': CODIGO_PRODUTO_PADRAO,
+    # ===== Com prefixo "VR " (Template_VR.xlsm) =====
+    'VR Refeição': CODIGO_PRODUTO_PADRAO,
     'VR Alimentação': '27',
-    'VR Multi Alimentação': '27',
     'VR Auto': '28',
     'VR Alimentação Cesta': '201',
-    'VR Cesta': '201',
     'VR Boas Festas': '202',
     'VR Auxílio Alimentação': '204',
-    'VR Multi Alimentação Auxílio': '204',
-    'VR Multibenefício': '207',
-    'VR Multibenefícios': '207',
-    'VR Refeição': CODIGO_PRODUTO_PADRAO,
-    'VR Multi Refeição': CODIGO_PRODUTO_PADRAO,
     'VR Auxílio Refeição': CODIGO_PRODUTO_PADRAO,
-    'VR Multi Refeição Auxílio': CODIGO_PRODUTO_PADRAO,
+    'VR Multibenefícios': CODIGO_PRODUTO_PADRAO,
     'VR+VA': CODIGO_PRODUTO_PADRAO,
+    'VR Multi Refeição': CODIGO_PRODUTO_PADRAO,
+    'VR Multi Alimentação': '27',
+    'VR Multi Alimentação Valor do crédito': '27',
+    'VR Multi Refeição Auxílio': CODIGO_PRODUTO_PADRAO,
+    'VR Multi Alimentação Auxílio': '204',
     'VR Multi VR+VA': CODIGO_PRODUTO_PADRAO,
 }
 
@@ -44,7 +61,7 @@ def _parse_date(val):
     if isinstance(val, datetime):
         return val.strftime('%Y-%m-%d')
     s = str(val).strip()
-    for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%Y-%m-%d %H:%M:%S', '%d/%m/%Y %H:%M:%S'):
+    for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%Y-%m-%d %H:%M:%S', '%d/%m/%Y %H:%M:%S', '%d%m%Y'):
         try:
             return datetime.strptime(s, fmt).strftime('%Y-%m-%d')
         except:
@@ -285,9 +302,11 @@ def test_parse():
     import os
     from decimal import Decimal
 
-    file_path = os.path.join(os.path.dirname(__file__), 'Template_VR.xlsm')
+    file_path = os.path.join(os.path.dirname(__file__), 'VR-exemplo.xlsm')
     if not os.path.exists(file_path):
-        print(f"ERRO: Arquivo não encontrado em {file_path}")
+        file_path = os.path.join(os.path.dirname(__file__), 'Template_VR.xlsm')
+    if not os.path.exists(file_path):
+        print(f"ERRO: Arquivo não encontrado")
         return
 
     data = parse_fut_template(file_path, file_upload_id=999, valor_max_beneficio=Decimal('9999.99'))
