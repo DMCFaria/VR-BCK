@@ -14,6 +14,7 @@ from django.conf import settings
 from decimal import Decimal
 from .RB.parsers import parse_rb_layout
 from .EXCEL.reader import parse_excel_layout
+from .EXCEL.reader2 import parse_fut_template
 from .AHREAS.parsers import parse_ahreas_layout
 from .layout_detector import detect_txt_layout
 from entidades.models import Administradora
@@ -75,6 +76,10 @@ class UploadView(views.APIView):
                 import_mode = None
                 parsed_data = parse_excel_layout(file_path, upload_instance.id, valor_max_beneficio=valor_max)
                 logger.info(f"Parsed data: {parsed_data}")
+            elif extension == '.xlsm':
+                import_mode = None
+                parsed_data = parse_fut_template(file_path, upload_instance.id, valor_max_beneficio=valor_max)
+                logger.info(f"Parsed data (FUT): {parsed_data}")
             
             else:
                 return self._handle_error(upload_instance, f"Extensão {extension} não permitida.")
