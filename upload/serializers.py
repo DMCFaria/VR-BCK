@@ -98,6 +98,7 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
     fim_vigencia = serializers.DateField(input_formats=['%Y-%m-%d', '%d/%m/%Y'], required=False, allow_null=True)
     periodo_inicio = serializers.DateField(input_formats=['%Y-%m-%d', '%d/%m/%Y'], required=False, allow_null=True)
     periodo_fim = serializers.DateField(input_formats=['%Y-%m-%d', '%d/%m/%Y'], required=False, allow_null=True)
+    processed_by = serializers.PrimaryKeyRelatedField(read_only=True)
     
     competencia_mes = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     competencia_ano = serializers.CharField(required=False, allow_null=True, allow_blank=True)
@@ -144,6 +145,11 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
 
         # ========== 1. VALIDAR ADMINISTRADORA ==========
         administradora = None
+        processed_by_user = self.context.get('request').user if self.context.get('request') else None
+        
+        # OU use o campo que você está passando
+        processed_by_user = validated_data.get('processed_by')
+        
         if processed_by_user:
             administradora = getattr(processed_by_user, 'administradora', None)
             
@@ -152,6 +158,7 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
             
             logger.info(f"Administradora do usuário {processed_by_user.email}: {administradora}")
         
+        # 🚨 VERIFICAÇÃO CRÍTICA
         if not administradora:
             error_msg = "Usuário não possui administradora vinculada. Verifique o perfil do usuário."
             logger.error(error_msg)

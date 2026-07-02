@@ -44,7 +44,10 @@ class ConfirmationView(views.APIView):
         
         # logger.info(f"Validando payload para file_upload_id: {file_id}")
 
-        serializer = ProcessamentoFinalSerializer(data=payload)
+        serializer = ProcessamentoFinalSerializer(
+            data=payload,
+            context={'request': request}
+        )
         
         # logger.info(f"Serializer criado para file_upload_id: {file_id}, validando dados...")
 
