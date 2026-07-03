@@ -1,4 +1,5 @@
 import logging
+import traceback
 
 from rest_framework import views, status
 from rest_framework.response import Response
@@ -125,7 +126,7 @@ class ConfirmationView(views.APIView):
                 }, status=status.HTTP_200_OK)
                 
             except Exception as e:
-                logger.error(f"Erro ao processar arquivo {file_id}: {str(e)}")
+                logger.error(f"Erro ao processar arquivo {file_id}: {traceback.format_exc()}")
                 FileUpload.objects.filter(id=file_id).update(process_status="FAILED")
                 Importacao.objects.filter(file_upload_id=file_id, status='AGUARDANDO_FATURAMENTO').update(status='FAILED')
                 return Response({"detail": f"Erro interno: {str(e)}"}, status=400) 

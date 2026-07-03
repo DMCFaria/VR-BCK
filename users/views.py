@@ -1,5 +1,5 @@
 # users/views.py
-from datetime import timezone
+from django.utils import timezone
 
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
@@ -269,6 +269,10 @@ class PasswordView(APIView):
         )
 
 class SolicitarResetSenhaView(APIView):
+    """
+    View para solicitar reset de senha.
+    Gera um token e envia email com link para redefinição.
+    """
     permission_classes = [AllowAny]
     
     def post(self, request):
@@ -287,14 +291,30 @@ class SolicitarResetSenhaView(APIView):
             logger.info(f"Usuário encontrado: {user.email}")
         except CustomUser.DoesNotExist:
             logger.warning(f"Usuário não encontrado para o email: {email}")
+            # Por segurança, retorna mensagem genérica
             return Response(
                 {"detail": "Se o e-mail estiver cadastrado, você receberá as instruções."},
                 status=status.HTTP_200_OK
             )
         
+        # Gerar token único
+        import secrets
+        import string
+        alphabet = string.ascii_letters + string.digits
+        token = ''.join(secrets.choice(alphabet) for _ in range(64))
+        
+        # Salvar token no usuário
+        user.reset_password_token = token
+        user.reset_password_token_created_at = timezone.now()
+        user.reset_password_token_expires_at = timezone.now() + timezone.timedelta(hours=24)
+        user.save(update_fields=[
+            'reset_password_token',
+            'reset_password_token_created_at',
+            'reset_password_token_expires_at'
+        ])
+        
         # Enviar email via Gateway
         try:
-            
             service = FedhubService()
             
             email_enviado = service.enviar_email_recuperacao_senha(
@@ -312,7 +332,8 @@ class SolicitarResetSenhaView(APIView):
                     "status": "success",
                     "message": "Em breve você receberá um e-mail com as instruções para resetar sua senha. Cheque sua caixa de entrada e também a caixa de spam.",
                     "email_enviado": email_enviado
-                }
+                },
+                status=status.HTTP_200_OK
             )
                     
         except Exception as e:
@@ -320,12 +341,15 @@ class SolicitarResetSenhaView(APIView):
             return Response(
                 {
                     "status": "error",
-                    "message": "Falha ao processar a solicitação. Tente novamente mais tarde.",
-                    "email_enviado": email_enviado
-                }
+                    "message": "Falha ao processar a solicitação. Tente novamente mais tarde."
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-                
+
 class ValidarTokenResetView(APIView):
+    """
+    View para validar se o token de reset é válido.
+    """
     permission_classes = [AllowAny]
     
     def get(self, request, token):
@@ -363,6 +387,82 @@ class ValidarTokenResetView(APIView):
             status=status.HTTP_200_OK
         )
 
+class ResetarSenhaView(APIView):
+    """
+    View para redefinir a senha usando o token.
+    """
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        token = request.data.get("token")
+        nova_senha = request.data.get("nova_senha")
+        
+        logger.info(f"Solicitação de reset de senha para token: {token[:20] if token else 'None'}...")
+        
+        if not token or not nova_senha:
+            return Response(
+                {"detail": "Dados incompletos."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if len(nova_senha) < 6:
+            return Response(
+                {"detail": "A senha deve ter no mínimo 6 caracteres."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Buscar usuário pelo token
+        try:
+            user = CustomUser.objects.get(reset_password_token=token)
+        except CustomUser.DoesNotExist:
+            logger.warning(f"Token não encontrado: {token[:20]}...")
+            return Response(
+                {"detail": "Link inválido ou expirado."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Verificar expiração
+        if not user.reset_password_token_expires_at:
+            logger.warning(f"Token sem data de expiração para usuário: {user.email}")
+            return Response(
+                {"detail": "Link inválido."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if user.reset_password_token_expires_at < timezone.now():
+            logger.warning(f"Token expirado para usuário: {user.email}")
+            return Response(
+                {"detail": "Link expirado. Solicite um novo."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Redefinir a senha
+        user.set_password(nova_senha)
+        user.last_password_reset = timezone.now()
+        user.password_reset_count += 1
+        user.primeiro_acesso = False  # Marca que não é mais primeiro acesso
+        
+        # Limpar o token após uso (IMPORTANTE: não pode reusar)
+        user.reset_password_token = None
+        user.reset_password_token_created_at = None
+        user.reset_password_token_expires_at = None
+        user.save(update_fields=[
+            'reset_password_token',
+            'reset_password_token_created_at',
+            'reset_password_token_expires_at',
+            'password',
+            'last_password_reset',
+            'password_reset_count',
+            'primeiro_acesso'
+        ])
+        
+        logger.info(f"Senha redefinida com sucesso para usuário: {user.email}")
+        
+        return Response(
+            {"detail": "Senha redefinida com sucesso."},
+            status=status.HTTP_200_OK
+        )
+        
 class GoogleLoginView(APIView):
     permission_classes = [AllowAny]
 
@@ -414,74 +514,3 @@ class GoogleLoginView(APIView):
                 {"detail": "Token Google inválido."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-                      
-class ResetarSenhaView(APIView):
-    permission_classes = [AllowAny]
-    
-    def post(self, request):
-        token = request.data.get("token")
-        nova_senha = request.data.get("nova_senha")
-        
-        logger.info(f"Solicitação de reset de senha para token: {token[:20] if token else 'None'}...")
-        
-        if not token or not nova_senha:
-            return Response(
-                {"detail": "Dados incompletos."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        if len(nova_senha) < 6:
-            return Response(
-                {"detail": "A senha deve ter no mínimo 6 caracteres."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Buscar usuário pelo token
-        try:
-            user = CustomUser.objects.get(reset_password_token=token)
-        except CustomUser.DoesNotExist:
-            logger.warning(f"Token não encontrado: {token[:20]}...")
-            return Response(
-                {"detail": "Link inválido ou expirado."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Verificar expiração
-        if not user.reset_password_token_expires_at:
-            logger.warning(f"Token sem data de expiração para usuário: {user.email}")
-            return Response(
-                {"detail": "Link inválido."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        if user.reset_password_token_expires_at < timezone.now():
-            logger.warning(f"Token expirado para usuário: {user.email}")
-            return Response(
-                {"detail": "Link expirado. Solicite um novo."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Redefinir a senha
-        user.set_password(nova_senha)
-        user.last_password_reset = timezone.now()
-        user.password_reset_count += 1
-        
-        # Limpar o token após uso (IMPORTANTE: não pode reusar)
-        user.reset_password_token = None
-        user.reset_password_token_created_at = None
-        user.reset_password_token_expires_at = None
-        user.save(update_fields=[
-            'reset_password_token',
-            'reset_password_token_created_at',
-            'reset_password_token_expires_at',
-            'password',
-            'last_password_reset',
-            'password_reset_count'
-        ])
-        
-        logger.info(f"Senha redefinida com sucesso para usuário: {user.email}")
-        
-        return Response(
-            {"detail": "Senha redefinida com sucesso."},
-            status=status.HTTP_200_OK
-        )

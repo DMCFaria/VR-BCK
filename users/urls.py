@@ -3,11 +3,14 @@ from .views import (
     DesvincularAdministradoraView,
     GoogleLoginView,
     PasswordView,
+    ResetarSenhaView,
+    SolicitarResetSenhaView,
     UserRegistrationAPIView, 
     CurrentUserView, 
     LoginApiView, 
     UserListView, 
-    UserDetailUpdateDeleteView, 
+    UserDetailUpdateDeleteView,
+    ValidarTokenResetView, 
     VincularAdministradoraView
 )
 
@@ -22,6 +25,10 @@ urlpatterns = [
     path('<int:pk>/', UserDetailUpdateDeleteView.as_view(), name='user_detail'),
     path('<int:pk>/vincular-adm/', VincularAdministradoraView.as_view(), name='vincular-adm'),
     path('<int:pk>/desvincular-adm/', DesvincularAdministradoraView.as_view(), name='desvincular-adm'),
+    
+    path('solicitar-reset-senha/', SolicitarResetSenhaView.as_view(), name='solicitar-reset-senha'),
+    path('validar-token-reset/<str:token>/', ValidarTokenResetView.as_view(), name='validar-token-reset'),
+    path('resetar-senha/', ResetarSenhaView.as_view(), name='resetar-senha'),
     
     path('google-login/', GoogleLoginView.as_view(), name='google-login'),
 ]

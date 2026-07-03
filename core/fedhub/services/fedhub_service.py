@@ -167,56 +167,64 @@ class FedhubService:
     
     
         # Email
-    
+        
     def enviar_email_recuperacao_senha(self, email: str, user: Any) -> bool:
         try:
             with httpx.Client() as client:
-                
+
                 # 🔐 Gerar NOVO token (sobrescreve o anterior)
                 reset_token = secrets.token_urlsafe(32)
                 expires_at = timezone.now() + timedelta(hours=24)
-                
+
                 # SOBRESCREVE o token anterior (se existir)
                 user.reset_password_token = reset_token
                 user.reset_password_token_created_at = timezone.now()
                 user.reset_password_token_expires_at = expires_at
-                # Não precisa limpar antes, apenas sobrescreve
-                user.save(update_fields=[
-                    'reset_password_token', 
-                    'reset_password_token_created_at', 
-                    'reset_password_token_expires_at'
-                ])
-                
-                logger.info(f"Novo token gerado (sobrescreveu anterior) para: {user.email}")
+                user.save(
+                    update_fields=[
+                        "reset_password_token",
+                        "reset_password_token_created_at",
+                        "reset_password_token_expires_at",
+                    ]
+                )
+
+                logger.info(
+                    f"Novo token gerado (sobrescreveu anterior) para: {user.email}"
+                )
                 logger.info(f"Token expira em: {expires_at}")
-                
+
                 frontend_url = settings.FRONTEND_URL
-                
+
                 # Construir link de reset
                 reset_url = f"{frontend_url}/resetar-senha/{reset_token}"
-                
+
                 logger.info(f"Link de reset gerado: {reset_url}")
-                
-                html_body = render_to_string('email/resetar_senha.html', {
-                    'nome_usuario': user.nome or user.email,
-                    'reset_url': reset_url
-                })
-                
+
+                html_body = render_to_string(
+                    "email/resetar_senha.html",
+                    {
+                        "nome_usuario": user.nome or user.email,
+                        "reset_url": reset_url,
+                    },
+                )
+
                 response = client.post(
                     f"{self.base_url}/api/email/send/gmail",
                     json={
                         "to_email": email,
-                        "subject": "Redefinição de Senha - FedConnect",
+                        "subject": "Redefinição de Senha - FedHub - Benefícios",
                         "body": html_body,
-                        "is_html": True
+                        "is_html": True,
                     },
-                    timeout=30.0
+                    timeout=30.0,
                 )
-                
+
                 if response.status_code == 200:
                     logger.info(f"Email enviado com sucesso via Gateway para: {email}")
                 else:
-                    logger.error(f"Gateway retornou erro {response.status_code}: {response.text}")
+                    logger.error(
+                        f"Gateway retornou erro {response.status_code}: {response.text}"
+                    )
 
             return True
 
