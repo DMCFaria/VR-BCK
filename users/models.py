@@ -64,6 +64,32 @@ class CustomUser(AbstractUser):
         blank=True,
         verbose_name="Administradora"
     )
+    
+    reset_password_token = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        verbose_name="Token de reset de senha"
+    )
+    reset_password_token_created_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name="Data de criação do token"
+    )
+    reset_password_token_expires_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name="Data de expiração do token"
+    )
+    last_password_reset = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name="Último reset de senha"
+    )
+    password_reset_count = models.IntegerField(
+        default=0,
+        verbose_name="Contador de resets"
+    )
 
     objects = CustomUserManager() 
     
