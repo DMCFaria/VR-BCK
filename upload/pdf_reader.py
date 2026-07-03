@@ -12,15 +12,18 @@ def extrair_cnpj_boleto(texto):
 def extrair_fatura_boleto(texto):
     """Extrai número da fatura/Nosso Número do boleto."""
     padroes = [
-        r'(?:Fatura|FATURA)\s*[:\-]?\s*(\S+)',
-        r'(?:Nosso[ ]?N[úu]mero|NOSSO[ ]?NUMERO)\s*[:\-]?\s*(\S+)',
-        r'N[º°]\s*do\s*Documento\s*[:\-]?\s*(\S+)',
-        r'(?:N[úu]mero|NUMERO)\s+do\s+Documento\s*[:\-]?\s*(\S+)',
+        r'\d{2}/\d{2}/\d{4}\s+(\d+)\s+\d{2}/\d{2}/\d{4}',
+        r'(?:Fatura|FATURA)[ \t]*[:\-]?[ \t]*(\S+)',
+        r'(?:Nosso[ ]?N[úu]mero|NOSSO[ ]?NUMERO)[ \t]*[:\-]?[ \t]*(\S+)',
+        r'N[º°]\s*do\s*Documento[ \t]*[:\-]?[ \t]*(\S+)',
+        r'(?:N[úu]mero|NUMERO)[ \t]+do[ \t]+Documento[ \t]*[:\-]?[ \t]*(\S+)',
     ]
     for padrao in padroes:
         match = re.search(padrao, texto, re.IGNORECASE)
         if match:
-            return match.group(1).strip().rstrip('.')
+            fatura = match.group(1).strip().rstrip('.')
+            if fatura.upper() not in ['EMISSOR', 'EMISSOR:', 'CNPJ', 'PRODUTO', 'VENCIMENTO', 'Nº']:
+                return fatura
     return None
 
 

@@ -390,4 +390,65 @@ class FedhubService:
             logger.error(f"Erro ao chamar Firebird: {e}")
             return None
 
+    def buscar_dados_boleto_por_fatura(self, fatura: str):
+        """
+        Busca os dados do boleto/faturamento no Fedhub pelo número da fatura.
+        Retorna um dicionário com os dados do boleto ou None se não encontrado.
+        """
+        try:
+            logger.info(f"Chamando Fedhub para buscar dados do boleto da fatura {fatura}")
+            response = requests.get(
+                f"{self.base_url}/api/faturas/fatura/boletos-bancarios/{fatura}",
+                headers=get_headers(),
+                timeout=30
+            )
+
+            if response.status_code != 200:
+                logger.error(f"Erro ao buscar dados do boleto no Fedhub: {response.status_code}")
+                return None
+
+            data = response.json()
+            if isinstance(data, dict):
+                if data.get("status") == "success" and "data" in data:
+                    boletos = data.get("data")
+                    if isinstance(boletos, list):
+                        return boletos[0] if len(boletos) > 0 else {}
+                    return boletos
+                return data
+            return None
+
+        except requests.RequestException as e:
+            logger.error(f"Erro de conexão com o Fedhub: {e}")
+            return None
+
+    def buscar_todos_boletos_por_fatura(self, fatura: str):
+        """
+        Busca todos os boletos/faturamentos no Fedhub pelo número da fatura.
+        Retorna uma lista com os dados de todos os boletos ou uma lista vazia.
+        """
+        try:
+            logger.info(f"Chamando Fedhub para buscar todos os boletos da fatura {fatura}")
+            response = requests.get(
+                f"{self.base_url}/api/faturas/fatura/boletos-bancarios/{fatura}",
+                headers=get_headers(),
+                timeout=30
+            )
+
+            if response.status_code != 200:
+                logger.error(f"Erro ao buscar todos os boletos no Fedhub: {response.status_code}")
+                return []
+
+            data = response.json()
+            if isinstance(data, dict) and data.get("status") == "success" and "data" in data:
+                boletos = data.get("data")
+                if isinstance(boletos, list):
+                    return boletos
+                elif isinstance(boletos, dict):
+                    return [boletos]
+            return []
+
+        except requests.RequestException as e:
+            logger.error(f"Erro de conexão com o Fedhub ao buscar todos os boletos: {e}")
+            return []
+
     

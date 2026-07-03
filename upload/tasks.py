@@ -110,6 +110,74 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
 
         logger.info(f"CNPJs encontrados: {list(condominios_encontrados.keys())}")
 
+        fatura_num = None
+        for cnpj, docs in condominios_encontrados.items():
+            if docs.get('fatura'):
+                fatura_num = docs.get('fatura')
+                break
+
+        if fatura_num:
+            try:
+                from core.fedhub.services.fedhub_service import FedhubService
+                from beneficios.models import Boleto
+                from entidades.models import Condominio
+
+                fedhub_service = FedhubService()
+                boletos_data = fedhub_service.buscar_todos_boletos_por_fatura(fatura_num)
+
+                if boletos_data:
+                    def parse_date_safe(date_str):
+                        if not date_str:
+                            return None
+                        try:
+                            return datetime.strptime(str(date_str), '%Y-%m-%d').date()
+                        except ValueError:
+                            try:
+                                return datetime.strptime(str(date_str), '%d/%m/%Y').date()
+                            except ValueError:
+                                return None
+
+                    for dados_boleto in boletos_data:
+                        cnpj_cobrado_raw = dados_boleto.get("cnpj_cobrado") or ""
+                        cnpj_cobrado_limpo = re.sub(r'[^0-9]', '', str(cnpj_cobrado_raw))
+                        condominio_exists = Condominio.objects.filter(cnpj=cnpj_cobrado_limpo).exists()
+
+                        doc_num = dados_boleto.get("documento")
+                        if doc_num:
+                            Boleto.objects.update_or_create(
+                                documento=doc_num,
+                                defaults={
+                                    "faturamento": faturamento,
+                                    "fatura": fatura_num,
+                                    "dt_emissao": parse_date_safe(dados_boleto.get("dt_emissao")),
+                                    "codigo_de_barra": dados_boleto.get("codigo_de_barra"),
+                                    "qr_code": dados_boleto.get("qr_code"),
+                                    "qr_imagem": dados_boleto.get("qr_imagem"),
+                                    "vencimento": parse_date_safe(dados_boleto.get("vencimento")),
+                                    "nome_cobrado": dados_boleto.get("nome_cobrado"),
+                                    "cnpj_cobrado": cnpj_cobrado_limpo or cnpj_cobrado_raw,
+                                    "cedente": dados_boleto.get("cedente"),
+                                    "cnpj_cedente": dados_boleto.get("cnpj_cedente"),
+                                    "valor": dados_boleto.get("valor"),
+                                    "deducoes": dados_boleto.get("deducoes"),
+                                    "status": dados_boleto.get("status"),
+                                    "nosso_numero": dados_boleto.get("nosso_numero"),
+                                    "identificador": dados_boleto.get("identificador"),
+                                    "baixa": bool(dados_boleto.get("baixa", False)),
+                                    "dt_baixa": parse_date_safe(dados_boleto.get("dt_baixa")),
+                                    "obs_baixa": dados_boleto.get("obs_baixa"),
+                                    "NFs_id": dados_boleto.get("nfs_id"),
+                                    "Numero_nota": dados_boleto.get("numero_nota"),
+                                    "url_nota": dados_boleto.get("url_nota"),
+                                    "match": condominio_exists,
+                                }
+                            )
+                    logger.info(f"Boletos para a fatura {fatura_num} criados/atualizados com sucesso.")
+                else:
+                    logger.warning(f"Nenhum dado de boleto retornado do Fedhub para a fatura {fatura_num}")
+            except Exception as ex:
+                logger.error(f"Erro ao buscar/criar boletos para fatura {fatura_num}: {ex}")
+
         total_condominios = len(condominios_encontrados)
         for i, (cnpj, docs) in enumerate(condominios_encontrados.items()):
             try:
