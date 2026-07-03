@@ -211,50 +211,7 @@ class FaturamentoDocumento(models.Model):
     def __str__(self):
         return f"{self.condominio.cnpj} - {self.faturamento.id}"
 
-class NotaFiscal(models.Model):
-    STATUS_CHOICES = [
-        ('EM_EMISSAO', 'Em Emissão'),
-        ('EMITIDO', 'Emitido'),
-        ('FAILED', 'Falhou'),
-    ]
 
-    faturamento = models.ForeignKey(
-        Faturamento,
-        on_delete=models.CASCADE,
-        related_name='notas_fiscais',
-        verbose_name="Faturamento"
-    )
-    condominio = models.ForeignKey(
-        Condominio,
-        on_delete=models.CASCADE,
-        related_name='notas_fiscais',
-        verbose_name="Condomínio"
-    )
-    id_integracao = models.CharField(max_length=100, verbose_name="ID Integração", unique=True)
-    status = models.CharField(
-        max_length=20,
-        choices=STATUS_CHOICES,
-        default='EM_EMISSAO',
-        db_index=True,
-        verbose_name="Status"
-    )
-    protocolo = models.CharField(max_length=100, verbose_name="Protocolo", blank=True, null=True)
-    numero_nota = models.CharField(max_length=50, verbose_name="Número da Nota", blank=True, null=True)
-    codigo_verificacao = models.CharField(max_length=100, verbose_name="Código de Verificação", blank=True, null=True)
-    pdf_url = models.URLField(max_length=500, verbose_name="URL do PDF", blank=True, null=True)
-    payload = models.JSONField(verbose_name="Payload Enviado", blank=True, null=True)
-    resposta = models.JSONField(verbose_name="Resposta da API", blank=True, null=True)
-    erro = models.TextField(verbose_name="Erro", blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
-
-    class Meta:
-        verbose_name = "Nota Fiscal"
-        verbose_name_plural = "Notas Fiscais"
-        ordering = ['-created_at']
-
-    def __str__(self):
-        return f"NF #{self.numero_nota or self.id_integracao} - {self.get_status_display()}"
 
 
 class MovimentacaoBeneficio(models.Model):
