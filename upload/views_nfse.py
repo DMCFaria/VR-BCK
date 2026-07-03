@@ -62,6 +62,8 @@ class NfseWebhookView(views.APIView):
             ).first()
 
             if boleto:
+                if id_integracao:
+                    boleto.NFs_id = str(id_integracao)
                 if numero_nota:
                     boleto.Numero_nota = str(numero_nota)
                 if pdf_url:
