@@ -145,7 +145,22 @@ class UploadView(views.APIView):
                 "file_upload_id": upload_instance.id
             })
             
-            upload_instance.process_status = "PARSED"
+            # Verificar se há informações faltando ou linhas com erro
+            erros_condominios = parsed_data.get("erros_condominios", [])
+            linhas_com_erro = parsed_data.get("linhas_com_erro", [])
+            
+            tem_erros = len(erros_condominios) > 0 or len(linhas_com_erro) > 0
+            
+            if tem_erros:
+                status_processamento = "ERRO"
+                db_status = "FAILED"
+                detail_msg = "Arquivo processado. Contudo, há informações ausentes na planilha ou nos condomínios."
+            else:
+                status_processamento = "PARSED"
+                db_status = "PARSED"
+                detail_msg = "Arquivo processado. Confirme os dados para gravação."
+            
+            upload_instance.process_status = db_status
             upload_instance.summary_data = frontend_summary_safe
             upload_instance.save()
 
@@ -173,11 +188,12 @@ class UploadView(views.APIView):
 
             response_data = {
                 "file_upload_id": upload_instance.id,
-                "status": "PARSED",
+                "status": status_processamento,
                 "summary": frontend_summary_safe,
                 "data_to_backend": data_to_backend_safe,
-                "linhas_com_erro": parsed_data.get("linhas_com_erro", []),
-                "detail": "Arquivo processado. Confirme os dados para gravação.",
+                "linhas_com_erro": linhas_com_erro,
+                "erros_condominios": erros_condominios,
+                "detail": detail_msg,
             }
             if import_mode:
                 response_data["importMode"] = import_mode
