@@ -32,16 +32,16 @@ class NfseWebhookView(views.APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Extrair faturamento_id e cnpj de id_integracao ou ler diretamente do payload
-        faturamento_id = data.get('faturamento_id') or data.get('fatura')
-        cnpj_cobrado = data.get('cnpj_cobrado') or data.get('cnpj')
-
-        if not (faturamento_id and cnpj_cobrado):
-            parts = id_integracao.split('_')
-            if len(parts) >= 3:
-                faturamento_id = parts[1]
-                cnpj_cobrado = parts[2]
-            else:
+        # Extrair faturamento_id e cnpj de id_integracao (fonte confiável)
+        # id_integracao tem o formato: VR_{faturamento.id}_{condominio.cnpj}
+        parts = id_integracao.split('_')
+        if len(parts) >= 3:
+            faturamento_id = parts[1]
+            cnpj_cobrado = parts[2]
+        else:
+            faturamento_id = data.get('faturamento_id')
+            cnpj_cobrado = data.get('cnpj_cobrado') or data.get('cnpj')
+            if not (faturamento_id and cnpj_cobrado):
                 logger.warning(f"id_integracao incorreto para extrair faturamento e CNPJ: {id_integracao}")
                 return Response(
                     {"detail": "ID de integração inválido para extração de dados e campos explícitos ausentes."},
