@@ -13,12 +13,13 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from entidades.models import Condominio, Funcionario, Administradora, VinculoCondominio
-from beneficios.models import MovimentacaoBeneficio, Produto, Importacao
+from beneficios.models import MovimentacaoBeneficio, Produto, Importacao, Boleto
 
 
-def gerar_txt_compra(administradora_cnpj, data_competencia=None):
+def gerar_txt_compra(administradora_cnpj, data_competencia=None, movimentacao_ids=None):
     """
     Gera o arquivo txt_compra para envio à VR Benefícios.
+    Se movimentacao_ids for passado, filtra apenas as movimentações selecionadas.
     """
     linhas = []
     seq = 1
@@ -41,7 +42,11 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None):
 
     # Buscar condomínios vinculados
     query = VinculoCondominio.objects.filter(administradora=admin)
-    if data_competencia:
+    if movimentacao_ids is not None:
+        query = query.filter(
+            condominio__movimentacaobeneficio__id__in=movimentacao_ids
+        ).distinct()
+    elif data_competencia:
         query = query.filter(
             condominio__movimentacaobeneficio__data_competencia=data_competencia
         ).distinct()
@@ -115,12 +120,17 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None):
         seq += 1
 
     # Buscar movimentações
-    mov_query = MovimentacaoBeneficio.objects.filter(
-        empresa_cnpj__vinculocondominio__administradora=admin
-    ).select_related('produto_codigo', 'funcionario_cpf', 'empresa_cnpj')
+    if movimentacao_ids is not None:
+        mov_query = MovimentacaoBeneficio.objects.filter(
+            id__in=movimentacao_ids
+        ).select_related('produto_codigo', 'funcionario_cpf', 'empresa_cnpj')
+    else:
+        mov_query = MovimentacaoBeneficio.objects.filter(
+            empresa_cnpj__vinculocondominio__administradora=admin
+        ).select_related('produto_codigo', 'funcionario_cpf', 'empresa_cnpj')
 
-    if data_competencia:
-        mov_query = mov_query.filter(data_competencia=data_competencia)
+        if data_competencia:
+            mov_query = mov_query.filter(data_competencia=data_competencia)
 
     # ⭐⭐⭐ REMOVER DUPLICAÇÃO: Apenas UM bloco de registros 30, 50 e 60 ⭐⭐⭐
     
@@ -282,21 +292,88 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
     return dados
 
 
+class GetImportacaoSelectDataView(views.APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, importacao_id):
+        try:
+            importacao = Importacao.objects.get(id=importacao_id)
+        except Importacao.DoesNotExist:
+            return Response({'detail': 'Importação não encontrada.'}, status=404)
+
+        boletos = Boleto.objects.filter(faturamento_id=importacao_id)
+        boletos_data = [
+            {
+                "id": b.id,
+                "documento": b.documento,
+                "cnpj_cobrado": b.cnpj_cobrado,
+                "nome_cobrado": b.nome_cobrado,
+                "valor": float(b.valor) if b.valor else 0.0,
+                "vencimento": b.vencimento.strftime('%Y-%m-%d') if b.vencimento else None,
+                "baixa": b.baixa,
+            }
+            for b in boletos
+        ]
+
+        movs = MovimentacaoBeneficio.objects.filter(importacao=importacao).select_related(
+            'empresa_cnpj', 'funcionario_cpf', 'produto_codigo'
+        ).order_by('empresa_cnpj__nome', 'funcionario_cpf__nome')
+
+        condominios_dict = {}
+        for m in movs:
+            cond_cnpj = m.empresa_cnpj.cnpj
+            if cond_cnpj not in condominios_dict:
+                condominios_dict[cond_cnpj] = {
+                    "cnpj": cond_cnpj,
+                    "nome": m.empresa_cnpj.nome,
+                    "funcionarios": {}
+                }
+
+            func_cpf = m.funcionario_cpf.cpf
+            if func_cpf not in condominios_dict[cond_cnpj]["funcionarios"]:
+                condominios_dict[cond_cnpj]["funcionarios"][func_cpf] = {
+                    "cpf": func_cpf,
+                    "nome": m.funcionario_cpf.nome,
+                    "movimentacoes": []
+                }
+
+            condominios_dict[cond_cnpj]["funcionarios"][func_cpf]["movimentacoes"].append({
+                "id": m.id,
+                "produto_codigo": m.produto_codigo.codigo_produto,
+                "produto_nome": m.produto_codigo.nome,
+                "valor_beneficio": float(m.valor_beneficio),
+                "quantidade_dias": m.quantidade_dias,
+                "data_competencia": m.data_competencia.strftime('%Y-%m-%d') if m.data_competencia else None,
+            })
+
+        condominios_list = []
+        for cond_cnpj, cond_data in condominios_dict.items():
+            funcs_list = list(cond_data["funcionarios"].values())
+            cond_data["funcionarios"] = funcs_list
+            condominios_list.append(cond_data)
+
+        return Response({
+            "importacao_id": importacao.id,
+            "condominios": condominios_list,
+            "boletos": boletos_data,
+        })
+
+
 class ExportTxtCompraView(views.APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
-    def get(self, request, *args, **kwargs):
-        importacao_id = request.query_params.get('importacao_id')
-        data_competencia_str = request.query_params.get('data_competencia')
+    def post(self, request, *args, **kwargs):
+        importacao_id = request.data.get('importacao_id')
+        data_competencia_str = request.data.get('data_competencia')
+        movimentacao_ids = request.data.get('movimentacao_ids')
 
         if not importacao_id:
             return Response(
                 {'detail': 'Parâmetro importacao_id é obrigatório.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-
-        from beneficios.models import Importacao
 
         try:
             importacao = Importacao.objects.get(id=importacao_id)
@@ -306,16 +383,14 @@ class ExportTxtCompraView(views.APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # Get administradora_cnpj from importacao
         if not importacao.administradora:
             return Response(
                 {'detail': 'Importação não possui administradora vinculada.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         administradora_cnpj = importacao.administradora.cnpj
 
-        # Get data_competencia from query params or from importacao's movements
         data_competencia = None
         if data_competencia_str:
             try:
@@ -326,23 +401,20 @@ class ExportTxtCompraView(views.APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
         else:
-            # Try to get data_competencia from the first movement of the importacao
             first_mov = importacao.movimentacoes.first()
             if first_mov:
                 data_competencia = first_mov.data_competencia
             else:
                 data_competencia = date.today()
 
-        # Generate TXT
-        txt_content, error = gerar_txt_compra(administradora_cnpj, data_competencia)
-        
+        txt_content, error = gerar_txt_compra(administradora_cnpj, data_competencia, movimentacao_ids)
+
         if error:
             return Response(
                 {'detail': error},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Return TXT file
         response = HttpResponse(txt_content, content_type='text/plain; charset=utf-8')
         response['Content-Disposition'] = f'attachment; filename="PEDIDO_VR_{date.today().strftime("%Y%m%d")}.txt"'
         return response
