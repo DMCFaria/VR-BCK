@@ -244,3 +244,56 @@ class DownloadArquivoView(views.APIView):
             return response
         except:
             return HttpResponse("Arquivo não encontrado no S3.", status=404)
+
+
+class DownloadNotasEmitidasView(views.APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, faturamento_id):
+        from beneficios.models import Faturamento, Boleto
+        from pypdf import PdfReader, PdfWriter
+        import requests
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        
+        try:
+            faturamento = Faturamento.objects.get(id=faturamento_id)
+        except Faturamento.DoesNotExist:
+            return HttpResponse("Faturamento não encontrado.", status=404)
+
+        # 1. Fetch boletos ordered by document number (documento)
+        boletos = Boleto.objects.filter(
+            faturamento=faturamento
+        ).exclude(url_nota__isnull=True).exclude(url_nota='').order_by('documento')
+
+        if not boletos.exists():
+            return HttpResponse("Nenhuma nota fiscal emitida disponível para este faturamento.", status=404)
+
+        writer = PdfWriter()
+        notas_merged_count = 0
+
+        # 2. Sequential download and merging
+        for boleto in boletos:
+            try:
+                response = requests.get(boleto.url_nota, timeout=20)
+                if response.status_code == 200:
+                    pdf_file = io.BytesIO(response.content)
+                    reader = PdfReader(pdf_file)
+                    for page in reader.pages:
+                        writer.add_page(page)
+                    notas_merged_count += 1
+            except Exception as e:
+                logger.error(f"Erro ao baixar/mesclar nota do boleto {boleto.documento}: {str(e)}")
+
+        if notas_merged_count == 0:
+            return HttpResponse("Falha ao baixar/mesclar los arquivos de notas fiscais.", status=500)
+
+        buffer = io.BytesIO()
+        writer.write(buffer)
+        buffer.seek(0)
+
+        response = HttpResponse(buffer.read(), content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="notas_fiscais_faturamento_{faturamento_id}.pdf"'
+        return response

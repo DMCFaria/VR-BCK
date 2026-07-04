@@ -112,6 +112,41 @@ class AlterarStatusImportacaoView(views.APIView):
             importacao.save()
         
         logger.info(f"Importação {pk} alterada para status: {status_backend}")
+
+        if status_backend == 'CANCELADO':
+            from beneficios.models import Faturamento, Boleto
+            from django.conf import settings
+            import requests
+
+            faturamentos = Faturamento.objects.filter(importacao=importacao)
+            for fat in faturamentos:
+                fat.status = 'FAILED'
+                fat.save(update_fields=['status'])
+                
+                boletos = Boleto.objects.filter(faturamento=fat).exclude(NFs_id__isnull=True).exclude(NFs_id='')
+                ids_integracao = [b.NFs_id for b in boletos]
+                
+                if ids_integracao:
+                    try:
+                        api_url = getattr(settings, 'NFSE_API_URL', 'https://fedcorp-nfs-e-django-ebh2e.ondigitalocean.app/api/nfse/emissao/vr/')
+                        from urllib.parse import urljoin, urlparse
+                        parsed_uri = urlparse(api_url)
+                        base_api = f"{parsed_uri.scheme}://{parsed_uri.netloc}"
+                        cancel_url = urljoin(base_api, "/api/nfse/cancela/nfse/")
+                        
+                        payload = {
+                            "notas": [{"id_integracao": nfs_id} for nfs_id in ids_integracao]
+                        }
+                        headers = {
+                            'Content-Type': 'application/json',
+                            'X-API-KEY': getattr(settings, 'NFSE_X_API_KEY', 'fedcorp_static_token_secure_xyz123'),
+                        }
+                        
+                        response = requests.post(cancel_url, json=payload, headers=headers, timeout=30)
+                        response.raise_for_status()
+                        logger.info(f"Cancelamento de {len(ids_integracao)} notas enviado com sucesso para NFS-e-Django.")
+                    except Exception as e_cancel:
+                        logger.error(f"Erro ao cancelar notas para faturamento #{fat.id}: {str(e_cancel)}")
         
         fedhub_service = FedhubService()
         

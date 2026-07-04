@@ -7,7 +7,7 @@ from .upload import UploadView
 from .EXCEL.template import baixar_template_VR, baixar_template_VT
 from .export import ExportTxtCompraView, ExportFaturamentoView, ExportVTCompraView
 from .faturamento import UploadFaturamentoView, StatusFaturamentoView
-from .download_views import DownloadArquivoView, DownloadFaturamentoView, DownloadBoletosView, DownloadNotasDebitoView, DownloadNotasFiscaisView, DownloadBoletoOriginalView, DownloadNotaDebitoOriginalView, DownloadNotaFiscalOriginalView, DownloadTodosOriginaisView
+from .download_views import DownloadArquivoView, DownloadFaturamentoView, DownloadBoletosView, DownloadNotasDebitoView, DownloadNotasFiscaisView, DownloadBoletoOriginalView, DownloadNotaDebitoOriginalView, DownloadNotaFiscalOriginalView, DownloadTodosOriginaisView, DownloadNotasEmitidasView
 from .views_nfse import NfseWebhookView
 
 
@@ -41,6 +41,7 @@ urlpatterns = [
     path('faturamento/<int:faturamento_id>/download/nota-debito-original/', DownloadNotaDebitoOriginalView.as_view(), name='download_nota_debito_original'),
     path('faturamento/<int:faturamento_id>/download/nota-fiscal-original/', DownloadNotaFiscalOriginalView.as_view(), name='download_nota_fiscal_original'),
     path('faturamento/<int:faturamento_id>/download/originais/', DownloadTodosOriginaisView.as_view(), name='download_originais'),
+    path('faturamento/<int:faturamento_id>/download/notas-emitidas/', DownloadNotasEmitidasView.as_view(), name='download_notas_emitidas'),
 
     path('importacao/<int:importacao_id>/download/', DownloadArquivoView.as_view(), name='download_importacao_arquivo'),
 

@@ -51,6 +51,27 @@ class NfseWebhookView(views.APIView):
         numero_nota = data.get('numero_nota')
         pdf_url = data.get('pdf_url') or data.get('url_nota') or data.get('url_danfse')
 
+        # Se o status recebido indicar erro ou falha, notificar o faturista por e-mail
+        status_recv = data.get('status', '').upper()
+        if status_recv in ('FAILED', 'REJEITADO', 'ERRO', 'CANCELADO', 'CANCELADA'):
+            try:
+                from core.fedhub.services.fedhub_service import FedhubService
+                from django.conf import settings
+                fedhub_service = FedhubService()
+                dest_email = getattr(settings, 'EMAIL_FATURAMENTO', 'novosnegocios@grupofedcorp.com.br')
+                motivo = data.get('mensagem_erro') or data.get('motivo_rejeicao') or 'Erro desconhecido na emissão da prefeitura.'
+                
+                fedhub_service.enviar_email_erro_nota(
+                    email_destinatario=dest_email,
+                    faturamento_id=faturamento_id,
+                    cnpj_cobrado=cnpj_cobrado,
+                    id_integracao=id_integracao,
+                    motivo_erro=motivo
+                )
+                logger.info(f"Notificação de erro de nota enviada para faturista ({dest_email})")
+            except Exception as e_notif:
+                logger.error(f"Erro ao disparar notificação de erro de nota para faturista: {str(e_notif)}")
+
         try:
             from beneficios.models import Boleto
             import re

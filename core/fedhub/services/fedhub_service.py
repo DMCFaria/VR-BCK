@@ -451,4 +451,50 @@ class FedhubService:
             logger.error(f"Erro de conexão com o Fedhub ao buscar todos os boletos: {e}")
             return []
 
+    def enviar_email_erro_nota(self, email_destinatario: str, faturamento_id: str, cnpj_cobrado: str, id_integracao: str, motivo_erro: str = "Erro na emissão") -> bool:
+        """
+        Envia e-mail de alerta de erro de nota fiscal para o faturista.
+        """
+        try:
+            # Prepara o contexto para o template
+            context = {
+                'faturamento_id': faturamento_id,
+                'cnpj_cobrado': cnpj_cobrado,
+                'id_integracao': id_integracao,
+                'motivo_erro': motivo_erro,
+                'data_erro': timezone.now().strftime('%d/%m/%Y %H:%M'),
+            }
+            
+            # Renderiza o template HTML
+            html_body = render_to_string(
+                'email/erro_emissao_nota.html',
+                context
+            )
+            
+            with httpx.Client() as client:
+                response = client.post(
+                    f"{self.base_url}/api/email/send/gmail",
+                    json={
+                        "to_email": email_destinatario,
+                        "subject": f"ALERTA: Falha na Emissão de NFS-e (Faturamento #{faturamento_id})",
+                        "body": html_body,
+                        "is_html": True
+                    },
+                    timeout=30.0
+                )
+                
+                if response.status_code == 200:
+                    logger.info(f"E-mail de alerta de erro enviado para: {email_destinatario}")
+                    return True
+                else:
+                    logger.error(f"Gateway de e-mail retornou erro {response.status_code}: {response.text}")
+                    return False
+
+        except httpx.RequestError as e:
+            logger.error(f"Erro ao chamar serviço de e-mail para erro de nota: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Erro inesperado ao enviar e-mail de erro de nota: {e}")
+            return False
+
     
