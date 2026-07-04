@@ -81,12 +81,18 @@ class NfseWebhookView(views.APIView):
             ).first()
 
             if boleto:
-                if id_integracao:
-                    boleto.NFs_id = str(id_integracao)
-                if numero_nota:
-                    boleto.Numero_nota = str(numero_nota)
-                if pdf_url:
-                    boleto.url_nota = str(pdf_url)
+                if status_recv in ('CANCELADO', 'CANCELADA'):
+                    boleto.NFs_id = None
+                    boleto.Numero_nota = None
+                    boleto.url_nota = None
+                    logger.info(f"Nota cancelada, campos NF limpos no boleto {boleto.id}")
+                else:
+                    if id_integracao:
+                        boleto.NFs_id = str(id_integracao)
+                    if numero_nota:
+                        boleto.Numero_nota = str(numero_nota)
+                    if pdf_url:
+                        boleto.url_nota = str(pdf_url)
                 boleto.save()
                 logger.info(f"Boleto associado atualizado com sucesso via webhook: Numero_nota={boleto.Numero_nota}")
                 return Response(
