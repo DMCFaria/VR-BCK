@@ -1,9 +1,12 @@
 import logging
+import re
 from django.conf import settings
 from rest_framework import views, status
 from rest_framework.response import Response
 from rest_framework.decorators import permission_classes, authentication_classes
 from rest_framework.permissions import AllowAny
+from beneficios.models import Boleto
+from core.fedhub.services.fedhub_service import FedhubService
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +58,6 @@ class NfseWebhookView(views.APIView):
         status_recv = data.get('status', '').upper()
         if status_recv in ('FAILED', 'REJEITADO', 'ERRO', 'CANCELADO', 'CANCELADA'):
             try:
-                from core.fedhub.services.fedhub_service import FedhubService
-                from django.conf import settings
                 fedhub_service = FedhubService()
                 dest_email = getattr(settings, 'EMAIL_FATURAMENTO', 'novosnegocios@grupofedcorp.com.br')
                 motivo = data.get('mensagem_erro') or data.get('motivo_rejeicao') or 'Erro desconhecido na emissão da prefeitura.'
@@ -73,9 +74,6 @@ class NfseWebhookView(views.APIView):
                 logger.error(f"Erro ao disparar notificação de erro de nota para faturista: {str(e_notif)}")
 
         try:
-            from beneficios.models import Boleto
-            import re
-            
             cnpj_limpo = re.sub(r'[^0-9]', '', str(cnpj_cobrado))
             boleto = Boleto.objects.filter(
                 faturamento_id=faturamento_id,
