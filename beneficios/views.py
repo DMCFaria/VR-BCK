@@ -8,7 +8,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.db.models import Prefetch
 
 from core.fedhub.services.fedhub_service import FedhubService
-from .models import Produto, MovimentacaoBeneficio, Importacao
+from .models import Produto, MovimentacaoBeneficio, Importacao, Boleto
 from .serializers import (
     ImportacaoComMovimentacoesSerializer,
     ProdutoSerializer,
@@ -576,3 +576,112 @@ class ImportacaoDetailView(views.APIView):
             'movimentacoes': movimentacoes_data,
             'total_movimentacoes': len(movimentacoes_data)
         })
+
+
+class BoletoBaixaView(views.APIView):
+    """
+    View para atualizar a baixa de um Boleto específico (por ID na URL ou por identificador/documento no body).
+    Autenticação por token estático X-API-KEY.
+    """
+    from rest_framework.permissions import AllowAny
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def _get_boleto(self, request, pk=None):
+        if pk:
+            return Boleto.objects.filter(pk=pk).first()
+
+        boleto_id = request.data.get('boleto_id') or request.data.get('id')
+        documento = request.data.get('documento')
+        identificador = request.data.get('identificador')
+
+        if boleto_id:
+            return Boleto.objects.filter(id=boleto_id).first()
+        if documento:
+            return Boleto.objects.filter(documento=documento).first()
+        if identificador:
+            return Boleto.objects.filter(identificador=identificador).first()
+
+        return None
+
+    def post(self, request, pk=None):
+        from datetime import datetime
+        from django.conf import settings
+        
+        # Validação do token estático X-API-KEY
+        api_key = request.headers.get('X-API-KEY') or request.META.get('HTTP_X_API_KEY')
+        expected_key = getattr(settings, 'NFSE_X_API_KEY', 'fedcorp_static_token_secure_xyz123')
+        if api_key != expected_key:
+            return Response(
+                {"detail": "Acesso não autorizado. Chave de API inválida ou ausente."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        boleto = self._get_boleto(request, pk)
+        if not boleto:
+            return Response(
+                {"detail": "Boleto não encontrado com as informações fornecidas."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        status_recv = request.data.get('status')
+        dt_baixa_str = request.data.get('dt_baixa') or request.data.get('dt_cancelamento')
+        forma_pagamento = request.data.get('forma_pagamento')
+
+        # Se vier 'baixa' explícito, respeitamos. Senão, deduzimos do status:
+        # Se status for 'C' (Cancelado) ou semelhante, baixa = False. 
+        # Se for 'A' (Aprovado), 'B' (Baixado) ou não informado, baixa = True.
+        baixa = request.data.get('baixa')
+        if baixa is not None:
+            baixa_bool = str(baixa).lower() in ('true', '1', 'yes')
+        else:
+            baixa_bool = status_recv != 'C' if status_recv else True
+
+        # Converter data de baixa
+        dt_baixa = None
+        if dt_baixa_str:
+            for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%Y-%m-%d %H:%M:%S', '%d/%m/%Y %H:%M:%S'):
+                try:
+                    dt_baixa = datetime.strptime(dt_baixa_str.split(' ')[0], fmt).date()
+                    break
+                except ValueError:
+                    pass
+            if not dt_baixa:
+                return Response(
+                    {"detail": f"Formato de data inválido: {dt_baixa_str}. Use YYYY-MM-DD ou DD/MM/YYYY."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            if baixa_bool:
+                dt_baixa = timezone.now().date()
+
+        # Observação da baixa
+        obs_baixa = request.data.get('obs_baixa')
+        if not obs_baixa and forma_pagamento:
+            obs_baixa = f"Pago via {forma_pagamento}"
+
+        # Atualizar boleto
+        boleto.baixa = baixa_bool
+        boleto.dt_baixa = dt_baixa
+        if status_recv:
+            boleto.status = status_recv
+        if obs_baixa:
+            boleto.obs_baixa = obs_baixa
+        
+        boleto.save()
+
+        return Response({
+            "detail": "Baixa do Boleto atualizada com sucesso.",
+            "boleto": {
+                "id": boleto.id,
+                "documento": boleto.documento,
+                "identificador": boleto.identificador,
+                "baixa": boleto.baixa,
+                "status": boleto.status,
+                "dt_baixa": boleto.dt_baixa.strftime('%Y-%m-%d') if boleto.dt_baixa else None,
+                "obs_baixa": boleto.obs_baixa
+            }
+        }, status=status.HTTP_200_OK)
+
+    def patch(self, request, pk=None):
+        return self.post(request, pk)
