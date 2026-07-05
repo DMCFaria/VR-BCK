@@ -76,7 +76,7 @@ class AlterarStatusImportacaoView(views.APIView):
         
         if not status_backend:
             # Tenta usar o status diretamente se já estiver no formato do backend
-            valid_statuses = [choice[2] for choice in Importacao.STATUS_CHOICES]
+            valid_statuses = [choice[0] for choice in Importacao.STATUS_CHOICES]
             if novo_status in valid_statuses:
                 status_backend = novo_status
             else:
