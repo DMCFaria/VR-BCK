@@ -141,8 +141,8 @@ class UserListView(generics.ListAPIView):
         tipo = self.request.query_params.get('tipo')
         logger.info(self.request.query_params)
         logger.info(f"Filtrando usuários por tipo: {tipo}")
-        if tipo:
-            queryset = queryset.filter(tipo!= 'fat' or tipo != 'dev')
+        if tipo and tipo not in ['fat', 'dev']:
+            queryset = queryset.filter(tipo=tipo)
         
         logger.info(f"Total de usuários encontrados: {queryset.count()}")
         return queryset

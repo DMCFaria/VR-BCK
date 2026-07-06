@@ -42,6 +42,7 @@ class CustomUser(AbstractUser):
     TYPE_CHOICES = [
         ("dev", "Desenvolvedor"),
         ("fin", "Financeiro"),
+        ("dep", "Departamento Pessoal"),
         ("fat", "Faturista"),
         ("adm", "Usuário da Administradora"),
         ("cli", "Cliente(Condomínio)"),
