@@ -60,11 +60,12 @@ class UploadFaturamentoView(views.APIView):
 
         for nome_arquivo, arquivo in arquivos.items():
             nome_lower = nome_arquivo.lower()
-            if 'reciboq' in nome_lower or 'boleto' in nome_lower:
+            real_name_lower = getattr(arquivo, 'name', '').lower()
+            if 'reciboq' in nome_lower or 'boleto' in nome_lower or 'reciboq' in real_name_lower or 'boleto' in real_name_lower:
                 arquivo_boleto = arquivo
-            elif 'debito' in nome_lower or 'dédito' in nome_lower:
+            elif 'debito' in nome_lower or 'dédito' in nome_lower or 'debito' in real_name_lower or 'dédito' in real_name_lower:
                 arquivo_nota_debito = arquivo
-            elif 'nf' in nome_lower:
+            elif 'nf' in nome_lower or 'nf' in real_name_lower:
                 arquivo_nota_fiscal = arquivo
 
         erros = []
