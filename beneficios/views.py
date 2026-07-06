@@ -266,8 +266,13 @@ class UltimaImportacaoMovimentacoesView(views.APIView):
         
         ultima_importacao = Importacao.objects.filter(
             administradora=administradora,
-            status__in=['COMPLETED', 'FATURADO'] # O correto é o sufixo __in
-        ).order_by('-data_importacao').first()
+            status__in=['COMPLETED', 'FATURADO']
+        )
+        if user.tipo == "adm":
+            ultima_importacao = ultima_importacao.exclude(usuario__tipo__in=["dep", "dev"])
+        if user.tipo == "dep":
+            ultima_importacao = ultima_importacao.exclude(usuario__tipo__in=["adm", "dev"])
+        ultima_importacao = ultima_importacao.order_by('-data_importacao').first()
    
    
         if not ultima_importacao:
@@ -366,7 +371,12 @@ class UltimaMovimentacaoDashboard(views.APIView):
         # Busca a última importação
         ultima_importacao = Importacao.objects.filter(
             administradora=administradora
-        ).order_by('-data_importacao').first()
+        )
+        if user.tipo == "adm":
+            ultima_importacao = ultima_importacao.exclude(usuario__tipo__in=["dep", "dev"])
+        if user.tipo == "dep":
+            ultima_importacao = ultima_importacao.exclude(usuario__tipo__in=["adm", "dev"])
+        ultima_importacao = ultima_importacao.order_by('-data_importacao').first()
         
         if not ultima_importacao:
             return Response(
@@ -501,6 +511,8 @@ class ImportacaoListView(views.APIView):
             queryset = Importacao.objects.filter(administradora=administradora)
             if user.tipo == "adm":
                 queryset = queryset.exclude(usuario__tipo__in=["dep", "dev"])
+            if user.tipo == "dep":
+                queryset = queryset.exclude(usuario__tipo__in=["adm", "dev"])
             importacoes = queryset.prefetch_related(
                 Prefetch('movimentacoes', queryset=movimentacoes_qs)
             ).order_by('-data_importacao')
@@ -539,6 +551,8 @@ class ImportacaoDetailView(views.APIView):
             )
             if user.tipo == "adm":
                 queryset = queryset.exclude(usuario__tipo__in=["dep", "dev"])
+            if user.tipo == "dep":
+                queryset = queryset.exclude(usuario__tipo__in=["adm", "dev"])
             importacao = queryset.first()
 
             if not importacao:
