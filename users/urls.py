@@ -8,6 +8,7 @@ from .views import (
     UserRegistrationAPIView, 
     CurrentUserView, 
     LoginApiView, 
+    CustomTokenRefreshView,
     UserListView, 
     UserDetailUpdateDeleteView,
     ValidarTokenResetView, 
@@ -16,6 +17,7 @@ from .views import (
 
 urlpatterns = [
     path('login/', LoginApiView.as_view(), name='user-login'),
+    path('refresh/', CustomTokenRefreshView.as_view(), name='token-refresh'),
     path('register/', UserRegistrationAPIView.as_view(), name='user-register'),
     path('me/', CurrentUserView.as_view(), name='current-user'),
     path("password/", PasswordView.as_view(), name="user-password"),

@@ -4,7 +4,7 @@ from django.utils import timezone
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from core.fedhub.services.fedhub_service import FedhubService
 from .models import CustomUser
@@ -115,6 +115,19 @@ class LoginApiView(TokenObtainPairView):
     
     def post(self, request, *args, **kwargs):
         response = super().post(request, *args, **kwargs)
+        return response
+
+class CustomTokenRefreshView(TokenRefreshView):
+    """
+    Endpoint para renovar o access token a partir de um refresh token válido.
+    """
+    def post(self, request, *args, **kwargs):
+        logger.info("🔄 Solicitação de refresh token recebida.")
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == 200:
+            logger.info("✅ Access token renovado com sucesso.")
+        else:
+            logger.warning(f"⚠️ Falha ao renovar o access token. Status: {response.status_code}")
         return response
 
 class UserListView(generics.ListAPIView):
