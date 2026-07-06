@@ -498,7 +498,10 @@ class ImportacaoListView(views.APIView):
                 Prefetch('movimentacoes', queryset=movimentacoes_qs)
             ).order_by('-data_importacao')
         else:
-            importacoes = Importacao.objects.filter(administradora=administradora).prefetch_related(
+            queryset = Importacao.objects.filter(administradora=administradora)
+            if user.tipo == "adm":
+                queryset = queryset.exclude(usuario__tipo__in=["dep", "dev"])
+            importacoes = queryset.prefetch_related(
                 Prefetch('movimentacoes', queryset=movimentacoes_qs)
             ).order_by('-data_importacao')
 
@@ -530,10 +533,13 @@ class ImportacaoDetailView(views.APIView):
             )
 
         try:
-            importacao = Importacao.objects.filter(
+            queryset = Importacao.objects.filter(
                 administradora=administradora,
                 id=pk
-            ).first()
+            )
+            if user.tipo == "adm":
+                queryset = queryset.exclude(usuario__tipo__in=["dep", "dev"])
+            importacao = queryset.first()
 
             if not importacao:
                 return Response(

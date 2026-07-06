@@ -87,7 +87,7 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None, movimentacao_id
             f"{condominio.cnpj[:30]:<30}"
             f"{administradora_cnpj.zfill(14)}"
             f"{admin.razao_social[:24]:<24}"
-            f"{'suportevr@grupofedcorp.com.br'[:70]:<70}"
+            f"{'vr@grupofedcorp.com.br'[:70]:<70}"
             f"{' ' * 187}"
             f"{str(seq).zfill(9)}"
         )
@@ -98,7 +98,7 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None, movimentacao_id
         gerentes = vinculo.gerentes.all()
         emails_gerentes = [g.email for g in gerentes if g.email][:3]
         if not emails_gerentes:
-            emails_gerentes = ['suportevr@grupofedcorp.com.br']
+            emails_gerentes = ['vr@grupofedcorp.com.br']
 
         email1 = emails_gerentes[0][:60] if len(emails_gerentes) > 0 else ' ' * 60
         email2 = emails_gerentes[1][:60] if len(emails_gerentes) > 1 else email1
@@ -261,7 +261,7 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
         data_fim = data_ini + timedelta(days=30)
         periodos = f"{data_ini.strftime('%d/%m/%Y')} - {data_fim.strftime('%d/%m/%Y')}"
         
-        produto_display = prod.get_tipo_display_or_codigo()
+        produto_display = prod.nome if prod.nome else prod.get_tipo_display_or_codigo()
 
         dados.append({
             'CPF': func.cpf,
