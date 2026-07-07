@@ -4,7 +4,7 @@ from .models import CustomUser
 from entidades.models import Administradora
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, required=True)
+    password = serializers.CharField(write_only=True, required=False)
     administradora = serializers.PrimaryKeyRelatedField(
         queryset=Administradora.objects.all(),
         required=False,
@@ -21,14 +21,15 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         }
 
     def create(self, validated_data):
-        password = validated_data.pop('password')
+        password = validated_data.pop('password', None)
         administradora = validated_data.pop('administradora', None)
         username = validated_data.get('username')
         if username:
             validated_data.setdefault('nome', username)
             validated_data.setdefault('first_name', username)
         user = CustomUser(**validated_data)
-        user.set_password(password)
+        if password:
+            user.set_password(password)
         user.administradora = administradora
         user.save()
         return user

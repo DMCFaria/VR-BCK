@@ -54,11 +54,11 @@ class UserRegistrationAPIView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        # 🔐 Gerar senha temporária aleatória
+        # 🔐 Gerar senha temporária aleatória (ignora senha enviada pelo frontend)
         import secrets
         import string
         alphabet = string.ascii_letters + string.digits
-        temporary_password = "ADCsvmndovgr01fsd" if not request.data.get('password') else request.data.get('password')
+        temporary_password = ''.join(secrets.choice(alphabet) for _ in range(12))
         
         # Salvar com a administradora específica e senha temporária
         user = serializer.save(
