@@ -4,7 +4,10 @@ from pypdf import PdfReader, PdfWriter
 
 
 def extrair_cnpj_boleto(texto):
-    """Extrai CNPJ do boleto (formato: CNPJ: XX.XXX.XXX-XXXX-XX)"""
+    """Extrai CNPJ do boleto, priorizando o CO-ESTIPULANTE para evitar o CNPJ do Emissor."""
+    match_co = re.search(r'CO-ESTIPULANTE:.*?CNPJ:\s*([\d\.\-/]+)', texto, re.IGNORECASE)
+    if match_co:
+        return match_co.group(1)
     match = re.search(r'CNPJ:\s*([\d\.\-/]+)', texto)
     return match.group(1) if match else None
 
@@ -12,28 +15,44 @@ def extrair_cnpj_boleto(texto):
 def extrair_fatura_boleto(texto):
     """Extrai número da fatura/Nosso Número do boleto."""
     padroes = [
-        r'(?:Fatura|FATURA)\s*[:\-]?\s*(\S+)',
-        r'(?:Nosso[ ]?N[úu]mero|NOSSO[ ]?NUMERO)\s*[:\-]?\s*(\S+)',
-        r'N[º°]\s*do\s*Documento\s*[:\-]?\s*(\S+)',
-        r'(?:N[úu]mero|NUMERO)\s+do\s+Documento\s*[:\-]?\s*(\S+)',
+        r'\d{2}/\d{2}/\d{4}\s+(\d+)\s+\d{2}/\d{2}/\d{4}',
+        r'(?:Fatura|FATURA)\s*(?:N[º°ºsS]*\s*)?[:\-]?\s*(\d+)',
+        r'(?:Fatura|FATURA)[ \t]*[:\-]?[ \t]*(\S+)',
+        r'(?:Nosso[ ]?N[úu]mero|NOSSO[ ]?NUMERO)[ \t]*[:\-]?[ \t]*(\S+)',
+        r'N[º°]\s*do\s*Documento[ \t]*[:\-]?[ \t]*(\S+)',
+        r'(?:N[úu]mero|NUMERO)[ \t]+do[ \t]+Documento[ \t]*[:\-]?[ \t]*(\S+)',
     ]
     for padrao in padroes:
         match = re.search(padrao, texto, re.IGNORECASE)
         if match:
-            return match.group(1).strip().rstrip('.')
+            fatura = match.group(1).strip().rstrip('.')
+            if fatura.upper() not in ['EMISSOR', 'EMISSOR:', 'CNPJ', 'PRODUTO', 'VENCIMENTO', 'Nº']:
+                return fatura
     return None
 
 
 def extrair_cnpj_nota_debito(texto):
-    """Extrai CNPJ da nota de débito (formato: XX.XXX.XXX/0001-XX)"""
+    """Extrai CNPJ da nota de débito (formato: XX.XXX.XXX/0001-XX ou 14 dígitos puros)."""
     match = re.search(r'(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})', texto)
-    return match.group(1) if match else None
+    if match:
+        return match.group(1)
+    match_labeled = re.search(r'CNPJ:\s*(\d{14})', texto, re.IGNORECASE)
+    if match_labeled:
+        return match_labeled.group(1)
+    match_digits = re.search(r'(\d{14})', texto)
+    return match_digits.group(1) if match_digits else None
 
 
 def extrair_cnpj_nota_fiscal(texto):
-    """Extrai CNPJ da nota fiscal (formato: XX.XXX.XXX/0001-XX)"""
+    """Extrai CNPJ da nota fiscal (formato: XX.XXX.XXX/0001-XX ou 14 dígitos puros)."""
     match = re.search(r'(\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})', texto)
-    return match.group(1) if match else None
+    if match:
+        return match.group(1)
+    match_labeled = re.search(r'CNPJ:\s*(\d{14})', texto, re.IGNORECASE)
+    if match_labeled:
+        return match_labeled.group(1)
+    match_digits = re.search(r'(\d{14})', texto)
+    return match_digits.group(1) if match_digits else None
 
 
 def ler_boleto(pdf_file):

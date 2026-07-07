@@ -1,14 +1,51 @@
 import io
 import zipfile
+import logging
+import requests
 from rest_framework import views
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.conf import settings
 from django.http import HttpResponse
 import boto3
-from beneficios.models import Faturamento
+from beneficios.models import Faturamento, Boleto
+from pypdf import PdfReader, PdfWriter
 
 from urllib.parse import quote
+
+logger = logging.getLogger(__name__)
+
+
+def _merge_notas_emitidas(faturamento):
+    boletos = Boleto.objects.filter(
+        faturamento=faturamento
+    ).exclude(url_nota__isnull=True).exclude(url_nota='').order_by('documento')
+
+    if not boletos.exists():
+        return None
+
+    writer = PdfWriter()
+    notas_count = 0
+
+    for boleto in boletos:
+        try:
+            response = requests.get(boleto.url_nota, timeout=20)
+            if response.status_code == 200:
+                pdf_file = io.BytesIO(response.content)
+                reader = PdfReader(pdf_file)
+                for page in reader.pages:
+                    writer.add_page(page)
+                notas_count += 1
+        except Exception as e:
+            logger.error(f"Erro ao baixar/mesclar nota do boleto {boleto.documento}: {e}")
+
+    if notas_count == 0:
+        return None
+
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    buffer.seek(0)
+    return buffer
 
 
 def baixar_pdfs_s3(s3, bucket, prefix, zf, subpasta=None):
@@ -173,15 +210,10 @@ class DownloadTodosOriginaisView(views.APIView):
         )
         bucket = getattr(settings, 'BUCKET_S3', 'fedcorp-prod')
 
-        tipos = [
-            ('boleto', 'Boleto'),
-            ('nota_debito', 'Nota de débito'),
-            ('nota_fiscal', 'Nota Fiscal'),
-        ]
-
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-            for tipo, tipo_display in tipos:
+            # Boleto e Nota de Débito do S3 (merged original)
+            for tipo, tipo_display in [('boleto', 'Boleto'), ('nota_debito', 'Nota de débito')]:
                 nome_arquivo = f"MERGED - {admin_nome} - {faturamento_id} - {tipo_display}.pdf"
                 s3_key = f"VR - DOCS/faturamentos/{s3_prefix}/{tipo}/{nome_arquivo}"
                 try:
@@ -191,6 +223,11 @@ class DownloadTodosOriginaisView(views.APIView):
                     zf.writestr(f"{tipo_display}.pdf", f.read())
                 except:
                     pass
+
+            # Nota Fiscal emitida (merged de todas as url_nota dos boletos)
+            notas_buffer = _merge_notas_emitidas(faturamento)
+            if notas_buffer is not None:
+                zf.writestr("Nota Fiscal.pdf", notas_buffer.read())
 
         buffer.seek(0)
         response = HttpResponse(buffer.read(), content_type='application/zip')
@@ -206,8 +243,23 @@ class DownloadNotaDebitoOriginalView(DownloadArquivoOriginalView):
     tipo = 'nota_debito'
 
 
-class DownloadNotaFiscalOriginalView(DownloadArquivoOriginalView):
-    tipo = 'nota_fiscal'
+class DownloadNotaFiscalOriginalView(views.APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, faturamento_id):
+        try:
+            faturamento = Faturamento.objects.get(id=faturamento_id)
+        except Faturamento.DoesNotExist:
+            return HttpResponse("Faturamento não encontrado.", status=404)
+
+        buffer = _merge_notas_emitidas(faturamento)
+        if buffer is None:
+            return HttpResponse("Nenhuma nota fiscal emitida disponível para este faturamento.", status=404)
+
+        response = HttpResponse(buffer.read(), content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="notas_fiscais_faturamento_{faturamento_id}.pdf"'
+        return response
     
 
 class DownloadArquivoView(views.APIView):
@@ -244,3 +296,22 @@ class DownloadArquivoView(views.APIView):
             return response
         except:
             return HttpResponse("Arquivo não encontrado no S3.", status=404)
+
+
+class DownloadNotasEmitidasView(views.APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, faturamento_id):
+        try:
+            faturamento = Faturamento.objects.get(id=faturamento_id)
+        except Faturamento.DoesNotExist:
+            return HttpResponse("Faturamento não encontrado.", status=404)
+
+        buffer = _merge_notas_emitidas(faturamento)
+        if buffer is None:
+            return HttpResponse("Nenhuma nota fiscal emitida disponível para este faturamento.", status=404)
+
+        response = HttpResponse(buffer.read(), content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="notas_fiscais_faturamento_{faturamento_id}.pdf"'
+        return response

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Produto, MovimentacaoBeneficio, Importacao, NotaFiscal
+from .models import Produto, MovimentacaoBeneficio, Importacao
 
 @admin.register(Produto)
 class ProdutoAdmin(admin.ModelAdmin):
@@ -17,8 +17,4 @@ class ImportacaoAdmin(admin.ModelAdmin):
     list_display = ('id', 'file_upload', 'usuario', 'data_importacao', 'status', 'total_registros', 'registros_processados')
     list_filter = ('status', 'data_importacao')
 
-@admin.register(NotaFiscal)
-class NotaFiscalAdmin(admin.ModelAdmin):
-    list_display = ('id', 'faturamento', 'condominio', 'id_integracao', 'status', 'numero_nota', 'created_at')
-    list_filter = ('status',)
-    search_fields = ('id_integracao', 'numero_nota', 'condominio__cnpj')
+

@@ -1,4 +1,5 @@
 import logging
+import traceback
 
 from rest_framework import views, status
 from rest_framework.response import Response
@@ -24,50 +25,34 @@ class ConfirmationView(views.APIView):
         logger.info(f"Recebido payload para confirmação: {payload}")
         
         file_id = payload.get("file_upload_id")
-        # logger.info(f"Processando confirmação para file_upload_id: {file_id}")
+        importacao_id = payload.get("importacao_id")
 
-        if not file_id:
-            logger.warning("O campo 'file_upload_id' é obrigatório.")
-            return Response({"detail": "O campo 'file_upload_id' é obrigatório."}, status=400)
+        if not file_id and not importacao_id:
+            logger.warning("É obrigatório informar 'file_upload_id' ou 'importacao_id'.")
+            return Response({"detail": "É obrigatório informar 'file_upload_id' ou 'importacao_id'."}, status=400)
 
-        try:
-            file_upload = FileUpload.objects.get(id=file_id)
-            if file_upload.process_status == "COMPLETED":
-                logger.info(f"Arquivo {file_id} já foi processado anteriormente.")
-                return Response(
-                    {"detail": "Este arquivo já foi processado anteriormente."}, 
-                    status=status.HTTP_400_BAD_REQUEST 
-                )
-        except FileUpload.DoesNotExist:
-            logger.warning(f"Arquivo {file_id} não encontrado.")
-            return Response({"detail": "Arquivo não encontrado."}, status=404)
+        file_upload = None
+        if file_id:
+            try:
+                file_upload = FileUpload.objects.get(id=file_id)
+                if file_upload.process_status == "COMPLETED":
+                    logger.info(f"Arquivo {file_id} já foi processado anteriormente.")
+                    return Response(
+                        {"detail": "Este arquivo já foi processado anteriormente."}, 
+                        status=status.HTTP_400_BAD_REQUEST 
+                    )
+            except FileUpload.DoesNotExist:
+                logger.warning(f"Arquivo {file_id} não encontrado.")
+                return Response({"detail": "Arquivo não encontrado."}, status=404)
         
-        # logger.info(f"Validando payload para file_upload_id: {file_id}")
-
         serializer = ProcessamentoFinalSerializer(data=payload)
         
-        # logger.info(f"Serializer criado para file_upload_id: {file_id}, validando dados...")
-
         if serializer.is_valid():
-            
             try:
-                # summary = payload.get('summary', {})
-                # logger.info(f"Summary extraído do payload para file_upload_id: {file_id}: {summary}")
-                
-                # return Response({
-                #     "detail": "Dados validados com sucesso.",
-                #     "summary": summary
-                # }, status=status.HTTP_200_OK)
-                
-                
                 result = serializer.save(processed_by=request.user)
-                # logger.info(f"Resultado depois de salvar o processamento para file_upload_id: {file_id}: {result}")
                                        
                 # Extrai dados do payload para o email
                 summary = payload.get('summary', {})
-                # logger.info(f"Summary extraído do payload para file_upload_id: {file_id}: {summary}")
-                
-                # Calcula totais
                 total_condominios = len(payload.get('condominios', []))
                 total_funcionarios = summary.get('total_funcionarios', 0)
                 total_movimentacoes = summary.get('total_movimentacoes', 0)
@@ -85,20 +70,25 @@ class ConfirmationView(views.APIView):
                 tipo_processamento = payload.get('tipo_processamento', 'compra')
                 tipo_display = "Compra de Benefícios" if tipo_processamento == "compra" else "Faturamento"
                 
+                # Nome do arquivo para exibição no email
+                if file_upload and file_upload.file:
+                    arquivo_nome = file_upload.file.name
+                else:
+                    arquivo_nome = "Faturamento_Repetido.xlsx" if importacao_id else "arquivo.xlsx"
+
                 logger.info(f"Dados para email - file_upload_id: {file_id}, total_condominios: {total_condominios}, total_funcionarios: {total_funcionarios}, total_movimentacoes: {total_movimentacoes}, valor_total: {valor_total}, competencia: {competencia_str}, tipo_processamento: {tipo_display}")
 
                 fedhub_service = FedhubService()
                 email_faturamento = settings.EMAIL_FATURAMENTO
                 
-                logger.info(f"Enviando email para {email_faturamento} com os dados do processamento para file_upload_id: {file_id}")
+                logger.info(f"Enviando email para {email_faturamento} com os dados do faturamento repetido/confirmado")
                 
                 # Envia email com dados REAIS
                 email_enviado = fedhub_service.enviar_email_upload(
-                    # email=request.user.email,
                     email=email_faturamento,
                     user=request.user,
                     dados_processamento={
-                        "arquivo_nome": file_upload.file.name if file_upload.file else "arquivo.xlsx",
+                        "arquivo_nome": arquivo_nome,
                         "data_envio": timezone.now().strftime('%d/%m/%Y %H:%M'),
                         "competencia": competencia_str,
                         "total_registros": total_movimentacoes,
@@ -114,8 +104,6 @@ class ConfirmationView(views.APIView):
                 )
                 logger.info(f"Email de notificação enviado para {email_faturamento}: {email_enviado}")
                 
-                # email_enviado = True  # Simulando envio de email para fins de teste
-                
                 return Response({
                     "detail": "Dados gravados com sucesso.",
                     "registros_processados": result.get("count"),
@@ -125,9 +113,12 @@ class ConfirmationView(views.APIView):
                 }, status=status.HTTP_200_OK)
                 
             except Exception as e:
-                logger.error(f"Erro ao processar arquivo {file_id}: {str(e)}")
-                FileUpload.objects.filter(id=file_id).update(process_status="FAILED")
-                Importacao.objects.filter(file_upload_id=file_id, status='AGUARDANDO_FATURAMENTO').update(status='FAILED')
+                logger.error(f"Erro ao confirmar faturamento: {traceback.format_exc()}")
+                if file_id:
+                    FileUpload.objects.filter(id=file_id).update(process_status="FAILED")
+                    Importacao.objects.filter(file_upload_id=file_id, status='AGUARDANDO_FATURAMENTO').update(status='FAILED')
+                elif result and result.get("importacao_id"):
+                    Importacao.objects.filter(id=result.get("importacao_id")).update(status='FAILED')
                 return Response({"detail": f"Erro interno: {str(e)}"}, status=400) 
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

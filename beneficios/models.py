@@ -211,50 +211,7 @@ class FaturamentoDocumento(models.Model):
     def __str__(self):
         return f"{self.condominio.cnpj} - {self.faturamento.id}"
 
-class NotaFiscal(models.Model):
-    STATUS_CHOICES = [
-        ('EM_EMISSAO', 'Em Emissão'),
-        ('EMITIDO', 'Emitido'),
-        ('FAILED', 'Falhou'),
-    ]
 
-    faturamento = models.ForeignKey(
-        Faturamento,
-        on_delete=models.CASCADE,
-        related_name='notas_fiscais',
-        verbose_name="Faturamento"
-    )
-    condominio = models.ForeignKey(
-        Condominio,
-        on_delete=models.CASCADE,
-        related_name='notas_fiscais',
-        verbose_name="Condomínio"
-    )
-    id_integracao = models.CharField(max_length=100, verbose_name="ID Integração", unique=True)
-    status = models.CharField(
-        max_length=20,
-        choices=STATUS_CHOICES,
-        default='EM_EMISSAO',
-        db_index=True,
-        verbose_name="Status"
-    )
-    protocolo = models.CharField(max_length=100, verbose_name="Protocolo", blank=True, null=True)
-    numero_nota = models.CharField(max_length=50, verbose_name="Número da Nota", blank=True, null=True)
-    codigo_verificacao = models.CharField(max_length=100, verbose_name="Código de Verificação", blank=True, null=True)
-    pdf_url = models.URLField(max_length=500, verbose_name="URL do PDF", blank=True, null=True)
-    payload = models.JSONField(verbose_name="Payload Enviado", blank=True, null=True)
-    resposta = models.JSONField(verbose_name="Resposta da API", blank=True, null=True)
-    erro = models.TextField(verbose_name="Erro", blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
-
-    class Meta:
-        verbose_name = "Nota Fiscal"
-        verbose_name_plural = "Notas Fiscais"
-        ordering = ['-created_at']
-
-    def __str__(self):
-        return f"NF #{self.numero_nota or self.id_integracao} - {self.get_status_display()}"
 
 
 class MovimentacaoBeneficio(models.Model):
@@ -321,3 +278,48 @@ class MovimentacaoBeneficio(models.Model):
 
     def __str__(self):
         return f"{self.produto_codigo} - {self.funcionario_cpf} ({self.data_competencia})"
+
+
+class Boleto(models.Model):
+    faturamento = models.ForeignKey(
+        Faturamento,
+        on_delete=models.CASCADE,
+        related_name='boletos_rel',
+        verbose_name="Faturamento",
+        null=True,
+        blank=True
+    )
+    documento = models.CharField(max_length=100, verbose_name="Documento", null=True, blank=True, unique=True)
+    dt_emissao = models.DateField(verbose_name="Data de Emissão", null=True, blank=True)
+    fatura = models.CharField(max_length=100, verbose_name="Fatura", null=True, blank=True)
+    codigo_de_barra = models.CharField(max_length=255, verbose_name="Código de Barra", null=True, blank=True)
+    qr_code = models.TextField(verbose_name="QR Code", null=True, blank=True)
+    qr_imagem = models.TextField(verbose_name="QR Imagem", null=True, blank=True)
+    vencimento = models.DateField(verbose_name="Vencimento", null=True, blank=True)
+    nome_cobrado = models.CharField(max_length=255, verbose_name="Nome Cobrado", null=True, blank=True)
+    cnpj_cobrado = models.CharField(max_length=50, verbose_name="CNPJ Cobrado", null=True, blank=True)
+    cedente = models.CharField(max_length=255, verbose_name="Cedente", null=True, blank=True)
+    cnpj_cedente = models.CharField(max_length=50, verbose_name="CNPJ do Cedente", null=True, blank=True)
+    valor = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="Valor", null=True, blank=True)
+    deducoes = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="Deduções", null=True, blank=True)
+    status = models.CharField(max_length=50, verbose_name="Status", null=True, blank=True)
+    nosso_numero = models.CharField(max_length=100, verbose_name="Nosso Número", null=True, blank=True)
+    identificador = models.CharField(max_length=100, verbose_name="Identificador", null=True, blank=True)
+    baixa = models.BooleanField(default=False, verbose_name="Baixa")
+    dt_baixa = models.DateField(verbose_name="Data da Baixa", null=True, blank=True)
+    obs_baixa = models.TextField(verbose_name="Observação da Baixa", null=True, blank=True)
+    NFs_id = models.CharField(max_length=100, verbose_name="NFs ID", null=True, blank=True, unique=True)
+    Numero_nota = models.CharField(max_length=50, verbose_name="Número da Nota", null=True, blank=True, unique=True)
+    url_nota = models.URLField(max_length=500, verbose_name="URL da Nota", null=True, blank=True, unique=True)
+    match = models.BooleanField(default=False, verbose_name="Match")
+    
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
+
+    class Meta:
+        verbose_name = "Boleto"
+        verbose_name_plural = "Boletos"
+        ordering = ['-vencimento']
+
+    def __str__(self):
+        return f"Boleto #{self.id} - Fatura: {self.fatura} - Vencimento: {self.vencimento}"

@@ -1,4 +1,6 @@
 import base64
+import io
+import logging
 from datetime import datetime
 from rest_framework import views, status
 from rest_framework.response import Response
@@ -7,7 +9,11 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.db import transaction
 
 from beneficios.models import Faturamento, Importacao
+from upload.pdf_reader import ler_boleto
+from core.fedhub.services.fedhub_service import FedhubService
 from .tasks import processar_faturamento
+
+logger = logging.getLogger(__name__)
 
 
 class UploadFaturamentoView(views.APIView):
@@ -60,11 +66,12 @@ class UploadFaturamentoView(views.APIView):
 
         for nome_arquivo, arquivo in arquivos.items():
             nome_lower = nome_arquivo.lower()
-            if 'reciboq' in nome_lower or 'boleto' in nome_lower:
+            real_name_lower = getattr(arquivo, 'name', '').lower()
+            if 'reciboq' in nome_lower or 'boleto' in nome_lower or 'reciboq' in real_name_lower or 'boleto' in real_name_lower:
                 arquivo_boleto = arquivo
-            elif 'debito' in nome_lower or 'dédito' in nome_lower:
+            elif 'debito' in nome_lower or 'dédito' in nome_lower or 'debito' in real_name_lower or 'dédito' in real_name_lower:
                 arquivo_nota_debito = arquivo
-            elif 'nf' in nome_lower:
+            elif 'nf' in nome_lower or 'nf' in real_name_lower:
                 arquivo_nota_fiscal = arquivo
 
         erros = []
@@ -78,6 +85,36 @@ class UploadFaturamentoView(views.APIView):
                 {"detail": "Erro na validação dos arquivos.", "erros": erros},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        # Validação síncrona do boleto: extrai fatura e verifica se existe no Fedhub
+        try:
+            boleto_bytes = arquivo_boleto.read()
+            arquivo_boleto.seek(0)
+            boleto_io = io.BytesIO(boleto_bytes)
+            resultado_boleto = ler_boleto(boleto_io)
+
+            fatura_previa = None
+            for pagina in resultado_boleto.get('paginas', []):
+                if pagina.get('fatura'):
+                    fatura_previa = pagina.get('fatura')
+                    break
+
+            if not fatura_previa:
+                return Response(
+                    {"detail": "Não foi possível identificar o número da fatura no boleto. Verifique o arquivo enviado."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            fedhub = FedhubService()
+            boletos_previa = fedhub.buscar_todos_boletos_por_fatura(fatura_previa)
+
+            if not boletos_previa:
+                return Response(
+                    {"detail": f"Nenhum boleto encontrado no sistema para a fatura {fatura_previa}. A emissão foi bloqueada."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        except Exception as e:
+            logger.warning(f"Falha na validação prévia do boleto: {e}")
 
         try:
             with transaction.atomic():

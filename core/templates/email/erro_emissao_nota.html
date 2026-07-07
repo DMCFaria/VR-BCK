@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alerta de Erro de Emissão de NFS-e - FedHub</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif;
+      background-color: #f7fafc;
+      padding: 40px 16px;
+      min-height: 100vh;
+    }
+    .email-wrapper {
+      max-width: 580px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+      border: 1px solid #edf2f7;
+    }
+    .email-header {
+      background: linear-gradient(135deg, #e53e3e 0%, #c53030 100%);
+      padding: 35px 30px;
+      text-align: center;
+    }
+    .logo-container {
+      margin-bottom: 15px;
+    }
+    .logo {
+      max-width: 130px;
+      height: auto;
+    }
+    .email-header h1 {
+      color: #ffffff;
+      font-size: 22px;
+      font-weight: 600;
+      margin: 0;
+    }
+    .email-content {
+      padding: 30px;
+    }
+    .alert-banner {
+      background-color: #fff5f5;
+      border-left: 4px solid #e53e3e;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 25px;
+      color: #9b2c2c;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+    .table-title {
+      font-size: 14px;
+      font-weight: bold;
+      color: #4a5568;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+      letter-spacing: 0.5px;
+    }
+    .info-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 25px;
+    }
+    .info-table td {
+      padding: 12px 10px;
+      border-bottom: 1px solid #edf2f7;
+      font-size: 14px;
+      color: #2d3748;
+    }
+    .info-table td.label {
+      font-weight: 600;
+      color: #718096;
+      width: 35%;
+    }
+    .error-box {
+      background-color: #f7fafc;
+      border: 1px dashed #cbd5e0;
+      border-radius: 8px;
+      padding: 15px;
+      font-family: monospace;
+      font-size: 13px;
+      color: #e53e3e;
+      white-space: pre-wrap;
+      word-break: break-all;
+      line-height: 1.4;
+      margin-bottom: 25px;
+    }
+    .footer {
+      background-color: #f7fafc;
+      padding: 20px;
+      text-align: center;
+      font-size: 12px;
+      color: #a0aec0;
+      border-top: 1px solid #edf2f7;
+    }
+  </style>
+</head>
+<body>
+  <div class="email-wrapper">
+    <div class="email-header">
+      <div class="logo-container">
+        <img src="https://i.postimg.cc/FKq8j29p/logo2.png" alt="Fedcorp" class="logo">
+      </div>
+      <h1>Falha na Emissão de NFS-e</h1>
+    </div>
+    
+    <div class="email-content">
+      <div class="alert-banner">
+        <strong>Atenção:</strong> Ocorreu um erro no retorno da Prefeitura/Focus API para uma das notas fiscais do faturamento. A nota não pôde ser emitida com sucesso.
+      </div>
+      
+      <div class="table-title">Detalhes do Faturamento</div>
+      <table class="info-table">
+        <tr>
+          <td class="label">Faturamento ID</td>
+          <td>#{{ faturamento_id }}</td>
+        </tr>
+        <tr>
+          <td class="label">CNPJ Tomador</td>
+          <td>{{ cnpj_cobrado }}</td>
+        </tr>
+        <tr>
+          <td class="label">ID de Integração</td>
+          <td>{{ id_integracao }}</td>
+        </tr>
+        <tr>
+          <td class="label">Data/Hora</td>
+          <td>{{ data_erro }}</td>
+        </tr>
+      </table>
+      
+      <div class="table-title">Motivo da Rejeição / Erro</div>
+      <div class="error-box">{{ motivo_erro }}</div>
+    </div>
+    
+    <div class="footer">
+      Este é um e-mail automático enviado pelo sistema FedHub.<br>
+      Grupo FedCorp &copy; 2026. Todos os direitos reservados.
+    </div>
+  </div>
+</body>
+</html>

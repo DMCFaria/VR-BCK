@@ -78,6 +78,7 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
         "condominios": [],
         "errors": [],
         "linhas_com_erro": [],
+        "erros_condominios": [],
         "summary": {
             "total_condominios": 0,
             "total_funcionarios": 0,
@@ -169,90 +170,129 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
         nome = _safe_str(ws_ben.cell(row=row_idx, column=MAP_BEN['nome_completo'] + 1).value)
         data_nasc_raw = ws_ben.cell(row=row_idx, column=MAP_BEN['data_nascimento'] + 1).value
         line_num = row_idx + 1
-
         if not cpf_raw and not nome:
             continue
 
+        erros_linha_atual = []
+
+        # 1. Validar CPF
+        cpf = ""
         if not cpf_raw:
-            result['linhas_com_erro'].append({
-                "tipo_erro": "CPF_AUSENTE",
-                "linha": line_num,
-                "dados": {"nome": nome, "codigo_local": codigo_local}
-            })
-            continue
+            erros_linha_atual.append("CPF do beneficiário ausente")
+        else:
+            cpf = re.sub(r'\D', '', cpf_raw)
+            if len(cpf) < 11:
+                cpf = cpf.zfill(11)
+            if len(cpf) != 11:
+                erros_linha_atual.append(f"CPF inválido (tamanho incorreto: {len(cpf)} dígitos)")
 
-        cpf = re.sub(r'\D', '', cpf_raw)
-        if len(cpf) < 11:
-            cpf = cpf.zfill(11)
+        # 2. Validar Nome
+        if not nome:
+            erros_linha_atual.append("Nome do beneficiário ausente")
 
+        # 3. Validar Código Local de Entrega
         if not codigo_local:
-            result['linhas_com_erro'].append({
-                "tipo_erro": "LOCAL_ENTREGA_AUSENTE",
-                "linha": line_num,
-                "dados": {"cpf": cpf, "nome": nome}
-            })
-            continue
+            erros_linha_atual.append("Código local de entrega (CNPJ) ausente")
 
-        if codigo_local not in locais:
-            locais[codigo_local] = {
-                "nome": f"Local: {codigo_local}",
-                "cnpj": codigo_local,
-                "valor_condo": Decimal('0.00'),
-                "rua": '',
-                "numero": '',
-                "complemento": '',
-                "bairro": '',
-                "cidade": '',
-                "estado": '',
-                "cep": '',
-                "funcionarios": {},
-            }
+        # 4. Validar Matrícula
+        if not matricula:
+            erros_linha_atual.append("Matrícula ausente")
 
+        # 5. Validar Data de Nascimento
         data_nasc = _parse_date(data_nasc_raw)
+        if not data_nasc:
+            erros_linha_atual.append("Data de nascimento ausente ou inválida")
 
-        func_key = f"{codigo_local}_{cpf}"
-        if func_key not in locais[codigo_local]["funcionarios"]:
-            locais[codigo_local]["funcionarios"][func_key] = {
-                "nome": nome.upper() if nome else '',
-                "cpf": cpf,
-                "matricula": matricula,
-                "departamento": '',
-                "funcao": '',
-                "data_nascimento": data_nasc,
-                "cep": None,
-                "endereco_rua": None,
-                "endereco_numero": None,
-                "endereco_complemento": None,
-                "endereco_bairro": None,
-                "valor_bene": Decimal('0.00'),
-                "movimentacoes": [],
-            }
-
-        func = locais[codigo_local]["funcionarios"][func_key]
-
+        # 6. Validar se há pelo menos um benefício/produto com valor > 0
+        tem_beneficio = False
         for col_idx, nome_produto in col_produtos.items():
             raw_val = ws_ben.cell(row=row_idx, column=col_idx).value
-            if raw_val is None:
-                continue
-            try:
-                valor = Decimal(str(raw_val).replace(',', '.'))
-            except:
-                continue
-            if valor == 0:
-                continue
+            if raw_val is not None:
+                try:
+                    valor = Decimal(str(raw_val).replace(',', '.'))
+                    if valor > 0:
+                        tem_beneficio = True
+                        break
+                except:
+                    pass
 
-            func["movimentacoes"].append({
-                "produto": nome_produto,
-                "codigo_produto": COLUNAS_PRODUTO.get(nome_produto, ''),
-                "valor": valor,
+        if not tem_beneficio:
+            erros_linha_atual.append("Nenhum benefício preenchido com valor maior que zero")
+
+        if erros_linha_atual:
+            result['linhas_com_erro'].append({
+                "tipo_erro": "INFORMACAO_AUSENTE",
+                "linha": line_num,
+                "dados": {
+                    "cpf": cpf_raw,
+                    "nome": nome,
+                    "codigo_local": codigo_local,
+                    "matricula": matricula,
+                    "data_nascimento": _safe_str(data_nasc_raw),
+                },
+                "erros": erros_linha_atual
             })
-            func["valor_bene"] += valor
-            locais[codigo_local]["valor_condo"] += valor
-            result['summary']['valor_total_beneficios'] += valor
+        else:
+            if codigo_local not in locais:
+                locais[codigo_local] = {
+                    "nome": f"{matricula}",
+                    "cnpj": codigo_local,
+                    "valor_condo": Decimal('0.00'),
+                    "rua": '',
+                    "numero": '',
+                    "complemento": '',
+                    "bairro": '',
+                    "cidade": '',
+                    "estado": '',
+                    "cep": '',
+                    "funcionarios": {},
+                    "nao_cadastrado_local_entrega": True,
+                }
+
+            func_key = f"{codigo_local}_{cpf}"
+            if func_key not in locais[codigo_local]["funcionarios"]:
+                locais[codigo_local]["funcionarios"][func_key] = {
+                    "nome": nome.upper() if nome else '',
+                    "cpf": cpf,
+                    "matricula": matricula,
+                    "departamento": '',
+                    "funcao": '',
+                    "data_nascimento": data_nasc,
+                    "cep": None,
+                    "endereco_rua": None,
+                    "endereco_numero": None,
+                    "endereco_complemento": None,
+                    "endereco_bairro": None,
+                    "valor_bene": Decimal('0.00'),
+                    "movimentacoes": [],
+                }
+
+            func = locais[codigo_local]["funcionarios"][func_key]
+
+            for col_idx, nome_produto in col_produtos.items():
+                raw_val = ws_ben.cell(row=row_idx, column=col_idx).value
+                if raw_val is None:
+                    continue
+                try:
+                    valor = Decimal(str(raw_val).replace(',', '.'))
+                except:
+                    continue
+                if valor == 0:
+                    continue
+
+                func["movimentacoes"].append({
+                    "produto": nome_produto,
+                    "codigo_produto": COLUNAS_PRODUTO.get(nome_produto, ''),
+                    "valor": valor,
+                })
+                func["valor_bene"] += valor
+                locais[codigo_local]["valor_condo"] += valor
+                result['summary']['valor_total_beneficios'] += valor
 
     # ========================
     # 4. MONTAR CONDOMINIOS
     # ========================
+    erros_condominios = []
     for codigo, local in locais.items():
         lista_func = []
         for fkey, func in local["funcionarios"].items():
@@ -274,25 +314,66 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
                 "movimentacoes": func["movimentacoes"],
             })
 
-        result["condominios"].append({
-            "nome": local["nome"],
-            "cnpj": local["cnpj"],
-            "valor_condo": local["valor_condo"],
-            "rua": local.get("rua"),
-            "numero": local.get("numero"),
-            "complemento": local.get("complemento"),
-            "bairro": local.get("bairro"),
-            "cidade": local.get("cidade"),
-            "estado": local.get("estado"),
-            "cep": local.get("cep"),
-            "funcionarios": lista_func,
-        })
-        result['summary']['total_funcionarios'] += len(lista_func)
-        result['summary']['total_movimentacoes'] += sum(len(f["movimentacoes"]) for f in lista_func)
+        if lista_func:
+            missing_infos = []
+            if local.get("nao_cadastrado_local_entrega"):
+                missing_infos.append("Não cadastrado na aba 'Local de Entrega'")
+            else:
+                if not local.get("nome") or local["nome"].startswith("Local: "):
+                    missing_infos.append("Nome do condomínio ausente ou inválido")
+                if not local.get("cnpj"):
+                    missing_infos.append("CNPJ do condomínio ausente")
+                if not local.get("estado"):
+                    missing_infos.append("Estado ausente")
+                if not local.get("cep"):
+                    missing_infos.append("CEP ausente")
 
+            if missing_infos:
+                erros_condominios.append({
+                    "cnpj": local["cnpj"],
+                    "nome": local["nome"],
+                    "erros": missing_infos
+                })
+
+            result["condominios"].append({
+                "nome": local["nome"],
+                "cnpj": local["cnpj"],
+                "valor_condo": local["valor_condo"],
+                "rua": local.get("rua"),
+                "numero": local.get("numero"),
+                "complemento": local.get("complemento"),
+                "bairro": local.get("bairro"),
+                "cidade": local.get("cidade"),
+                "estado": local.get("estado"),
+                "cep": local.get("cep"),
+                "funcionarios": lista_func,
+            })
+            result['summary']['total_funcionarios'] += len(lista_func)
+            result['summary']['total_movimentacoes'] += sum(len(f["movimentacoes"]) for f in lista_func)
+
+    result["erros_condominios"] = erros_condominios
     result['summary']['total_condominios'] = len(result["condominios"])
     if result["condominios"]:
         result['summary']['primeiro_cnpj_processado'] = result["condominios"][0].get("cnpj", "N/A")
+
+    # Se há erros acumulados (linhas com erro ou erros de condomínio), retornamos o payload focado nos erros
+    if result["linhas_com_erro"] or result["erros_condominios"]:
+        return {
+            "file_upload_id": file_upload_id,
+            "status": "ERRO",
+            "condominios": [],
+            "errors": ["Planilha contém informações obrigatórias ausentes ou incorretas."],
+            "linhas_com_erro": result["linhas_com_erro"],
+            "erros_condominios": result["erros_condominios"],
+            "summary": {
+                "total_condominios": 0,
+                "total_funcionarios": 0,
+                "total_movimentacoes": 0,
+                "valor_total_beneficios": Decimal('0.00'),
+                "data_competencia_arquivo": result['summary']['data_competencia_arquivo'],
+                "primeiro_cnpj_processado": "N/A",
+            }
+        }
 
     return result
 

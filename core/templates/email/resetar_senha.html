@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Redefinição de Senha - FedConnect</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif;
+      background-color: #f0f4f8;
+      padding: 40px 16px;
+      min-height: 100vh;
+    }
+
+    .email-wrapper {
+      max-width: 580px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+    }
+
+    /* ── Header ───────────────────────────────── */
+    .email-header {
+      background: linear-gradient(135deg, #0F3D5D 0%, #1a6b8a 50%, #D3D3D2 100%);
+      padding: 40px 30px;
+      text-align: center;
+    }
+
+    .logo-container {
+        margin-bottom: 20px;
+        position: relative;
+        z-index: 1;
+    }
+
+    .email-header h1 {
+      color: #ffffff;
+      font-size: 26px;
+      font-weight: 600;
+      margin: 0 0 8px;
+      letter-spacing: -0.3px;
+    }
+
+    .email-header {
+      color: #ffffff;
+      font-size: 13px;
+    }
+
+    /* ── Conteúdo ─────────────────────────────── */
+    .email-content {
+      padding: 36px 36px 28px;
+    }
+
+    .greeting {
+      font-size: 16px;
+      color: #1a202c;
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+
+    .greeting strong {
+      color: #0F3D5D;
+      font-weight: 600;
+    }
+
+    .message-text {
+      font-size: 14px;
+      color: #4a5568;
+      line-height: 1.7;
+      margin-bottom: 28px;
+    }
+
+    .message-text strong {
+      color: #1a202c;
+      font-weight: 500;
+    }
+
+    .divider {
+      height: 1px;
+      background: #e2e8f0;
+      margin: 0 0 28px;
+    }
+
+    /* ── Botão CTA ────────────────────────────── */
+    .button-container {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+    .btn-reset {
+      display: inline-block;
+      background: #0F3D5D;
+      color: #ffffff !important;
+      text-decoration: none;
+      padding: 13px 34px;
+      font-size: 15px;
+      font-weight: 500;
+      border-radius: 40px;
+      letter-spacing: 0.2px;
+    }
+
+    /* ── Link alternativo ─────────────────────── */
+    .alt-separator {
+      text-align: center;
+      font-size: 12px;
+      color: #a0aec0;
+      margin-bottom: 16px;
+      position: relative;
+    }
+
+    .alt-separator::before,
+    .alt-separator::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      width: 42%;
+      height: 1px;
+      background: #e2e8f0;
+    }
+
+    .alt-separator::before { left: 0; }
+    .alt-separator::after  { right: 0; }
+
+    .link-box {
+      background: #f7fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 28px;
+    }
+
+    .link-label {
+      font-size: 11px;
+      color: #718096;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 8px;
+    }
+
+    .reset-link {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 12px;
+      color: #0F3D5D;
+      word-break: break-all;
+      line-height: 1.5;
+      text-decoration: none;
+      display: block;
+    }
+
+    /* ── Aviso de expiração ───────────────────── */
+    .warning-box {
+      background: #fffbeb;
+      border-left: 3px solid #f59e0b;
+      border-radius: 0 10px 10px 0;
+      padding: 14px 16px;
+      margin-bottom: 20px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .warning-icon {
+      flex-shrink: 0;
+      margin-top: 1px;
+      opacity: 0.8;
+    }
+
+    .warning-text {
+      font-size: 13px;
+      color: #92400e;
+      line-height: 1.55;
+    }
+
+    .warning-text strong {
+      font-weight: 600;
+      color: #78350f;
+    }
+
+    /* ── Nota de segurança ────────────────────── */
+    .security-note {
+      background: #f7fafc;
+      border-radius: 10px;
+      padding: 14px 16px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .security-note-icon {
+      flex-shrink: 0;
+      margin-top: 2px;
+      opacity: 0.45;
+    }
+
+    .security-note-text {
+      font-size: 13px;
+      color: #718096;
+      line-height: 1.6;
+    }
+
+    /* ── Footer ───────────────────────────────── */
+    .email-footer {
+      padding: 20px 36px 24px;
+      border-top: 1px solid #e2e8f0;
+      text-align: center;
+    }
+
+    .email-footer .brand {
+      font-size: 12px;
+      font-weight: 600;
+      color: #2d3748;
+      margin-bottom: 6px;
+    }
+
+    .email-footer p {
+      font-size: 12px;
+      color: #a0aec0;
+      line-height: 1.6;
+      margin-bottom: 4px;
+    }
+
+    .email-footer p:last-child {
+      margin-bottom: 0;
+    }
+
+    /* ── Responsivo ───────────────────────────── */
+    @media (max-width: 600px) {
+      body { padding: 20px 12px; }
+      .email-header { padding: 32px 24px 28px; }
+      .email-content { padding: 28px 24px 24px; }
+      .email-footer { padding: 18px 24px 20px; }
+      .email-header h1 { font-size: 22px; }
+      .btn-reset { padding: 12px 28px; font-size: 14px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="email-wrapper">
+
+    <!-- Header -->
+    <div class="email-header">
+
+     <div class="logo-container">
+        <img src="https://i.postimg.cc/FKq8j29p/logo2.png" alt="Fedcorp" class="logo"> 
+      </div>
+      
+      <h1>FedConnect</h1>
+      <h2 class="subtitle">Redefinição de senha</h2>
+    </div>
+
+    <!-- Conteúdo principal -->
+    <div class="email-content">
+
+      <p class="greeting">Olá, <strong>{{nome_usuario}}</strong>!</p>
+
+      <p class="message-text">
+        Recebemos uma solicitação para redefinir a senha da sua conta no
+        <strong>FedConnect</strong>. Caso tenha sido você, clique no botão
+        abaixo para criar uma nova senha de forma segura.
+      </p>
+
+      <div class="divider"></div>
+
+      <!-- Botão principal -->
+      <div class="button-container">
+        <a href="{{reset_url}}" class="btn-reset">Redefinir minha senha</a>
+      </div>
+
+      <!-- Link alternativo -->
+      <div class="alt-separator">ou copie o link abaixo</div>
+
+      <div class="link-box">
+        <div class="link-label">Link de redefinição</div>
+        <a href="{{reset_url}}" class="reset-link">{{reset_url}}</a>
+      </div>
+
+      <!-- Aviso de expiração -->
+      <div class="warning-box">
+        <svg class="warning-icon" width="16" height="16" viewBox="0 0 16 16"
+             fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M8 1.5L14.5 13H1.5L8 1.5Z"
+                stroke="#92400e" stroke-width="1.3" fill="none"/>
+          <path d="M8 6v3.5" stroke="#92400e"
+                stroke-width="1.3" stroke-linecap="round"/>
+          <circle cx="8" cy="11.5" r="0.7" fill="#92400e"/>
+        </svg>
+        <p class="warning-text">
+          <strong>Atenção:</strong> Este link expira em <strong>24 horas</strong>.
+          Após esse prazo, será necessário solicitar uma nova redefinição.
+        </p>
+      </div>
+
+      <!-- Nota de segurança -->
+      <div class="security-note">
+        <svg class="security-note-icon" width="14" height="14"
+             viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="6" width="10" height="7" rx="1.5"
+                stroke="#718096" stroke-width="1.2"/>
+          <path d="M4.5 6V4a2.5 2.5 0 015 0v2"
+                stroke="#718096" stroke-width="1.2"/>
+        </svg>
+        <p class="security-note-text">
+          Não foi você quem solicitou? Ignore este e-mail com segurança —
+          nenhuma alteração será feita na sua conta.
+        </p>
+      </div>
+
+    </div>
+
+    <!-- Footer -->
+    <div class="email-footer">
+      <p class="brand">Grupo Fedcorp</p>
+      <p>Você está recebendo este e-mail pois uma solicitação foi feita para sua conta.</p>
+      <p>© {% now "Y" %} Grupo Fedcorp. Todos os direitos reservados.</p>
+    </div>
+  </div>
+</body>
+</html>

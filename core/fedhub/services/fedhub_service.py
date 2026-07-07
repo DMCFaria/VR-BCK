@@ -167,56 +167,64 @@ class FedhubService:
     
     
         # Email
-    
+        
     def enviar_email_recuperacao_senha(self, email: str, user: Any) -> bool:
         try:
             with httpx.Client() as client:
-                
+
                 # 🔐 Gerar NOVO token (sobrescreve o anterior)
                 reset_token = secrets.token_urlsafe(32)
                 expires_at = timezone.now() + timedelta(hours=24)
-                
+
                 # SOBRESCREVE o token anterior (se existir)
                 user.reset_password_token = reset_token
                 user.reset_password_token_created_at = timezone.now()
                 user.reset_password_token_expires_at = expires_at
-                # Não precisa limpar antes, apenas sobrescreve
-                user.save(update_fields=[
-                    'reset_password_token', 
-                    'reset_password_token_created_at', 
-                    'reset_password_token_expires_at'
-                ])
-                
-                logger.info(f"Novo token gerado (sobrescreveu anterior) para: {user.email}")
+                user.save(
+                    update_fields=[
+                        "reset_password_token",
+                        "reset_password_token_created_at",
+                        "reset_password_token_expires_at",
+                    ]
+                )
+
+                logger.info(
+                    f"Novo token gerado (sobrescreveu anterior) para: {user.email}"
+                )
                 logger.info(f"Token expira em: {expires_at}")
-                
+
                 frontend_url = settings.FRONTEND_URL
-                
+
                 # Construir link de reset
                 reset_url = f"{frontend_url}/resetar-senha/{reset_token}"
-                
+
                 logger.info(f"Link de reset gerado: {reset_url}")
-                
-                html_body = render_to_string('email/resetar_senha.html', {
-                    'nome_usuario': user.nome or user.email,
-                    'reset_url': reset_url
-                })
-                
+
+                html_body = render_to_string(
+                    "email/resetar_senha.html",
+                    {
+                        "nome_usuario": user.nome or user.email,
+                        "reset_url": reset_url,
+                    },
+                )
+
                 response = client.post(
                     f"{self.base_url}/api/email/send/gmail",
                     json={
                         "to_email": email,
-                        "subject": "Redefinição de Senha - FedConnect",
+                        "subject": "Redefinição de Senha - FedHub - Benefícios",
                         "body": html_body,
-                        "is_html": True
+                        "is_html": True,
                     },
-                    timeout=30.0
+                    timeout=30.0,
                 )
-                
+
                 if response.status_code == 200:
                     logger.info(f"Email enviado com sucesso via Gateway para: {email}")
                 else:
-                    logger.error(f"Gateway retornou erro {response.status_code}: {response.text}")
+                    logger.error(
+                        f"Gateway retornou erro {response.status_code}: {response.text}"
+                    )
 
             return True
 
@@ -381,5 +389,112 @@ class FedhubService:
         except requests.RequestException as e:
             logger.error(f"Erro ao chamar Firebird: {e}")
             return None
+
+    def buscar_dados_boleto_por_fatura(self, fatura: str):
+        """
+        Busca os dados do boleto/faturamento no Fedhub pelo número da fatura.
+        Retorna um dicionário com os dados do boleto ou None se não encontrado.
+        """
+        try:
+            logger.info(f"Chamando Fedhub para buscar dados do boleto da fatura {fatura}")
+            response = requests.get(
+                f"{self.base_url}/api/faturas/fatura/boletos-bancarios/{fatura}",
+                headers=get_headers(),
+                timeout=30
+            )
+
+            if response.status_code != 200:
+                logger.error(f"Erro ao buscar dados do boleto no Fedhub: {response.status_code}")
+                return None
+
+            data = response.json()
+            if isinstance(data, dict):
+                if data.get("status") == "success" and "data" in data:
+                    boletos = data.get("data")
+                    if isinstance(boletos, list):
+                        return boletos[0] if len(boletos) > 0 else {}
+                    return boletos
+                return data
+            return None
+
+        except requests.RequestException as e:
+            logger.error(f"Erro de conexão com o Fedhub: {e}")
+            return None
+
+    def buscar_todos_boletos_por_fatura(self, fatura: str):
+        """
+        Busca todos os boletos/faturamentos no Fedhub pelo número da fatura.
+        Retorna uma lista com os dados de todos os boletos ou uma lista vazia.
+        """
+        try:
+            logger.info(f"Chamando Fedhub para buscar todos os boletos da fatura {fatura}")
+            response = requests.get(
+                f"{self.base_url}/api/faturas/fatura/boletos-bancarios/{fatura}",
+                headers=get_headers(),
+                timeout=30
+            )
+
+            if response.status_code != 200:
+                logger.error(f"Erro ao buscar todos os boletos no Fedhub: {response.status_code}")
+                return []
+
+            data = response.json()
+            if isinstance(data, dict) and data.get("status") == "success" and "data" in data:
+                boletos = data.get("data")
+                if isinstance(boletos, list):
+                    return boletos
+                elif isinstance(boletos, dict):
+                    return [boletos]
+            return []
+
+        except requests.RequestException as e:
+            logger.error(f"Erro de conexão com o Fedhub ao buscar todos os boletos: {e}")
+            return []
+
+    def enviar_email_erro_nota(self, email_destinatario: str, faturamento_id: str, cnpj_cobrado: str, id_integracao: str, motivo_erro: str = "Erro na emissão") -> bool:
+        """
+        Envia e-mail de alerta de erro de nota fiscal para o faturista.
+        """
+        try:
+            # Prepara o contexto para o template
+            context = {
+                'faturamento_id': faturamento_id,
+                'cnpj_cobrado': cnpj_cobrado,
+                'id_integracao': id_integracao,
+                'motivo_erro': motivo_erro,
+                'data_erro': timezone.now().strftime('%d/%m/%Y %H:%M'),
+            }
+            
+            # Renderiza o template HTML
+            html_body = render_to_string(
+                'email/erro_emissao_nota.html',
+                context
+            )
+            
+            with httpx.Client() as client:
+                response = client.post(
+                    f"{self.base_url}/api/email/send/gmail",
+                    json={
+                        "to_email": email_destinatario,
+                        "subject": f"ALERTA: Falha na Emissão de NFS-e (Faturamento #{faturamento_id})",
+                        "body": html_body,
+                        "is_html": True
+                    },
+                    timeout=30.0
+                )
+                
+                if response.status_code == 200:
+                    logger.info(f"E-mail de alerta de erro enviado para: {email_destinatario}")
+                    return True
+                else:
+                    logger.error(f"Gateway de e-mail retornou erro {response.status_code}: {response.text}")
+                    return False
+
+        except httpx.RequestError as e:
+            logger.error(f"Erro ao chamar serviço de e-mail para erro de nota: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Erro inesperado ao enviar e-mail de erro de nota: {e}")
+            return False
 
     

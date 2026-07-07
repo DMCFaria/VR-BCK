@@ -342,19 +342,19 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                     # CRIAR novo funcionário com vínculo
                     funcs_to_create.append(Funcionario(
                         cpf=cpf_normalizado,
-                        nome=f['nome'][:255],
-                        matricula=f.get('matricula', '')[:50],
-                        funcao=f.get('funcao', '')[:100],
+                        nome=(f.get('nome') or '')[:255],
+                        matricula=(f.get('matricula') or '')[:50],
+                        funcao=(f.get('funcao') or '')[:100],
                         data_nascimento=data_nascimento,
-                        departamento=f.get('departamento', c['nome'])[:255],
-                        condominio=condo_obj,  # 🔧 CORREÇÃO: vincula ao condomínio
-                        cep=f.get('cep', '')[:10],
-                        endereco_rua=f.get('endereco_rua', '')[:255],
-                        endereco_numero=f.get('endereco_numero', '')[:20],
-                        endereco_complemento=f.get('endereco_complemento', '')[:100],
-                        endereco_bairro=f.get('endereco_bairro', '')[:100]
+                        departamento=(f.get('departamento') or c['nome'])[:255],
+                        condominio=condo_obj,
+                        cep=(f.get('cep') or '')[:10],
+                        endereco_rua=(f.get('endereco_rua') or '')[:255],
+                        endereco_numero=(f.get('endereco_numero') or '')[:20],
+                        endereco_complemento=(f.get('endereco_complemento') or '')[:100],
+                        endereco_bairro=(f.get('endereco_bairro') or '')[:100]
                     ))
-                    logger.info(f"Preparado para criar funcionário {f['nome']} vinculado a {condo_obj.nome}")
+                    logger.info(f"Preparado para criar funcionário {(f.get('nome') or '')} vinculado a {condo_obj.nome}")
                 else:
                     # ATUALIZAR funcionário existente
                     func_obj = existing_funcs[cpf_normalizado]
