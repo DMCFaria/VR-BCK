@@ -3,6 +3,7 @@ from .views import (
     DesvincularAdministradoraView,
     GoogleLoginView,
     PasswordView,
+    ReenviarEmailBoasVindasSelfView,
     UserRegistrationAPIView, 
     CurrentUserView, 
     LoginApiView, 
@@ -22,6 +23,8 @@ urlpatterns = [
     path('<int:pk>/', UserDetailUpdateDeleteView.as_view(), name='user_detail'),
     path('<int:pk>/vincular-adm/', VincularAdministradoraView.as_view(), name='vincular-adm'),
     path('<int:pk>/desvincular-adm/', DesvincularAdministradoraView.as_view(), name='desvincular-adm'),
+    
+    path('reenviar-email-boas-vindas/', ReenviarEmailBoasVindasSelfView.as_view(), name='reenviar-email-boas-vindas'),
     
     path('google-login/', GoogleLoginView.as_view(), name='google-login'),
 ]

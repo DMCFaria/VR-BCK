@@ -227,7 +227,6 @@ class DesvincularAdministradoraView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
             
-# users/views.py - Atualize o PasswordView
 class PasswordView(APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
@@ -485,3 +484,81 @@ class ResetarSenhaView(APIView):
             {"detail": "Senha redefinida com sucesso."},
             status=status.HTTP_200_OK
         )
+        
+class ReenviarEmailBoasVindasSelfView(APIView):
+    """
+    Permite que o próprio usuário solicite o reenvio do email de boas-vindas.
+    """
+    permission_classes = [permissions.AllowAny]  # Qualquer um pode solicitar
+    
+    def post(self, request):
+        email = request.data.get('email')
+        
+        if not email:
+            return Response(
+                {"detail": "E-mail é obrigatório."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            user = CustomUser.objects.get(email=email)
+            
+            # Verificar se o usuário já está ativo (já fez login)
+            # if not user.primeiro_acesso:
+            #     return Response({
+            #         "status": "warning",
+            #         "message": "Este usuário já acessou o sistema. Use a opção 'Esqueci minha senha' para redefinir a senha."
+            #     }, status=status.HTTP_200_OK)
+            
+        except CustomUser.DoesNotExist:
+            # Não revelar se o usuário existe ou não (segurança)
+            logger.info(f"Tentativa de reenvio para email não cadastrado: {email}")
+            return Response({
+                "status": "success",
+                "message": "Se este e-mail estiver cadastrado, você receberá as instruções em breve."
+            }, status=status.HTTP_200_OK)
+        
+        # Enviar email (mesmo código do método anterior)
+        try:
+            fedhub_service = FedhubService()
+            
+            # Gerar nova senha temporária
+            import secrets
+            import string
+            alphabet = string.ascii_letters + string.digits
+            temporary_password = ''.join(secrets.choice(alphabet) for _ in range(12))
+            user.set_password(temporary_password)
+            user.primeiro_acesso = True
+            user.save()
+            
+            administradora_nome = user.administradora.razao_social if user.administradora else None
+            
+            email_enviado = fedhub_service.enviar_email_usuario_criado(
+                email=user.email,
+                user=user,
+                senha_temporaria=temporary_password,
+                dados_usuario={
+                    'nome': user.nome,
+                    'tipo': user.tipo,
+                    'administradora': administradora_nome
+                }
+            )
+            
+            if email_enviado:
+                logger.info(f"📧 Email reenviado para: {user.email}")
+                return Response({
+                    "status": "success",
+                    "message": "Email reenviado com sucesso! Verifique sua caixa de entrada e spam."
+                }, status=status.HTTP_200_OK)
+            else:
+                return Response({
+                    "status": "error",
+                    "detail": "Falha ao enviar email. Tente novamente mais tarde."
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                
+        except Exception as e:
+            logger.error(f"❌ Erro ao reenviar email: {str(e)}")
+            return Response({
+                "status": "error",
+                "detail": f"Erro ao reenviar email: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

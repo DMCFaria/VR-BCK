@@ -69,7 +69,7 @@ class FedhubService:
                     f"{self.base_url}/api/email/send/gmail",
                     json={
                         "to_email": email,
-                        "subject": f"{context['tipo_processamento']} - FedVR",
+                        "subject": f"{context['tipo_processamento']} - Fedhub",
                         "body": html_body,
                         "is_html": True
                     },
@@ -143,7 +143,7 @@ class FedhubService:
                     f"{self.base_url}/api/email/send/gmail",
                     json={
                         "to_email": email,
-                        "subject": f"Faturamento Concluído - FedVR - {context['competencia']}",
+                        "subject": f"Faturamento Concluído - FedHub - {context['competencia']}",
                         "body": html_body,
                         "is_html": True
                     },

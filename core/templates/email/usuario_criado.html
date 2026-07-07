@@ -29,6 +29,7 @@
         }
 
         .hero {
+            background-color: #1B3A6B;
             background: linear-gradient(135deg, #0F2650 0%, #1B3A6B 45%, #1D4ED8 100%);
             border-radius: 20px 20px 0 0;
             padding: 48px 40px 40px;
@@ -69,8 +70,9 @@
 
         .hero-badge {
             display: inline-block;
+            background-color: #0D3B2E;
             background: rgba(16, 185, 129, 0.18);
-            border: 1px solid rgba(16, 185, 129, 0.4);
+            border: 1px solid #34D399;
             color: #6EE7B7;
             font-size: 11px;
             font-weight: 700;
@@ -87,7 +89,7 @@
             font-family: 'DM Serif Display', Georgia, serif;
             font-size: 38px;
             line-height: 1.15;
-            color: #fff;
+            color: #ffffff;
             margin-bottom: 16px;
             position: relative;
             z-index: 1;
@@ -101,7 +103,7 @@
         .hero-desc {
             font-size: 15px;
             line-height: 1.7;
-            color: rgba(255, 255, 255, 0.75);
+            color: #C9D6EA;
             max-width: 460px;
             margin-bottom: 32px;
             position: relative;
@@ -113,10 +115,13 @@
             z-index: 1;
         }
 
+        /* Botões: sempre com background-color sólido como base (funciona em qualquer
+           cliente de e-mail), com o gradiente como acabamento extra por cima quando suportado. */
         .hero-cta {
             display: inline-block;
+            background-color: #10B981;
             background: linear-gradient(135deg, #10B981, #059669);
-            color: #fff;
+            color: #ffffff !important;
             font-size: 14px;
             font-weight: 700;
             text-decoration: none;
@@ -129,9 +134,9 @@
 
         .hero-manual {
             display: inline-block;
-            background: rgba(255, 255, 255, 0.12);
-            border: 1px solid rgba(255, 255, 255, 0.28);
-            color: #fff;
+            background-color: #2C4E82;
+            border: 1px solid #6C89B8;
+            color: #ffffff !important;
             font-size: 14px;
             font-weight: 700;
             text-decoration: none;
@@ -230,8 +235,9 @@
 
         .quick-action-primary {
             display: inline-block;
+            background-color: #10B981;
             background: linear-gradient(135deg, #10B981, #059669);
-            color: #fff;
+            color: #ffffff !important;
             font-size: 14px;
             font-weight: 700;
             text-decoration: none;
@@ -242,9 +248,9 @@
 
         .quick-action-secondary {
             display: inline-block;
-            background: #FFFFFF;
+            background-color: #FFFFFF;
             border: 1px solid #D1D5DB;
-            color: #1B3A6B;
+            color: #1B3A6B !important;
             font-size: 14px;
             font-weight: 700;
             text-decoration: none;
@@ -254,25 +260,19 @@
         }
 
         .features-grid {
-            display: table;
             width: 100%;
             border-collapse: separate;
             border-spacing: 0;
             margin: 32px 0;
         }
 
-        .features-row {
-            display: table-row;
-        }
-
         .feature-card {
-            display: table-cell;
             width: 50%;
             vertical-align: top;
             padding: 0 8px 16px 0;
         }
 
-        .feature-card:last-child {
+        .feature-card.last {
             padding-right: 0;
             padding-left: 8px;
         }
@@ -289,9 +289,9 @@
             width: 40px;
             height: 40px;
             border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            text-align: center;
+            vertical-align: middle;
+            line-height: 40px;
             font-size: 18px;
             margin-bottom: 14px;
         }
@@ -326,10 +326,11 @@
         }
 
         .steps-section {
+            background-color: #EFF6FF;
             background: linear-gradient(135deg, #F0F7FF 0%, #EFF6FF 100%);
             border: 1px solid #BFDBFE;
             border-radius: 16px;
-            padding: 28px 28px 20px;
+            padding: 28px 28px 8px;
             margin: 28px 0;
         }
 
@@ -340,35 +341,44 @@
             margin-bottom: 18px;
         }
 
-        .step-row {
-            display: flex;
-            align-items: flex-start;
-            gap: 14px;
+        .step-table {
+            width: 100%;
+            border-collapse: separate;
             margin-bottom: 16px;
+        }
+
+        .step-num-cell {
+            width: 28px;
+            vertical-align: top;
+            padding-right: 14px;
         }
 
         .step-num {
             width: 28px;
             height: 28px;
-            background: #1D4ED8;
-            color: #fff;
+            background-color: #1D4ED8;
+            color: #ffffff;
             border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
             font-size: 12px;
             font-weight: 800;
-            flex-shrink: 0;
+            text-align: center;
+            vertical-align: middle;
+            line-height: 28px;
         }
 
-        .step-text strong {
+        .step-text-cell {
+            vertical-align: top;
+        }
+
+        .step-text-cell strong {
             display: block;
             font-size: 13px;
             font-weight: 700;
             color: #1B3A6B;
+            margin-bottom: 2px;
         }
 
-        .step-text span {
+        .step-text-cell span {
             font-size: 12.5px;
             color: #6B7280;
             line-height: 1.55;
@@ -400,6 +410,7 @@
         }
 
         .cta-section {
+            background-color: #1D4ED8;
             background: linear-gradient(135deg, #0F2650, #1D4ED8);
             border-radius: 16px;
             padding: 36px 32px;
@@ -410,21 +421,22 @@
         .cta-section h3 {
             font-family: 'DM Serif Display', Georgia, serif;
             font-size: 24px;
-            color: #fff;
+            color: #ffffff;
             margin-bottom: 10px;
         }
 
         .cta-section p {
             font-size: 13.5px;
-            color: rgba(255, 255, 255, 0.7);
+            color: #D9E3F5;
             margin-bottom: 24px;
             line-height: 1.6;
         }
 
         .cta-btn {
             display: inline-block;
+            background-color: #10B981;
             background: linear-gradient(135deg, #10B981, #059669);
-            color: #fff;
+            color: #ffffff !important;
             font-size: 14px;
             font-weight: 700;
             text-decoration: none;
@@ -435,9 +447,9 @@
 
         .cta-btn-outline {
             display: inline-block;
-            background: transparent;
-            color: #fff;
-            border: 1px solid rgba(255, 255, 255, 0.35);
+            background-color: transparent;
+            color: #ffffff !important;
+            border: 1px solid #8FA8D6;
             font-size: 14px;
             font-weight: 700;
             text-decoration: none;
@@ -447,7 +459,7 @@
         }
 
         .footer {
-            background: #1B3A6B;
+            background-color: #1B3A6B;
             border-radius: 0 0 20px 20px;
             padding: 32px 40px;
         }
@@ -455,26 +467,26 @@
         .footer-logo {
             font-size: 15px;
             font-weight: 800;
-            color: #fff;
+            color: #ffffff;
             letter-spacing: 0.04em;
             margin-bottom: 6px;
         }
 
         .footer-tagline {
             font-size: 12px;
-            color: rgba(255, 255, 255, 0.45);
+            color: #8DA0C4;
             margin-bottom: 20px;
         }
 
         .footer-divider {
             border: none;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            border-top: 1px solid #33507F;
             margin: 20px 0;
         }
 
         .footer-legal {
             font-size: 11px;
-            color: rgba(255, 255, 255, 0.3);
+            color: #6C82AC;
             line-height: 1.6;
         }
 
@@ -501,18 +513,11 @@
                 padding: 32px 22px 28px;
             }
 
-            .feature-card {
+            .feature-card,
+            .feature-card.last {
                 display: block;
                 width: 100%;
                 padding: 0 0 14px 0 !important;
-            }
-
-            .features-row {
-                display: block;
-            }
-
-            .features-grid {
-                display: block;
             }
 
             .hero-cta,
@@ -601,29 +606,41 @@
             <div class="steps-section">
                 <div class="steps-title">🔑 Primeiro acesso ao FedHub</div>
 
-                <div class="step-row">
-                    <div class="step-num">1</div>
-                    <div class="step-text">
-                        <strong>Faça login</strong>
-                        <span>Utilize o login e a senha temporária enviados neste e-mail.</span>
-                    </div>
-                </div>
+                <table class="step-table" role="presentation" cellpadding="0" cellspacing="0">
+                    <tr>
+                        <td class="step-num-cell">
+                            <div class="step-num">1</div>
+                        </td>
+                        <td class="step-text-cell">
+                            <strong>Faça login</strong>
+                            <span>Utilize o login e a senha temporária enviados neste e-mail.</span>
+                        </td>
+                    </tr>
+                </table>
 
-                <div class="step-row">
-                    <div class="step-num">2</div>
-                    <div class="step-text">
-                        <strong>Defina uma nova senha</strong>
-                        <span>No primeiro acesso, o sistema solicitará a criação de uma senha pessoal.</span>
-                    </div>
-                </div>
+                <table class="step-table" role="presentation" cellpadding="0" cellspacing="0">
+                    <tr>
+                        <td class="step-num-cell">
+                            <div class="step-num">2</div>
+                        </td>
+                        <td class="step-text-cell">
+                            <strong>Defina uma nova senha</strong>
+                            <span>No primeiro acesso, o sistema solicitará a criação de uma senha pessoal.</span>
+                        </td>
+                    </tr>
+                </table>
 
-                <div class="step-row">
-                    <div class="step-num">3</div>
-                    <div class="step-text">
-                        <strong>Comece a utilizar a plataforma</strong>
-                        <span>Após alterar a senha, você terá acesso aos módulos disponíveis no portal.</span>
-                    </div>
-                </div>
+                <table class="step-table" role="presentation" cellpadding="0" cellspacing="0">
+                    <tr>
+                        <td class="step-num-cell">
+                            <div class="step-num">3</div>
+                        </td>
+                        <td class="step-text-cell">
+                            <strong>Comece a utilizar a plataforma</strong>
+                            <span>Após alterar a senha, você terá acesso aos módulos disponíveis no portal.</span>
+                        </td>
+                    </tr>
+                </table>
             </div>
 
             <hr class="divider" />
@@ -641,21 +658,20 @@
                 e visibilidade em tempo real.
             </p>
 
-            <table class="features-grid" role="presentation">
-                <tr class="features-row">
+            <table class="features-grid" role="presentation" cellpadding="0" cellspacing="0">
+                <tr>
                     <td class="feature-card">
                         <div class="feature-inner">
                             <div class="feature-icon blue">📤</div>
                             <div class="feature-name">Importação Inteligente</div>
                             <div class="feature-desc">
                                 Envie arquivos .txt, .csv ou .xlsx, conforme os modelos base no sistema. O sistema
-                                valida automaticamente
-                                cada registro antes do envio definitivo.
+                                valida automaticamente cada registro antes do envio definitivo.
                             </div>
                         </div>
-                    </table>
+                    </td>
 
-                    <td class="feature-card">
+                    <td class="feature-card last">
                         <div class="feature-inner">
                             <div class="feature-icon green">💰</div>
                             <div class="feature-name">Faturamento Centralizado</div>
@@ -667,7 +683,7 @@
                     </td>
                 </tr>
 
-                <tr class="features-row">
+                <tr>
                     <td class="feature-card">
                         <div class="feature-inner">
                             <div class="feature-icon purple">🏢</div>
@@ -679,7 +695,7 @@
                         </div>
                     </td>
 
-                    <td class="feature-card">
+                    <td class="feature-card last">
                         <div class="feature-inner">
                             <div class="feature-icon orange">🔁</div>
                             <div class="feature-name">Repetição de Faturamento</div>
@@ -729,7 +745,7 @@
                 Você está recebendo este e-mail por fazer parte da rede FedCorp.<br>
                 © 2026 Grupo FedCorp Seguros &amp; Serviços. Todos os direitos reservados.<br>
                 Caso não queira mais receber nossas comunicações,
-                <a href="#" style="color:rgba(255,255,255,0.4);">clique aqui para descadastrar</a>.
+                <a href="#" style="color:#8DA0C4;">clique aqui para descadastrar</a>.
             </div>
         </div>
 
