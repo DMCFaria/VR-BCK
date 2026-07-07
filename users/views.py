@@ -525,7 +525,6 @@ class GoogleLoginView(APIView):
             return Response(
                 {"detail": "Token Google inválido."},
                 status=status.HTTP_400_BAD_REQUEST
-<<<<<<< HEAD
             )
                       
 class ResetarSenhaView(APIView):
@@ -676,6 +675,4 @@ class ReenviarEmailBoasVindasSelfView(APIView):
                 "status": "error",
                 "detail": f"Erro ao reenviar email: {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-=======
-            )
->>>>>>> c5323bd700e98939a90d48c1005175c26a18debc
+            
