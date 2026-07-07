@@ -73,6 +73,7 @@ class RegraValorSerializer(serializers.Serializer):
     ativo = serializers.BooleanField()
     valor_limite = serializers.DecimalField(max_digits=10, decimal_places=2, allow_null=True)
     bloquear_acima_limite = serializers.BooleanField()
+    d_mais = serializers.IntegerField(required=False)
     
     def validate(self, data):
         """Validações cruzadas"""

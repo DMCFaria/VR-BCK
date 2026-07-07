@@ -310,6 +310,7 @@ class AdministradoraViewSet(viewsets.ModelViewSet):
                 'ativo': administradora.valor_max_beneficio is not None and administradora.valor_max_beneficio < 9999.99,
                 'valor_limite': float(administradora.valor_max_beneficio) if administradora.valor_max_beneficio != 9999.99 else None,
                 'bloquear_acima_limite': administradora.valor_max_beneficio is not None and administradora.valor_max_beneficio < 9999.99,
+                'd_mais': administradora.d_mais,
             }
             
             # Se o valor for o default (9999.99), considera como "sem regra"
@@ -340,6 +341,7 @@ class AdministradoraViewSet(viewsets.ModelViewSet):
             # Valida o payload
             ativo = request.data.get('ativo', False)
             valor_limite = request.data.get('valor_limite')
+            d_mais = request.data.get('d_mais')
             
             # Validações
             if ativo:
@@ -365,9 +367,28 @@ class AdministradoraViewSet(viewsets.ModelViewSet):
                 # Se inativo, reseta para o valor padrão (sem bloqueio)
                 valor_limite = 9999.99
             
-            # Atualiza o campo na administradora
+            if d_mais is not None:
+                try:
+                    d_mais = int(d_mais)
+                    if d_mais < 0 or d_mais > 99:
+                        return Response(
+                            {'error': 'D+ deve estar entre 0 e 99'},
+                            status=400
+                        )
+                except (TypeError, ValueError):
+                    return Response(
+                        {'error': 'D+ inválido'},
+                        status=400
+                    )
+            
+            # Atualiza os campos na administradora
             administradora.valor_max_beneficio = valor_limite
-            administradora.save(update_fields=['valor_max_beneficio', 'updated_at'])
+            if d_mais is not None:
+                administradora.d_mais = d_mais
+            update_fields = ['valor_max_beneficio', 'updated_at']
+            if d_mais is not None:
+                update_fields.append('d_mais')
+            administradora.save(update_fields=update_fields)
             
             # Prepara resposta no formato esperado
             response_data = {
@@ -376,6 +397,7 @@ class AdministradoraViewSet(viewsets.ModelViewSet):
                 'ativo': ativo,
                 'valor_limite': float(valor_limite) if ativo and valor_limite != 9999.99 else None,
                 'bloquear_acima_limite': ativo,
+                'd_mais': administradora.d_mais,
             }
             
             logger.info(f'[RegraValor] Criada/Atualizada para admin {pk}: {response_data}')
@@ -407,6 +429,7 @@ class AdministradoraViewSet(viewsets.ModelViewSet):
             # Reutiliza a mesma lógica do POST
             ativo = request.data.get('ativo', False)
             valor_limite = request.data.get('valor_limite')
+            d_mais = request.data.get('d_mais')
             
             if ativo:
                 if valor_limite is None:
@@ -430,8 +453,27 @@ class AdministradoraViewSet(viewsets.ModelViewSet):
             else:
                 valor_limite = 9999.99
             
+            if d_mais is not None:
+                try:
+                    d_mais = int(d_mais)
+                    if d_mais < 0 or d_mais > 99:
+                        return Response(
+                            {'error': 'D+ deve estar entre 0 e 99'},
+                            status=400
+                        )
+                except (TypeError, ValueError):
+                    return Response(
+                        {'error': 'D+ inválido'},
+                        status=400
+                    )
+            
             administradora.valor_max_beneficio = valor_limite
-            administradora.save(update_fields=['valor_max_beneficio', 'updated_at'])
+            if d_mais is not None:
+                administradora.d_mais = d_mais
+            update_fields = ['valor_max_beneficio', 'updated_at']
+            if d_mais is not None:
+                update_fields.append('d_mais')
+            administradora.save(update_fields=update_fields)
             
             response_data = {
                 'id': administradora.id,
@@ -439,6 +481,7 @@ class AdministradoraViewSet(viewsets.ModelViewSet):
                 'ativo': ativo,
                 'valor_limite': float(valor_limite) if ativo and valor_limite != 9999.99 else None,
                 'bloquear_acima_limite': ativo,
+                'd_mais': administradora.d_mais,
             }
             
             logger.info(f'[RegraValor] Atualizada via PUT para admin {pk}: {response_data}')
