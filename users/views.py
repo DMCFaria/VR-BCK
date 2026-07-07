@@ -602,7 +602,7 @@ class ReenviarEmailBoasVindasSelfView(APIView):
     """
     Permite que o próprio usuário solicite o reenvio do email de boas-vindas.
     """
-    permission_classes = [permissions.AllowAny]  # Qualquer um pode solicitar
+    permission_classes = [permissions.AllowAny]
     
     def post(self, request):
         email = request.data.get('email')
