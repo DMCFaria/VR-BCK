@@ -4,7 +4,7 @@ from .models import Condominio, Funcionario, Administradora, VinculoCondominio, 
 
 @admin.register(Administradora)
 class AdministradoraAdmin(admin.ModelAdmin):
-    list_display = ['cnpj', 'razao_social', 'ativo', 'created_at']
+    list_display = ['cnpj', 'razao_social', 'ativo', 'd_mais', 'created_at']
     list_filter = ['ativo']
     search_fields = ['cnpj', 'razao_social']
     ordering = ['razao_social']

@@ -52,7 +52,7 @@ class FuncionarioSerializer(serializers.ModelSerializer):
 class AdministradoraSerializer(serializers.ModelSerializer):
     class Meta:
         model = Administradora
-        fields = ['id', 'cnpj', 'razao_social', 'nome_fantasia', 'email', 'ativo', 'cartao_admin', 'created_at', 'updated_at']
+        fields = ['id', 'cnpj', 'razao_social', 'nome_fantasia', 'email', 'ativo', 'cartao_admin', 'd_mais', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
     
     def validate_cartao_admin(self, value):

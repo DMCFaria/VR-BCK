@@ -15,6 +15,11 @@ class Administradora(models.Model):
         verbose_name="Valor máximo por funcionário"
     )
 
+    d_mais = models.PositiveSmallIntegerField(
+        default=3,
+        verbose_name="D+"
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
