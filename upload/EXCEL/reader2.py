@@ -90,7 +90,7 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
     }
 
     try:
-        wb = openpyxl.load_workbook(file_path, data_only=True, keep_vba=False)
+        wb = openpyxl.load_workbook(file_path, data_only=True, read_only=True, keep_vba=False)
     except Exception as e:
         result['errors'].append(f"Erro ao abrir planilha: {str(e)}")
         return result
@@ -99,7 +99,13 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
     # 1. LER SUMARIO
     # ========================
     ws_sum = wb['Sumario']
-    data_disponivel = _safe_str(ws_sum['O6'].value or ws_sum['C6'].value or '')
+    data_disponivel = ''
+    for row in ws_sum.iter_rows(min_row=6, max_row=6):
+        cells = list(row)
+        if len(cells) >= 15:
+            data_disponivel = _safe_str(cells[14].value or cells[2].value or '')
+        elif len(cells) >= 3:
+            data_disponivel = _safe_str(cells[2].value or '')
 
     result['summary']['data_competencia_arquivo'] = _parse_date(data_disponivel)
 
@@ -132,7 +138,6 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
     # 3. LER BENEFICIARIO
     # ========================
     ws_ben = wb['Beneficiario']
-    max_row = ws_ben.max_row
 
     MAP_BEN = {
         'cpf': 0,
@@ -149,12 +154,16 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
     # Encontrar colunas de produto na linha 2
     # Headers podem ter newlines ou estarem colados com "Valor do crédito"
     col_produtos = {}
-    for col_idx in range(1, ws_ben.max_column + 1):
-        val = ws_ben.cell(row=2, column=col_idx).value
-        if val:
+    ben_iter = iter(ws_ben.iter_rows(min_row=2, values_only=True))
+    header_row = next(ben_iter, None)
+    if header_row:
+        for col_idx, val in enumerate(header_row, start=1):
+            if val is None:
+                continue
             h = _safe_str(val).strip()
             h = h.split('\n')[0].strip()
-            # Tenta match exato primeiro, depois prefixo
+            if not h:
+                continue
             if h in COLUNAS_PRODUTO:
                 col_produtos[col_idx] = h
             else:
@@ -163,13 +172,15 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
                         col_produtos[col_idx] = nome
                         break
 
-    for row_idx in range(3, max_row + 1):
-        cpf_raw = _safe_str(ws_ben.cell(row=row_idx, column=MAP_BEN['cpf'] + 1).value)
-        codigo_local = _safe_str(ws_ben.cell(row=row_idx, column=MAP_BEN['codigo_local'] + 1).value)
-        matricula = _safe_str(ws_ben.cell(row=row_idx, column=MAP_BEN['matricula'] + 1).value)
-        nome = _safe_str(ws_ben.cell(row=row_idx, column=MAP_BEN['nome_completo'] + 1).value)
-        data_nasc_raw = ws_ben.cell(row=row_idx, column=MAP_BEN['data_nascimento'] + 1).value
-        line_num = row_idx + 1
+    for row_num, row in enumerate(ben_iter, start=3):
+        if not row:
+            continue
+        cpf_raw = _safe_str(row[0] if len(row) > 0 else '')
+        codigo_local = _safe_str(row[1] if len(row) > 1 else '')
+        matricula = _safe_str(row[3] if len(row) > 3 else '')
+        nome = _safe_str(row[4] if len(row) > 4 else '')
+        data_nasc_raw = row[6] if len(row) > 6 else None
+
         if not cpf_raw and not nome:
             continue
 
@@ -206,7 +217,7 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
         # 6. Validar se há pelo menos um benefício/produto com valor > 0
         tem_beneficio = False
         for col_idx, nome_produto in col_produtos.items():
-            raw_val = ws_ben.cell(row=row_idx, column=col_idx).value
+            raw_val = row[col_idx - 1] if len(row) > col_idx - 1 else None
             if raw_val is not None:
                 try:
                     valor = Decimal(str(raw_val).replace(',', '.'))
@@ -222,7 +233,7 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
         if erros_linha_atual:
             result['linhas_com_erro'].append({
                 "tipo_erro": "INFORMACAO_AUSENTE",
-                "linha": line_num,
+                "linha": row_num,
                 "dados": {
                     "cpf": cpf_raw,
                     "nome": nome,
@@ -270,7 +281,7 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
             func = locais[codigo_local]["funcionarios"][func_key]
 
             for col_idx, nome_produto in col_produtos.items():
-                raw_val = ws_ben.cell(row=row_idx, column=col_idx).value
+                raw_val = row[col_idx - 1] if len(row) > col_idx - 1 else None
                 if raw_val is None:
                     continue
                 try:
@@ -288,6 +299,8 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
                 func["valor_bene"] += valor
                 locais[codigo_local]["valor_condo"] += valor
                 result['summary']['valor_total_beneficios'] += valor
+
+    wb.close()
 
     # ========================
     # 4. MONTAR CONDOMINIOS
