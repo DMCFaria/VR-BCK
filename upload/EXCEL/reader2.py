@@ -205,10 +205,6 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
         if not codigo_local:
             erros_linha_atual.append("Código local de entrega (CNPJ) ausente")
 
-        # 4. Validar Matrícula
-        if not matricula:
-            erros_linha_atual.append("Matrícula ausente")
-
         # 5. Validar Data de Nascimento
         data_nasc = _parse_date(data_nasc_raw)
         if not data_nasc:
@@ -246,7 +242,7 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
         else:
             if codigo_local not in locais:
                 locais[codigo_local] = {
-                    "nome": f"{matricula}",
+                    "nome": codigo_local,
                     "cnpj": codigo_local,
                     "valor_condo": Decimal('0.00'),
                     "rua": '',
