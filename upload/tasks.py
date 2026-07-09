@@ -150,7 +150,7 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
                         "obs_baixa": dados_boleto.get("obs_baixa"),
                         "NFs_id": dados_boleto.get("nfs_id"),
                         "Numero_nota": dados_boleto.get("numero_nota"),
-                        "url_nota": dados_boleto.get("url_nota"),
+                        "url_nota": dados_boleto.get("url_nota") or None,
                         "match": condominio_exists,
                     }
                 )
