@@ -527,76 +527,7 @@ class GoogleLoginView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
                       
-class ResetarSenhaView(APIView):
-    permission_classes = [AllowAny]
-    
-    def post(self, request):
-        token = request.data.get("token")
-        nova_senha = request.data.get("nova_senha")
-        
-        logger.info(f"Solicitação de reset de senha para token: {token[:20] if token else 'None'}...")
-        
-        if not token or not nova_senha:
-            return Response(
-                {"detail": "Dados incompletos."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        if len(nova_senha) < 6:
-            return Response(
-                {"detail": "A senha deve ter no mínimo 6 caracteres."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Buscar usuário pelo token
-        try:
-            user = CustomUser.objects.get(reset_password_token=token)
-        except CustomUser.DoesNotExist:
-            logger.warning(f"Token não encontrado: {token[:20]}...")
-            return Response(
-                {"detail": "Link inválido ou expirado."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Verificar expiração
-        if not user.reset_password_token_expires_at:
-            logger.warning(f"Token sem data de expiração para usuário: {user.email}")
-            return Response(
-                {"detail": "Link inválido."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        if user.reset_password_token_expires_at < timezone.now():
-            logger.warning(f"Token expirado para usuário: {user.email}")
-            return Response(
-                {"detail": "Link expirado. Solicite um novo."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Redefinir a senha
-        user.set_password(nova_senha)
-        user.last_password_reset = timezone.now()
-        user.password_reset_count += 1
-        
-        # Limpar o token após uso (IMPORTANTE: não pode reusar)
-        user.reset_password_token = None
-        user.reset_password_token_created_at = None
-        user.reset_password_token_expires_at = None
-        user.save(update_fields=[
-            'reset_password_token',
-            'reset_password_token_created_at',
-            'reset_password_token_expires_at',
-            'password',
-            'last_password_reset',
-            'password_reset_count'
-        ])
-        
-        logger.info(f"Senha redefinida com sucesso para usuário: {user.email}")
-        
-        return Response(
-            {"detail": "Senha redefinida com sucesso."},
-            status=status.HTTP_200_OK
-        )
+
         
 class ReenviarEmailBoasVindasSelfView(APIView):
     """
