@@ -16,7 +16,7 @@ class Administradora(models.Model):
     )
 
     d_mais = models.PositiveSmallIntegerField(
-        default=1,
+        default=3,
         verbose_name="D+"
     )
 
