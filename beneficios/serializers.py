@@ -116,7 +116,8 @@ class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
             'valor_total',
             'total_funcionarios',
             'movimentacoes',
-            'modelo_importacao'
+            'modelo_importacao',
+            'arquivo_s3'
         ]
 
 class MovimentacaoReuseSerializer(serializers.Serializer):
