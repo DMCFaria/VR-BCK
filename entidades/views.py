@@ -159,20 +159,17 @@ class AdministradoraViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # logger.info(f'[AdministradoraViewSet][LIST] Iniciando consulta')
-        
         queryset = super().get_queryset()
         ativo = self.request.query_params.get('ativo')
-        
-        # logger.info(f'[AdministradoraViewSet][LIST] Filtro ativo: {ativo}')
-        
+
         if ativo is not None:
             ativo_bool = ativo.lower() == 'true'
-            # logger.info(f'[AdministradoraViewSet][LIST] Aplicando filtro ativo={ativo_bool}')
             queryset = queryset.filter(ativo=ativo_bool)
-        
-        # logger.info(f'[AdministradoraViewSet][LIST] Total encontrado: {queryset.count()}')
-        
+
+        user = self.request.user
+        if user.tipo not in ('fat', 'dev'):
+            queryset = queryset.filter(usuarios=user)
+
         return queryset
 
     def create(self, request, *args, **kwargs):
