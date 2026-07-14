@@ -1,3 +1,4 @@
+import os
 import re
 from decimal import Decimal, InvalidOperation
 from datetime import datetime
@@ -88,6 +89,14 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
             "primeiro_cnpj_processado": "N/A",
         },
     }
+
+    file_ext = os.path.splitext(file_path)[1].lower()
+
+    if file_ext in ('.csv', '.xls'):
+        result['errors'].append(
+            f"Formato '{file_ext}' não suportado. Use arquivos .xlsx ou .xlsm no layout VR."
+        )
+        return result
 
     try:
         wb = openpyxl.load_workbook(file_path, data_only=True, read_only=True, keep_vba=False)
