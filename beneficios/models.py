@@ -63,6 +63,7 @@ class Importacao(models.Model):
     erros = models.JSONField(default=list, verbose_name="Erros")
     arquivo_s3 = models.CharField(max_length=500, blank=True, null=True, verbose_name="Arquivo S3")
     data_vencimento = models.DateField(verbose_name="Data de Vencimento", null=True, blank=True)
+    data_recebimento = models.DateField(verbose_name="Data de Recebimento", null=True, blank=True)
     vigencia_inicio = models.DateField(verbose_name="Início da Vigência", null=True, blank=True)
     vigencia_fim = models.DateField(verbose_name="Fim da Vigência", null=True, blank=True)
     

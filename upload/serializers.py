@@ -101,6 +101,8 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
     
     competencia_mes = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     competencia_ano = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    recebimento_beneficio = serializers.DateField(input_formats=['%Y-%m-%d', '%d/%m/%Y'], required=False, allow_null=True)
+    data_recebimento = serializers.DateField(input_formats=['%Y-%m-%d', '%d/%m/%Y'], required=False, allow_null=True)
     tipo_processamento = serializers.CharField(required=False, default='compra')
     modelo_importacao = serializers.CharField(required=False, default='VR-BENEFICIOS')
     origem = serializers.CharField(required=False, default='importacao_faturamento')
@@ -127,7 +129,10 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         
         if 'fim_vigencia' in data and data['fim_vigencia'] and not data.get('vigencia_fim'):
             data['vigencia_fim'] = data['fim_vigencia']
-                
+
+        if 'recebimento_beneficio' in data and data['recebimento_beneficio'] and not data.get('data_recebimento'):
+            data['data_recebimento'] = data['recebimento_beneficio']
+
         return data
 
     def create(self, validated_data):
@@ -524,6 +529,7 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 valor_total=valor_total_payload,
                 total_funcionarios=total_funcionarios,
                 data_vencimento=validated_data.get('data_vencimento'),
+                data_recebimento=validated_data.get('data_recebimento'),
                 vigencia_inicio=validated_data.get('vigencia_inicio') or validated_data.get('periodo_inicio'),
                 vigencia_fim=validated_data.get('vigencia_fim') or validated_data.get('periodo_fim'),
                 modelo_importacao=modelo_importacao,
