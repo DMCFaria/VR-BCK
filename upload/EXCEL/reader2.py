@@ -14,6 +14,8 @@ COLUNAS_PRODUTO = {
     'Alimentação': '27',
     'Multi Alimentação': '27',
     'Auto': '28',
+    'Mobilidade': '28',
+    'VR Mobilidade': '28',
     'Cesta': '201',
     'Boas Festas': '202',
     'Auxílio Alimentação': '204',
