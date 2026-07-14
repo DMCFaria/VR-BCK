@@ -95,7 +95,6 @@ class ImportacaoDetailSerializer(serializers.ModelSerializer):
 
 class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
     nome_usuario = serializers.CharField(source='usuario.email', read_only=True)
-    movimentacoes = MovimentacaoBeneficioSerializer(many=True, read_only=True)
 
     valor_total = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
     total_funcionarios = serializers.IntegerField(required=False)
