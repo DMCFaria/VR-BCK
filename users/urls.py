@@ -5,14 +5,15 @@ from .views import (
     PasswordView,
     ReenviarEmailBoasVindasSelfView,
     ResetarSenhaView,
+    SetAdministradoraAtivaView,
     SolicitarResetSenhaView,
-    UserRegistrationAPIView, 
-    CurrentUserView, 
-    LoginApiView, 
+    UserRegistrationAPIView,
+    CurrentUserView,
+    LoginApiView,
     CustomTokenRefreshView,
-    UserListView, 
+    UserListView,
     UserDetailUpdateDeleteView,
-    ValidarTokenResetView, 
+    ValidarTokenResetView,
     VincularAdministradoraView
 )
 
@@ -21,6 +22,7 @@ urlpatterns = [
     path('refresh/', CustomTokenRefreshView.as_view(), name='token-refresh'),
     path('register/', UserRegistrationAPIView.as_view(), name='user-register'),
     path('me/', CurrentUserView.as_view(), name='current-user'),
+    path('set-administradora-ativa/', SetAdministradoraAtivaView.as_view(), name='set-administradora-ativa'),
     path("password/", PasswordView.as_view(), name="user-password"),
     
     # As rotas abaixo parecem estar faltando no seu urls.py:

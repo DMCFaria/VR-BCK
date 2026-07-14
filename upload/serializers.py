@@ -145,12 +145,9 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         # ========== 1. VALIDAR ADMINISTRADORA ==========
         administradora = None
         if processed_by_user:
-            administradora = getattr(processed_by_user, 'administradora', None)
+            administradora = getattr(processed_by_user, 'administradora_ativa', None)
             
-            if not administradora and hasattr(processed_by_user, 'perfil'):
-                administradora = getattr(processed_by_user.perfil, 'administradora', None)
-            
-            logger.info(f"Administradora do usuário {processed_by_user.email}: {administradora}")
+            logger.info(f"Administradora do usuario {processed_by_user.email}: {administradora}")
         
         if not administradora:
             error_msg = "Usuário não possui administradora vinculada. Verifique o perfil do usuário."

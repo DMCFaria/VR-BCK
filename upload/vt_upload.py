@@ -149,7 +149,7 @@ class UploadVTView(views.APIView):
             if file_obj:
                 original_name = file_obj.name.split('.')[0]
                 user = request.user
-                admin_nome_completo = str(user.administradora)
+                admin_nome_completo = str(user.administradora_ativa)
                 duas_primeiras = " ".join(admin_nome_completo.split()[:2])
                 ext = file_obj.name.split('.')[1]
                 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")

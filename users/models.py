@@ -58,12 +58,19 @@ class CustomUser(AbstractUser):
     primeiro_acesso = models.BooleanField(default=True)
 
     tipo = models.CharField(max_length=3, choices=TYPE_CHOICES, default="adm")
-    administradora = models.ForeignKey(
+    administradoras = models.ManyToManyField(
+        'entidades.Administradora',
+        blank=True,
+        related_name='usuarios',
+        verbose_name="Administradoras"
+    )
+    administradora_ativa = models.ForeignKey(
         'entidades.Administradora',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        verbose_name="Administradora"
+        related_name='usuarios_ativos',
+        verbose_name="Administradora Ativa"
     )
     
     reset_password_token = models.CharField(

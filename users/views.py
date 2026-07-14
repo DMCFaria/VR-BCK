@@ -25,53 +25,49 @@ logger = logging.getLogger(__name__)
 class UserRegistrationAPIView(generics.CreateAPIView):
     """
     Permite o registro de um novo usuário.
-    Agora aceita administradora via payload corretamente.
+    Aceita administradoras (lista de IDs) via payload.
     """
     queryset = CustomUser.objects.all()
     serializer_class = UserRegistrationSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminUserType]
 
     def create(self, request, *args, **kwargs):
-        logger.info(f"📝 Recebendo criação de usuário. Payload: {request.data}")
-        
-        # Garantir que a administradora seja tratada corretamente
-        administradora_id = request.data.get('administradora')
-        
-        if administradora_id:
+        logger.info(f"Recebendo criacao de usuario. Payload: {request.data}")
+
+        administradoras_ids = request.data.get('administradoras', [])
+        administradoras = []
+        for admin_id in administradoras_ids:
             try:
-                administradora = Administradora.objects.get(id=administradora_id)
-                logger.info(f"✅ Administradora encontrada: {administradora.razao_social} (ID: {administradora_id})")
+                administradoras.append(Administradora.objects.get(id=admin_id))
             except Administradora.DoesNotExist:
-                logger.warning(f"⚠️ Administradora ID {administradora_id} não encontrada")
                 return Response(
-                    {"detail": f"Administradora com ID {administradora_id} não encontrada"},
+                    {"detail": f"Administradora com ID {admin_id} nao encontrada"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-        else:
-            administradora = None
-            logger.info("ℹ️ Nenhuma administradora informada")
-        
+
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
-        # 🔐 Gerar senha temporária aleatória (ignora senha enviada pelo frontend)
+
         import secrets
         import string
         alphabet = string.ascii_letters + string.digits
         temporary_password = ''.join(secrets.choice(alphabet) for _ in range(12))
-        
-        # Salvar com a administradora específica e senha temporária
+
         user = serializer.save(
-            administradora=administradora,
-            password=temporary_password,  # Define a senha temporária
-            primeiro_acesso=True  # Marca como primeiro acesso
+            password=temporary_password,
+            primeiro_acesso=True
         )
-        
-        logger.info(f"✅ Usuário criado: {user.email} - Administradora: {administradora.razao_social if administradora else 'Nenhuma'}")
-        
-        # 📧 Enviar email de boas-vindas com as credenciais
+
+        if administradoras:
+            user.administradoras.set(administradoras)
+            user.administradora_ativa = administradoras[0]
+            user.save(update_fields=['administradora_ativa'])
+
+        logger.info(f"Usuario criado: {user.email} - Administradoras: {[a.razao_social for a in administradoras]}")
+
         try:
             fedhub_service = FedhubService()
+            admin_nome = administradoras[0].razao_social if administradoras else None
             email_enviado = fedhub_service.enviar_email_usuario_criado(
                 email=user.email,
                 user=user,
@@ -79,26 +75,18 @@ class UserRegistrationAPIView(generics.CreateAPIView):
                 dados_usuario={
                     'nome': user.nome,
                     'tipo': user.tipo,
-                    'administradora': administradora.razao_social if administradora else None
+                    'administradora': admin_nome
                 }
             )
-            
-            if email_enviado:
-                logger.info(f"📧 Email de boas-vindas enviado para: {user.email}")
-            else:
-                logger.warning(f"⚠️ Falha ao enviar email de boas-vindas para: {user.email}")
-                
         except Exception as e:
-            logger.error(f"❌ Erro ao enviar email de boas-vindas: {str(e)}")
-            # Não interrompe o fluxo - o usuário ainda é criado mesmo se o email falhar
-        
+            logger.error(f"Erro ao enviar email de boas-vindas: {str(e)}")
+            email_enviado = False
+
         headers = self.get_success_headers(serializer.data)
-        
-        # Retorna os dados do usuário incluindo info do email
         response_data = serializer.data
-        response_data['email_enviado'] = email_enviado if 'email_enviado' in locals() else False
+        response_data['email_enviado'] = email_enviado
         response_data['primeiro_acesso'] = True
-        
+
         return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
 
 class CurrentUserView(generics.RetrieveUpdateAPIView):
@@ -139,25 +127,18 @@ class UserListView(generics.ListAPIView):
 
     def get_queryset(self):
         queryset = CustomUser.objects.all()
-        
-        
-        # Filtro por administradora (via query param)
+
         administradora_id = self.request.query_params.get('administradora')
         if administradora_id:
             try:
-                queryset = queryset.filter(administradora_id=int(administradora_id))
-                logger.info(f"Filtrando usuários por administradora ID: {administradora_id}")
+                queryset = queryset.filter(administradoras__id=int(administradora_id))
             except ValueError:
                 pass
-        
-        # Filtro por tipo de usuário
+
         tipo = self.request.query_params.get('tipo')
-        logger.info(self.request.query_params)
-        logger.info(f"Filtrando usuários por tipo: {tipo}")
         if tipo and tipo not in ['fat', 'dev']:
             queryset = queryset.filter(tipo=tipo)
-        
-        logger.info(f"Total de usuários encontrados: {queryset.count()}")
+
         return queryset
 
 class UserDetailUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
@@ -183,7 +164,9 @@ class UserDetailUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
 
 class VincularAdministradoraView(APIView):
     """
-    Endpoint específico para vincular/desvincular um usuário a uma administradora.
+    Endpoint para vincular/desvincular um usuario a uma administradora (M2M).
+    POST com administradora_id = vincula (adiciona a M2M).
+    POST sem administradora_id = desvincula todas.
     """
     permission_classes = [permissions.IsAuthenticated, IsAdminUserType]
 
@@ -191,55 +174,118 @@ class VincularAdministradoraView(APIView):
         try:
             user = CustomUser.objects.get(pk=pk)
             administradora_id = request.data.get('administradora_id')
-            
+
             if administradora_id:
                 try:
                     administradora = Administradora.objects.get(id=administradora_id)
-                    user.administradora = administradora
-                    message = f"Usuário {user.email} vinculado à administradora {administradora.razao_social}"
+                    user.administradoras.add(administradora)
+                    if not user.administradora_ativa:
+                        user.administradora_ativa = administradora
+                        user.save(update_fields=['administradora_ativa'])
+                    message = f"Usuario {user.email} vinculado a administradora {administradora.razao_social}"
                 except Administradora.DoesNotExist:
                     return Response(
-                        {"error": "Administradora não encontrada."},
+                        {"error": "Administradora nao encontrada."},
                         status=status.HTTP_404_NOT_FOUND
                     )
             else:
-                user.administradora = None
-                message = f"Usuário {user.email} desvinculado da administradora"
-            
-            user.save()
-            logger.info(f"✅ {message}")
+                user.administradoras.clear()
+                user.administradora_ativa = None
+                user.save(update_fields=['administradora_ativa'])
+                message = f"Usuario {user.email} desvinculado de todas as administradoras"
+
+            logger.info(message)
             return Response(
                 {"message": message, "administradora_id": administradora_id},
                 status=status.HTTP_200_OK
             )
         except CustomUser.DoesNotExist:
             return Response(
-                {"error": "Usuário não encontrado."},
+                {"error": "Usuario nao encontrado."},
                 status=status.HTTP_404_NOT_FOUND
             )
                   
 class DesvincularAdministradoraView(APIView):
     """
-    Remove o vínculo de um usuário com sua administradora.
+    Remove o vinculo de um usuario com uma administradora especifica (ou todas).
+    POST com administradora_id = remove daquela administradora.
+    POST sem administradora_id = remove de todas.
     """
     permission_classes = [permissions.IsAuthenticated, IsAdminUserType]
 
     def post(self, request, pk):
         try:
             user = CustomUser.objects.get(pk=pk)
-            user.administradora = None
-            user.save()
-            logger.info(f"✅ Usuário {user.email} desvinculado da administradora")
+            administradora_id = request.data.get('administradora_id')
+
+            if administradora_id:
+                try:
+                    administradora = Administradora.objects.get(id=administradora_id)
+                    user.administradoras.remove(administradora)
+                    if user.administradora_ativa_id == administradora.id:
+                        user.administradora_ativa = user.administradoras.first()
+                        user.save(update_fields=['administradora_ativa'])
+                    message = f"Usuario {user.email} desvinculado da administradora {administradora.razao_social}"
+                except Administradora.DoesNotExist:
+                    return Response(
+                        {"error": "Administradora nao encontrada."},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+            else:
+                user.administradoras.clear()
+                user.administradora_ativa = None
+                user.save(update_fields=['administradora_ativa'])
+                message = f"Usuario {user.email} desvinculado de todas as administradoras"
+
+            logger.info(message)
             return Response(
-                {"message": f"Usuário {user.email} desvinculado da administradora com sucesso."},
+                {"message": message},
                 status=status.HTTP_200_OK
             )
         except CustomUser.DoesNotExist:
             return Response(
-                {"error": "Usuário não encontrado."},
+                {"error": "Usuario nao encontrado."},
                 status=status.HTTP_404_NOT_FOUND
             )
             
+class SetAdministradoraAtivaView(APIView):
+    """
+    Define qual administradora esta ativa para o usuario logado.
+    POST { administradora_id: int }
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def post(self, request):
+        user = request.user
+        administradora_id = request.data.get('administradora_id')
+
+        if not administradora_id:
+            return Response(
+                {"detail": "administradora_id e obrigatorio."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not user.administradoras.filter(id=administradora_id).exists():
+            return Response(
+                {"detail": "Voce nao possui acesso a esta administradora."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        user.administradora_ativa_id = administradora_id
+        user.save(update_fields=['administradora_ativa_id'])
+
+        admin = user.administradoras.get(id=administradora_id)
+        return Response({
+            "message": f"Administradora ativa alterada para {admin.razao_social}",
+            "administradora_ativa": {
+                "id": admin.id,
+                "razao_social": admin.razao_social,
+                "nome_fantasia": admin.nome_fantasia,
+            }
+        }, status=status.HTTP_200_OK)
+
+
 class PasswordView(APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
@@ -575,7 +621,7 @@ class ReenviarEmailBoasVindasSelfView(APIView):
             user.primeiro_acesso = True
             user.save()
             
-            administradora_nome = user.administradora.razao_social if user.administradora else None
+            administradora_nome = user.administradora_ativa.razao_social if user.administradora_ativa else None
             
             email_enviado = fedhub_service.enviar_email_usuario_criado(
                 email=user.email,

@@ -40,7 +40,7 @@ class CondominioViewSet(viewsets.ModelViewSet):
             )
             queryset = super().get_queryset().prefetch_related(vinculos_prefetch)
 
-            administradora_id = self.request.user.administradora_id
+            administradora_id = self.request.user.administradora_ativa_id
             cnpj = self.request.query_params.get('cnpj')
 
             if not administradora_id:

@@ -255,7 +255,7 @@ class UltimaImportacaoMovimentacoesView(views.APIView):
 
     def get(self, request):
         user = request.user
-        administradora = getattr(user, 'administradora', None)
+        administradora = getattr(user, 'administradora_ativa', None)
         
         if not administradora:
             return Response(
@@ -359,7 +359,7 @@ class UltimaMovimentacaoDashboard(views.APIView):
     
     def get(self, request):
         user = request.user
-        administradora = getattr(user, 'administradora', None)
+        administradora = getattr(user, 'administradora_ativa', None)
         
         if not administradora:
             return Response(
@@ -489,7 +489,7 @@ class ImportacaoListView(views.APIView):
 
     def get(self, request):
         user = request.user
-        administradora = getattr(user, 'administradora', None)
+        administradora = getattr(user, 'administradora_ativa', None)
 
         if not administradora:
             return Response(
@@ -548,7 +548,7 @@ class ImportacaoDetailView(views.APIView):
 
     def get(self, request, pk):
         user = request.user
-        administradora = getattr(user, 'administradora', None)
+        administradora = getattr(user, 'administradora_ativa', None)
 
         if not administradora:
             return Response(
