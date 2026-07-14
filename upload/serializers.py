@@ -510,6 +510,13 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         movimentacoes_salvas = 0
 
         with transaction.atomic():
+            arquivo_s3_url = None
+            if file_upload_id:
+                try:
+                    arquivo_s3_url = FileUpload.objects.filter(id=file_upload_id).values_list('arquivo_s3', flat=True).first()
+                except Exception:
+                    pass
+
             importacao = Importacao.objects.create(
                 file_upload_id=file_upload_id,
                 usuario=processed_by_user,
@@ -522,7 +529,8 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 data_vencimento=validated_data.get('data_vencimento'),
                 vigencia_inicio=validated_data.get('vigencia_inicio') or validated_data.get('periodo_inicio'),
                 vigencia_fim=validated_data.get('vigencia_fim') or validated_data.get('periodo_fim'),
-                modelo_importacao=modelo_importacao
+                modelo_importacao=modelo_importacao,
+                arquivo_s3=arquivo_s3_url
             )
 
             if movimentacoes_to_create:

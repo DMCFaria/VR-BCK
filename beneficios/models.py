@@ -61,7 +61,7 @@ class Importacao(models.Model):
     total_registros = models.IntegerField(default=0, verbose_name="Total de Registros")
     registros_processados = models.IntegerField(default=0, verbose_name="Registros Processados")
     erros = models.JSONField(default=list, verbose_name="Erros")
-    url = models.URLField(max_length=500, verbose_name="URL", null=True, blank=True)
+    arquivo_s3 = models.CharField(max_length=500, blank=True, null=True, verbose_name="Arquivo S3")
     data_vencimento = models.DateField(verbose_name="Data de Vencimento", null=True, blank=True)
     vigencia_inicio = models.DateField(verbose_name="Início da Vigência", null=True, blank=True)
     vigencia_fim = models.DateField(verbose_name="Fim da Vigência", null=True, blank=True)

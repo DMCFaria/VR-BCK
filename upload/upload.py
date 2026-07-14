@@ -160,22 +160,23 @@ class UploadView(views.APIView):
             upload_instance.save()
 
             if file_obj:
-                # 3. Extrair o nome original (070426001.txt)
                 original_name = file_obj.name.split('.')[0]
                 user = request.user
                 admin_nome_completo = str(user.administradora)
                 duas_primeiras = " ".join(admin_nome_completo.split()[:2])
                 ext = file_obj.name.split('.')[1]
-                # 4. Gerar o timestamp (ex: 20260417-1230)
                 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
                 
-                # 5. Montar o novo nome: RB-070426001.txt-20260417-1230
-                # Dica: se quiser manter a extensão no final, a lógica muda um pouco
                 new_file_name = f"{duas_primeiras}-{file_type}-{original_name}-{timestamp}.{ext}"
+                s3_key = f"VR - DOCS/importacoes/{new_file_name}"
                 
-                # Reposicionar o ponteiro no início do arquivo
                 file_obj.seek(0)
-                s3.upload_fileobj(file_obj, "fedcorp-prod", f"VR - DOCS/importacoes/{new_file_name}")
+                s3.upload_fileobj(file_obj, "fedcorp-prod", s3_key)
+
+                from urllib.parse import quote
+                s3_url = f"https://fedcorp-prod.s3.us-east-2.amazonaws.com/{quote(s3_key)}"
+                upload_instance.arquivo_s3 = s3_url
+                upload_instance.save(update_fields=['arquivo_s3'])
 
             # Remove o arquivo local do disco — já foi processado e está no S3
             if os.path.exists(file_path):

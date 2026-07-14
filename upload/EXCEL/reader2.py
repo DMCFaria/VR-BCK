@@ -188,6 +188,9 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
                         col_produtos[col_idx] = nome
                         break
 
+    vazias_consecutivas = 0
+    MAX_VAZIAS = 20
+
     for row_num, row in enumerate(ben_iter, start=3):
         if not row:
             continue
@@ -198,7 +201,15 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
         data_nasc_raw = row[6] if len(row) > 6 else None
 
         if not cpf_raw and not nome:
+            vazias_consecutivas += 1
+            if vazias_consecutivas >= MAX_VAZIAS:
+                result['errors'].append(
+                    f"Aba 'Beneficiario' vazia ou sem dados após {MAX_VAZIAS} linhas consecutivas sem informações."
+                )
+                return result
             continue
+
+        vazias_consecutivas = 0
 
         erros_linha_atual = []
 

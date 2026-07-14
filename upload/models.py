@@ -23,6 +23,7 @@ class FileUpload(models.Model):
         verbose_name="Status do Processamento"
     )
     summary_data = models.JSONField(blank=True, null=True) 
+    arquivo_s3 = models.CharField(max_length=500, blank=True, null=True, verbose_name="Arquivo S3")
 
     class Meta:
         verbose_name = "Upload de Arquivo"

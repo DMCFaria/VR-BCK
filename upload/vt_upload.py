@@ -155,9 +155,15 @@ class UploadVTView(views.APIView):
                 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
                 
                 new_file_name = f"{duas_primeiras}-VT-{original_name}-{timestamp}.{ext}"
+                s3_key = f"VR - DOCS/importacoes_vt/{new_file_name}"
                 
                 file_obj.seek(0)
-                s3.upload_fileobj(file_obj, "fedcorp-prod", f"VR - DOCS/importacoes_vt/{new_file_name}")
+                s3.upload_fileobj(file_obj, "fedcorp-prod", s3_key)
+
+                from urllib.parse import quote
+                s3_url = f"https://fedcorp-prod.s3.us-east-2.amazonaws.com/{quote(s3_key)}"
+                upload_instance.arquivo_s3 = s3_url
+                upload_instance.save(update_fields=['arquivo_s3'])
 
             # Fecha o arquivo antes de tentar remover
             try:
