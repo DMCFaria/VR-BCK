@@ -85,6 +85,7 @@ class Importacao(models.Model):
         ordering = ['-data_importacao']
         indexes = [
             models.Index(fields=['administradora', 'status'], name='idx_importacao_adm_status'),
+            models.Index(fields=['administradora', '-data_importacao'], name='idx_importacao_adm_data'),
         ]
 
     def __str__(self):

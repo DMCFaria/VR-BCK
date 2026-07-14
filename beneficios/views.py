@@ -5,7 +5,6 @@ from rest_framework import viewsets, views, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from django.db.models import Prefetch
 
 from core.fedhub.services.fedhub_service import FedhubService
 from .models import Produto, MovimentacaoBeneficio, Importacao, Boleto
@@ -483,6 +482,7 @@ class UltimaMovimentacaoDashboard(views.APIView):
 class ImportacaoListView(views.APIView):
     """
     Rota para listar o histórico de importações.
+    Suporta paginação via query params ?page=1&limit=20.
     """
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
@@ -491,45 +491,57 @@ class ImportacaoListView(views.APIView):
         user = request.user
         administradora = getattr(user, 'administradora', None)
 
-        
         if not administradora:
             return Response(
                 {"detail": "Usuário não possui administradora vinculada."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        movimentacoes_qs = MovimentacaoBeneficio.objects.select_related(
-            'empresa_cnpj',
-            'funcionario_cpf',
-            'produto_codigo'
-        )
         if user.tipo == "dev" or user.tipo == "fat":
-            importacoes = Importacao.objects.all().prefetch_related(
-                Prefetch('movimentacoes', queryset=movimentacoes_qs)
+            importacoes = Importacao.objects.select_related(
+                'file_upload', 'usuario', 'administradora'
             ).order_by('-data_importacao')
         else:
-            queryset = Importacao.objects.filter(administradora=administradora)
+            queryset = Importacao.objects.filter(administradora=administradora).select_related(
+                'file_upload', 'usuario', 'administradora'
+            )
             if user.tipo == "adm":
                 queryset = queryset.exclude(usuario__tipo__in=["dep", "dev"])
             if user.tipo == "dep":
                 queryset = queryset.exclude(usuario__tipo__in=["adm", "dev"])
-            importacoes = queryset.prefetch_related(
-                Prefetch('movimentacoes', queryset=movimentacoes_qs)
-            ).order_by('-data_importacao')
+            importacoes = queryset.order_by('-data_importacao')
 
-        serializer = ImportacaoComMovimentacoesSerializer(importacoes, many=True)
+        try:
+            page = max(int(request.query_params.get('page', 1)), 1)
+        except (TypeError, ValueError):
+            page = 1
+        try:
+            limit = min(max(int(request.query_params.get('limit', 20)), 1), 100)
+        except (TypeError, ValueError):
+            limit = 20
 
-        data = serializer.data
+        total = importacoes.count()
+        pages = max((total + limit - 1) // limit, 1)
+        page = min(page, pages)
+        offset = (page - 1) * limit
+        paginated = importacoes[offset:offset + limit]
 
-        logger.debug(f"Dados formatados para resposta: {data}")
+        serializer = ImportacaoComMovimentacoesSerializer(paginated, many=True)
 
-        return Response(data)
+        logger.debug(f"ImportacaoListView: page={page}, limit={limit}, total={total}")
 
+        return Response({
+            'results': serializer.data,
+            'total': total,
+            'page': page,
+            'pages': pages,
+            'limit': limit,
+        })
 
 class ImportacaoDetailView(views.APIView):
     """
     Rota para ver os detalhes de uma importação específica,
-    incluindo as movimentações associadas.
+    incluindo as movimentações associadas (paginadas via ?mov_page=1&mov_limit=100).
     """
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
@@ -548,7 +560,7 @@ class ImportacaoDetailView(views.APIView):
             queryset = Importacao.objects.filter(
                 administradora=administradora,
                 id=pk
-            )
+            ).select_related('file_upload', 'usuario', 'administradora')
             if user.tipo == "adm":
                 queryset = queryset.exclude(usuario__tipo__in=["dep", "dev"])
             if user.tipo == "dep":
@@ -568,7 +580,7 @@ class ImportacaoDetailView(views.APIView):
 
         importacao_serializer = ImportacaoDetailSerializer(importacao)
 
-        movimentacoes = MovimentacaoBeneficio.objects.filter(
+        movimentacoes_qs = MovimentacaoBeneficio.objects.filter(
             importacao=importacao
         ).select_related(
             'empresa_cnpj',
@@ -576,8 +588,24 @@ class ImportacaoDetailView(views.APIView):
             'produto_codigo'
         )
 
+        total_mov = movimentacoes_qs.count()
+
+        try:
+            mov_page = max(int(request.query_params.get('mov_page', 1)), 1)
+        except (TypeError, ValueError):
+            mov_page = 1
+        try:
+            mov_limit = min(max(int(request.query_params.get('mov_limit', 100)), 1), 500)
+        except (TypeError, ValueError):
+            mov_limit = 100
+
+        mov_pages = max((total_mov + mov_limit - 1) // mov_limit, 1)
+        mov_page = min(mov_page, mov_pages)
+        mov_offset = (mov_page - 1) * mov_limit
+        paginated_mov = movimentacoes_qs[mov_offset:mov_offset + mov_limit]
+
         movimentacoes_data = []
-        for mov in movimentacoes:
+        for mov in paginated_mov:
             movimentacoes_data.append({
                 'id': mov.id,
                 'empresa_cnpj': mov.empresa_cnpj.cnpj,
@@ -594,7 +622,10 @@ class ImportacaoDetailView(views.APIView):
         return Response({
             'importacao': importacao_serializer.data,
             'movimentacoes': movimentacoes_data,
-            'total_movimentacoes': len(movimentacoes_data)
+            'total_movimentacoes': total_mov,
+            'mov_page': mov_page,
+            'mov_pages': mov_pages,
+            'mov_limit': mov_limit,
         })
 
 
