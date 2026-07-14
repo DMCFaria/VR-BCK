@@ -16,6 +16,8 @@ COLUNAS_PRODUTO = {
     'Auto': '28',
     'Mobilidade': '28',
     'VR Mobilidade': '28',
+    'Multi Mobilidade': '28',
+    'VR Multi Mobilidade': '28',
     'Cesta': '201',
     'Boas Festas': '202',
     'Auxílio Alimentação': '204',
@@ -101,7 +103,7 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
         return result
 
     try:
-        wb = openpyxl.load_workbook(file_path, data_only=True, read_only=True, keep_vba=False)
+        wb = openpyxl.load_workbook(file_path, data_only=True)
     except Exception as e:
         result['errors'].append(f"Erro ao abrir planilha: {str(e)}")
         return result
@@ -113,10 +115,13 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
     data_disponivel = ''
     for row in ws_sum.iter_rows(min_row=6, max_row=6):
         cells = list(row)
-        if len(cells) >= 15:
-            data_disponivel = _safe_str(cells[14].value or cells[2].value or '')
-        elif len(cells) >= 3:
-            data_disponivel = _safe_str(cells[2].value or '')
+        for cell in cells:
+            val = _safe_str(cell.value)
+            if val:
+                parsed = _parse_date(val)
+                if parsed:
+                    data_disponivel = val
+                    break
 
     result['summary']['data_competencia_arquivo'] = _parse_date(data_disponivel)
 
@@ -179,7 +184,7 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
                 col_produtos[col_idx] = h
             else:
                 for nome, codigo in COLUNAS_PRODUTO.items():
-                    if h.startswith(nome) or nome.startswith(h):
+                    if nome.lower() in h.lower() or h.lower() in nome.lower():
                         col_produtos[col_idx] = nome
                         break
 
