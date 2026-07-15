@@ -172,6 +172,7 @@ def parse_vt_excel(file_path, upload_id):
             "valor_total": 0.0,
             "quantidade_dias": 0,
             "itens": [],
+            "sem_movimentacao": False,
             "endereco_departamento": "",
             "bairro_departamento": "",
             "cidade_departamento": "",
@@ -322,13 +323,13 @@ def parse_vt_excel(file_path, upload_id):
                         logger.warning(f"Erro no item {item_num} linha {linha_num}: {e}")
                         continue
                 
-                # Se não tem itens, registra erro
+                # Se não tem itens, registra funcionário sem movimentação (férias/licença)
                 if not itens:
-                    linhas_com_erro.append({
-                        "linha": linha_num,
-                        "erro": f"Nenhum item válido encontrado (verifique CÓD., QTD., DIAS., VALOR)",
-                        "dados": row.tolist() if len(row) > 0 else []
-                    })
+                    funcionarios_map[funcionario_key]["nome_funcionario"] = nome
+                    funcionarios_map[funcionario_key]["cpf"] = cpf
+                    funcionarios_map[funcionario_key]["cnpj_condominio"] = cnpj_condominio
+                    funcionarios_map[funcionario_key]["condominio"] = nome_condominio
+                    funcionarios_map[funcionario_key]["sem_movimentacao"] = True
                     continue
                 
                 # Atualiza o mapa do funcionário
@@ -409,15 +410,16 @@ def parse_vt_excel(file_path, upload_id):
         
         # Constrói total_por_beneficiario para o frontend
         for key, data in funcionarios_map.items():
-            if data["valor_total"] > 0:
-                total_por_beneficiario.append({
-                    "nome_funcionario": data["nome_funcionario"],
-                    "cpf": data["cpf"],
-                    "cnpj_condominio": data["cnpj_condominio"],
-                    "condominio": data["condominio"],
-                    "valor_total": round(data["valor_total"], 2),
-                    "quantidade_dias": data["quantidade_dias"]
-                })
+            # Inclui funcionários com movimentação E funcionários sem movimentação (férias/licença)
+            total_por_beneficiario.append({
+                "nome_funcionario": data["nome_funcionario"],
+                "cpf": data["cpf"],
+                "cnpj_condominio": data["cnpj_condominio"],
+                "condominio": data["condominio"],
+                "valor_total": round(data["valor_total"], 2),
+                "quantidade_dias": data["quantidade_dias"],
+                "sem_movimentacao": data.get("sem_movimentacao", False)
+            })
         
         result = {
             "dados_validados": dados_validados,
