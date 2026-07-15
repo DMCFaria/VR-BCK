@@ -16,6 +16,37 @@ from entidades.models import Condominio, Funcionario, Administradora, VinculoCon
 from beneficios.models import MovimentacaoBeneficio, Produto, Importacao, Boleto
 
 
+def calcular_taxa(valor_beneficio, quantidade_dias, vinculo=None, administradora=None):
+    """
+    Calcula a taxa de faturamento para um funcionário.
+    
+    Regras:
+    - Se não houver vínculo, retorna 0 (não faturado)
+    - Se o vínculo usar_taxa_padrao=True, usa a taxa da administração
+    - Se usar_taxa_padrao=False, usa a taxa específica do vínculo
+    - Tipo PERC: valor_beneficio * (taxa_valor / 100)
+    - Tipo FIXO: taxa_valor * quantidade_dias
+    """
+    if not vinculo:
+        return Decimal('0.00')
+    
+    # Define qual taxa usar
+    if vinculo.usar_taxa_padrao:
+        if not administradora:
+            administradora = vinculo.administradora
+        tipo = administradora.taxa_padrao_tipo
+        valor = administradora.taxa_padrao_valor
+    else:
+        tipo = vinculo.taxa_tipo
+        valor = vinculo.taxa_valor
+    
+    # Calcula a taxa
+    if tipo == 'PERC':
+        return round(valor_beneficio * (valor / Decimal('100')), 2)
+    else:  # FIXO
+        return round(valor * quantidade_dias, 2)
+
+
 def gerar_txt_compra(administradora_cnpj, data_competencia=None, movimentacao_ids=None):
     """
     Gera o arquivo txt_compra para envio à VR Benefícios.
@@ -227,6 +258,8 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
     """
     query = MovimentacaoBeneficio.objects.select_related(
         'empresa_cnpj', 'funcionario_cpf', 'produto_codigo'
+    ).prefetch_related(
+        'empresa_cnpj__vinculocondominio__administradora'
     )
 
     if importacao_id:
@@ -263,6 +296,18 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
         
         produto_display = prod.nome if prod.nome else prod.get_tipo_display_or_codigo()
 
+        # Busca o vínculo entre o condomínio e a administradora
+        vinculo = cond.vinculocondominio.first()
+        administradora = vinculo.administradora if vinculo else None
+        
+        # Calcula a taxa
+        taxa = calcular_taxa(
+            valor_beneficio=mov.valor_beneficio,
+            quantidade_dias=mov.quantidade_dias,
+            vinculo=vinculo,
+            administradora=administradora
+        )
+
         dados.append({
             'CPF': func.cpf,
             'NOME_FUNC': func.nome,
@@ -284,7 +329,7 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
             'CIDADE': cond.cidade or '',
             'UF': cond.estado or '',
             'CEP': cond.cep or '',
-            'TAXA': None,
+            'TAXA': float(taxa),
             'vencimento': datos_periodo,
             'periodos': periodos.split('-')[0],
             'periodo2': periodos.split('-')[1]

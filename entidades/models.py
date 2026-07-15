@@ -2,6 +2,11 @@ from django.db import models
 
 
 class Administradora(models.Model):
+    TIPO_TAXA_CHOICES = [
+        ('PERC', 'Percentual (%)'),
+        ('FIXO', 'Valor Fixo (R$)'),
+    ]
+
     cnpj = models.CharField(max_length=20, unique=True, verbose_name="CNPJ")
     razao_social = models.CharField(max_length=255, verbose_name="Nome/Razão Social")
     nome_fantasia = models.CharField(max_length=255, verbose_name="Nome Fantasia", null=True, blank=True)
@@ -18,6 +23,20 @@ class Administradora(models.Model):
     d_mais = models.PositiveSmallIntegerField(
         default=3,
         verbose_name="D+"
+    )
+
+    # Taxa padrão da administradora
+    taxa_padrao_tipo = models.CharField(
+        max_length=4,
+        choices=TIPO_TAXA_CHOICES,
+        default='PERC',
+        verbose_name="Tipo da Taxa Padrão"
+    )
+    taxa_padrao_valor = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        verbose_name="Valor da Taxa Padrão"
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -50,6 +69,11 @@ class Gerente(models.Model):
 
 
 class VinculoCondominio(models.Model):
+    TIPO_TAXA_CHOICES = [
+        ('PERC', 'Percentual (%)'),
+        ('FIXO', 'Valor Fixo (R$)'),
+    ]
+
     administradora = models.ForeignKey(
         Administradora,
         on_delete=models.CASCADE,
@@ -66,6 +90,25 @@ class VinculoCondominio(models.Model):
         verbose_name="Gerentes",
         related_name='vinculos'
     )
+
+    # Configuração de taxa específica deste vínculo
+    usar_taxa_padrao = models.BooleanField(
+        default=True,
+        verbose_name="Usar Taxa Padrão da Administradora"
+    )
+    taxa_tipo = models.CharField(
+        max_length=4,
+        choices=TIPO_TAXA_CHOICES,
+        default='PERC',
+        verbose_name="Tipo da Taxa"
+    )
+    taxa_valor = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        verbose_name="Valor da Taxa"
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
