@@ -259,7 +259,7 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
     query = MovimentacaoBeneficio.objects.select_related(
         'empresa_cnpj', 'funcionario_cpf', 'produto_codigo'
     ).prefetch_related(
-        'empresa_cnpj__vinculocondominio__administradora'
+        'empresa_cnpj__vinculocondominio_set__administradora'
     )
 
     if importacao_id:
@@ -297,7 +297,7 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
         produto_display = prod.nome if prod.nome else prod.get_tipo_display_or_codigo()
 
         # Busca o vínculo entre o condomínio e a administradora
-        vinculo = cond.vinculocondominio.first()
+        vinculo = cond.vinculocondominio_set.first()
         administradora = vinculo.administradora if vinculo else None
         
         # Calcula a taxa
