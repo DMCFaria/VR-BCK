@@ -191,6 +191,11 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
     for row_num, row in enumerate(ben_iter, start=3):
         if not row:
             continue
+
+        # Pular linhas completamente vazias (memória do Excel)
+        if all(v is None or str(v).strip() == '' for v in row):
+            continue
+
         cpf_raw = _safe_str(row[0] if len(row) > 0 else '')
         codigo_local = _safe_str(row[1] if len(row) > 1 else '')
         matricula = _safe_str(row[3] if len(row) > 3 else '')
