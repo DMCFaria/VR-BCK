@@ -108,6 +108,7 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
     origem = serializers.CharField(required=False, default='importacao_faturamento')
     status = serializers.CharField(required=False, default='PARSED')
     detail = serializers.CharField(required=False)
+    dados_modificados = serializers.JSONField(required=False, allow_null=True, default=None)
 
     def validate(self, data):
         if not data.get('file_upload_id') and not data.get('importacao_id'):

@@ -24,6 +24,7 @@ class FileUpload(models.Model):
     )
     summary_data = models.JSONField(blank=True, null=True) 
     arquivo_s3 = models.CharField(max_length=500, blank=True, null=True, verbose_name="Arquivo S3")
+    arquivo_s3_editado = models.CharField(max_length=500, blank=True, null=True, verbose_name="Arquivo S3 Editado")
 
     class Meta:
         verbose_name = "Upload de Arquivo"

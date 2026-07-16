@@ -16,6 +16,47 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
+
+def _gerar_e_upload_planilha_editada(file_upload, dados_modificados, data_competencia, request_user):
+    """Gera planilha editada e faz upload para S3."""
+    import boto3
+    from datetime import datetime
+    from urllib.parse import quote
+    from .gerar_planilha_editada import gerar_planilha_vr
+
+    try:
+        planilha_bytes = gerar_planilha_vr(dados_modificados, data_competencia)
+
+        s3 = boto3.client(
+            's3',
+            aws_access_key_id=getattr(settings, 'ACCESS_KEY_S3', ''),
+            aws_secret_access_key=getattr(settings, 'SECRET_KEY_S3', ''),
+            region_name='us-east-2'
+        )
+
+        original_name = file_upload.file.name.split('.')[0] if file_upload.file else 'importacao'
+        user = request_user
+        admin_nome_completo = str(user.administradora_ativa) if user.administradora_ativa else 'SISTEMA'
+        duas_primeiras = " ".join(admin_nome_completo.split()[:2])
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+
+        new_file_name = f"{duas_primeiras}-EDITADO-{original_name}-{timestamp}.xlsx"
+        s3_key = f"VR - DOCS/importacoes/editadas/{new_file_name}"
+
+        s3.upload_fileobj(planilha_bytes, "fedcorp-prod", s3_key)
+
+        s3_url = f"https://fedcorp-prod.s3.us-east-2.amazonaws.com/{quote(s3_key)}"
+
+        file_upload.arquivo_s3_editado = s3_url
+        file_upload.save(update_fields=['arquivo_s3_editado'])
+
+        logger.info(f"Planilha editada salva em: {s3_url}")
+        return s3_url
+
+    except Exception as e:
+        logger.error(f"Erro ao gerar/upload planilha editada: {traceback.format_exc()}")
+        return None
+
 class ConfirmationView(views.APIView):
     permission_classes = [IsAuthenticated] 
     authentication_classes = [JWTAuthentication]
@@ -26,6 +67,7 @@ class ConfirmationView(views.APIView):
         
         file_id = payload.get("file_upload_id")
         importacao_id = payload.get("importacao_id")
+        dados_modificados = payload.get("dados_modificados")
 
         if not file_id and not importacao_id:
             logger.warning("É obrigatório informar 'file_upload_id' ou 'importacao_id'.")
@@ -76,6 +118,29 @@ class ConfirmationView(views.APIView):
                 else:
                     arquivo_nome = "Faturamento_Repetido.xlsx" if importacao_id else "arquivo.xlsx"
 
+                # Gerar planilha editada se dados_modificados foram enviados
+                arquivo_s3_editado_url = None
+                if dados_modificados and file_upload:
+                    data_competencia = None
+                    if competencia_mes and competencia_ano:
+                        from datetime import datetime
+                        try:
+                            data_competencia = datetime(int(competencia_ano), int(competencia_mes), 1).date()
+                        except Exception:
+                            pass
+
+                    arquivo_s3_editado_url = _gerar_e_upload_planilha_editada(
+                        file_upload=file_upload,
+                        dados_modificados=dados_modificados,
+                        data_competencia=data_competencia,
+                        request_user=request.user
+                    )
+
+                    # Atualizar Importacao com URL do arquivo editado
+                    if arquivo_s3_editado_url:
+                        importacao.arquivo_s3_editado = arquivo_s3_editado_url
+                        importacao.save(update_fields=['arquivo_s3_editado'])
+
                 logger.info(f"Dados para email - file_upload_id: {file_id}, total_condominios: {total_condominios}, total_funcionarios: {total_funcionarios}, total_movimentacoes: {total_movimentacoes}, valor_total: {valor_total}, competencia: {competencia_str}, tipo_processamento: {tipo_display}")
 
                 fedhub_service = FedhubService()
@@ -104,13 +169,21 @@ class ConfirmationView(views.APIView):
                 )
                 logger.info(f"Email de notificação enviado para {email_faturamento}: {email_enviado}")
                 
-                return Response({
+                response_data = {
                     "detail": "Dados gravados com sucesso.",
                     "registros_processados": result.get("count"),
                     "importacao_id": result.get("importacao_id"),
                     "status": "AGUARDANDO_FATURAMENTO",
                     "email_enviado": email_enviado
-                }, status=status.HTTP_200_OK)
+                }
+
+                if arquivo_s3_editado_url:
+                    response_data["arquivo_s3_editado"] = arquivo_s3_editado_url
+
+                if file_upload and file_upload.arquivo_s3:
+                    response_data["arquivo_s3_original"] = file_upload.arquivo_s3
+
+                return Response(response_data, status=status.HTTP_200_OK)
                 
             except Exception as e:
                 logger.error(f"Erro ao confirmar faturamento: {traceback.format_exc()}")
