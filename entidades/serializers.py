@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Condominio, Funcionario, Administradora, VinculoCondominio, Gerente
+from .models import Condominio, Funcionario, Administradora, VinculoCondominio, Gerente, TaxaConfig
 
 
 class CondominioSerializer(serializers.ModelSerializer):
@@ -104,6 +104,11 @@ class VinculoCondominioSerializer(serializers.ModelSerializer):
     administradora_nome = serializers.CharField(source='administradora.nome', read_only=True)
     administradora_cnpj = serializers.CharField(source='administradora.cnpj', read_only=True)
     gerentes_detalhes = GerenteSerializer(source='gerentes', many=True, read_only=True)
+    taxas_config = serializers.SerializerMethodField(read_only=True)
+
+    def get_taxas_config(self, obj):
+        taxas = obj.taxas_config.all()
+        return TaxaConfigSerializer(taxas, many=True).data
 
     class Meta:
         model = VinculoCondominio
@@ -117,9 +122,33 @@ class VinculoCondominioSerializer(serializers.ModelSerializer):
             'administradora_cnpj',
             'gerentes',
             'gerentes_detalhes',
-            'usar_taxa_padrao',
-            'taxa_tipo',
-            'taxa_valor',
+            'taxas_config',
             'created_at'
         ]
         read_only_fields = ['created_at']
+
+
+class TaxaConfigSerializer(serializers.ModelSerializer):
+    vinculo_display = serializers.SerializerMethodField(read_only=True)
+    produto_nome = serializers.CharField(source='produto.nome', read_only=True, default=None)
+    produto_codigo = serializers.CharField(source='produto.codigo_produto', read_only=True, default=None)
+
+    def get_vinculo_display(self, obj):
+        return str(obj.vinculo)
+
+    class Meta:
+        model = TaxaConfig
+        fields = [
+            'id',
+            'vinculo',
+            'vinculo_display',
+            'produto',
+            'produto_nome',
+            'produto_codigo',
+            'taxa_tipo',
+            'taxa_valor',
+            'ativo',
+            'created_at',
+            'updated_at'
+        ]
+        read_only_fields = ['created_at', 'updated_at']

@@ -69,11 +69,6 @@ class Gerente(models.Model):
 
 
 class VinculoCondominio(models.Model):
-    TIPO_TAXA_CHOICES = [
-        ('PERC', 'Percentual (%)'),
-        ('FIXO', 'Valor Fixo (R$)'),
-    ]
-
     administradora = models.ForeignKey(
         Administradora,
         on_delete=models.CASCADE,
@@ -91,24 +86,6 @@ class VinculoCondominio(models.Model):
         related_name='vinculos'
     )
 
-    # Configuração de taxa específica deste vínculo
-    usar_taxa_padrao = models.BooleanField(
-        default=True,
-        verbose_name="Usar Taxa Padrão da Administradora"
-    )
-    taxa_tipo = models.CharField(
-        max_length=4,
-        choices=TIPO_TAXA_CHOICES,
-        default='PERC',
-        verbose_name="Tipo da Taxa"
-    )
-    taxa_valor = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=0,
-        verbose_name="Valor da Taxa"
-    )
-
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -124,6 +101,62 @@ class VinculoCondominio(models.Model):
 
     def __str__(self):
         return f"{self.administradora.razao_social} - {self.condominio.nome}"
+
+
+class TaxaConfig(models.Model):
+    TIPO_TAXA_CHOICES = [
+        ('PERC', 'Percentual (%)'),
+        ('FIXO', 'Valor Fixo (R$)'),
+    ]
+
+    vinculo = models.ForeignKey(
+        VinculoCondominio,
+        on_delete=models.CASCADE,
+        verbose_name="Vínculo",
+        related_name='taxas_config'
+    )
+    produto = models.ForeignKey(
+        'beneficios.Produto',
+        on_delete=models.CASCADE,
+        verbose_name="Produto",
+        null=True,
+        blank=True,
+        help_text="Se vazio, aplica a todos os produtos deste vínculo"
+    )
+    taxa_tipo = models.CharField(
+        max_length=4,
+        choices=TIPO_TAXA_CHOICES,
+        default='PERC',
+        verbose_name="Tipo da Taxa"
+    )
+    taxa_valor = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        verbose_name="Valor da Taxa"
+    )
+    ativo = models.BooleanField(
+        default=True,
+        verbose_name="Ativo"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Configuração de Taxa"
+        verbose_name_plural = "Configurações de Taxas"
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['vinculo', 'produto'],
+                name='unique_vinculo_produto'
+            )
+        ]
+
+    def __str__(self):
+        produto_nome = self.produto.nome if self.produto else "Todos os produtos"
+        return f"{self.vinculo} - {produto_nome} ({self.get_taxa_tipo_display()})"
 
 
 class Condominio(models.Model):
