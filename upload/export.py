@@ -775,7 +775,16 @@ class ExportFaturamentoView(views.APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        dados = gerar_faturamento(importacao_id=importacao_id)
+        try:
+            dados = gerar_faturamento(importacao_id=importacao_id)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Erro ao gerar dados de faturamento: {str(e)}", exc_info=True)
+            return Response(
+                {'detail': f'Erro ao gerar dados de faturamento: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
         if not dados:
             return Response(

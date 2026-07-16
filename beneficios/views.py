@@ -550,21 +550,26 @@ class ImportacaoDetailView(views.APIView):
         user = request.user
         administradora = getattr(user, 'administradora_ativa', None)
 
-        if not administradora:
+        if user.tipo not in ("dev", "fat") and not administradora:
             return Response(
                 {"detail": "Usuário não possui administradora vinculada."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         try:
-            queryset = Importacao.objects.filter(
-                administradora=administradora,
-                id=pk
-            ).select_related('file_upload', 'usuario', 'administradora')
-            if user.tipo == "adm":
-                queryset = queryset.exclude(usuario__tipo__in=["dep", "dev"])
-            if user.tipo == "dep":
-                queryset = queryset.exclude(usuario__tipo__in=["adm", "dev"])
+            if user.tipo in ("dev", "fat"):
+                queryset = Importacao.objects.filter(
+                    id=pk
+                ).select_related('file_upload', 'usuario', 'administradora')
+            else:
+                queryset = Importacao.objects.filter(
+                    administradora=administradora,
+                    id=pk
+                ).select_related('file_upload', 'usuario', 'administradora')
+                if user.tipo == "adm":
+                    queryset = queryset.exclude(usuario__tipo__in=["dep", "dev"])
+                if user.tipo == "dep":
+                    queryset = queryset.exclude(usuario__tipo__in=["adm", "dev"])
             importacao = queryset.first()
 
             if not importacao:
