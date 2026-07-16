@@ -12,6 +12,7 @@ class Importacao(models.Model):
         ('PROCESSING', 'Processando'),
         ('AGUARDANDO_FATURAMENTO', 'Aguardando Faturamento'),
         ('FATURADO', 'Faturado'),
+        ('COMPRADO', 'Comprado'),
         ('CANCELADO', 'Cancelado'),
         ('COMPLETED', 'Concluída'),
         ('FAILED', 'Falhou'),

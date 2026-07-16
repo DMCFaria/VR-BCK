@@ -68,6 +68,7 @@ class AlterarStatusImportacaoView(views.APIView):
             'aprovado': 'APROVADO',
             'em_faturamento': 'EM_FATURAMENTO',
             'faturado': 'FATURADO',
+            'comprado': 'COMPRADO',
             'cancelado': 'CANCELADO',
         }
         
