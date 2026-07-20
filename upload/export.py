@@ -1,9 +1,18 @@
 import io
 import re
+import unicodedata
 from datetime import date, timedelta, datetime
 from decimal import Decimal
 
 import pandas as pd
+
+
+def remover_acentos(texto):
+    """Remove acentos e caracteres especiais, convertendo para ASCII."""
+    if not texto:
+        return texto
+    nfkd = unicodedata.normalize('NFKD', texto)
+    return ''.join(c for c in nfkd if not unicodedata.combining(c))
 from django.db.models import Sum
 from django.http import HttpResponse
 from django.utils import timezone
@@ -74,7 +83,7 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None, movimentacao_id
         f"00"  # TipoRec (2)
         f"011"  # Versao (3)
         f"{administradora_cnpj.zfill(14)}"  # CNPJ/Código Cliente (14)
-        f"{admin.razao_social[:40]:<40}"  # Razão Social Cliente (40)
+        f"{remover_acentos(admin.razao_social)[:40]:<40}"  # Razão Social Cliente (40)
         f"{' ' * 282}"  # FILLER (282)
         f"{str(seq).zfill(9)}"  # Número da linha (9)
     )
@@ -97,6 +106,11 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None, movimentacao_id
     for vinculo in vinculos:
         condominio = vinculo.condominio
 
+        # Buscar gerentes do vínculo
+        gerentes = vinculo.gerentes.all()
+        nomes_gerentes = [remover_acentos(g.nome or '') for g in gerentes if g.nome][:3]
+        gerentes_str = '/'.join(nomes_gerentes)[:30] if nomes_gerentes else ''
+
         # Local Entrega (TipoRec 10)
         numero_condo = str(condominio.numero or '').strip()
         if not numero_condo:
@@ -105,16 +119,16 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None, movimentacao_id
             f"10"
             f"{administradora_cnpj.zfill(14)}"
             f"{condominio.cnpj[:30]:<30}"
-            f"{condominio.nome[:80]:<80}"
-            f"{'AV'[:20]:<20}"
-            f"{(condominio.endereco or '')[:40]:<40}"
-            f"{numero_condo[:6]:<6}"
-            f"{(condominio.complemento or '')[:20]:<20}"
-            f"{(condominio.bairro or '')[:30]:<30}"
-            f"{(condominio.cidade or '')[:30]:<30}"
+            f"{remover_acentos(condominio.nome)[:80]:<80}"
+            f"{'AVENIDA'[:20]:<20}"
+            f"{remover_acentos(condominio.endereco or '')[:40]:<40}"
+            f"{numero_condo.zfill(6)[:6]:<6}"
+            f"{remover_acentos(condominio.complemento or '')[:20]:<20}"
+            f"{remover_acentos(condominio.bairro or '')[:30]:<30}"
+            f"{remover_acentos(condominio.cidade or '')[:30]:<30}"
             f"{(condominio.estado or '')[:2]:<2}"
             f"{(condominio.cep or '').replace('-', '')[:8]:<8}"
-            f"{' ' * 30}"
+            f"{gerentes_str[:30]:<30}"
             f"{' ' * 29}"
             f"{str(seq).zfill(9)}"
         )
@@ -122,13 +136,15 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None, movimentacao_id
         seq += 1
 
         # Associação CNPJ ao Local Entrega (TipoRec 11)
+        # Se cartao_admin=True, entrega na administradora; senão, no condomínio
+        nome_entrega = remover_acentos(admin.razao_social if admin.cartao_admin else condominio.nome)
         linha_assoc = (
             f"11"
             f"{administradora_cnpj.zfill(14)}"
             f"{condominio.cnpj[:30]:<30}"
             f"{administradora_cnpj.zfill(14)}"
-            f"{admin.razao_social[:24]:<24}"
-            f"{'vr@grupofedcorp.com.br'[:70]:<70}"
+            f"{nome_entrega[:24]:<24}"
+            f"{'VR@GRUPOFEDCOPR.COM.BR'[:70]:<70}"
             f"{' ' * 187}"
             f"{str(seq).zfill(9)}"
         )
@@ -136,10 +152,9 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None, movimentacao_id
         seq += 1
 
         # Responsáveis pelo Local de Entrega (TipoRec 12)
-        gerentes = vinculo.gerentes.all()
-        emails_gerentes = [g.email for g in gerentes if g.email][:3]
+        emails_gerentes = [g.email.upper() for g in gerentes if g.email][:3]
         if not emails_gerentes:
-            emails_gerentes = ['vr@grupofedcorp.com.br']
+            emails_gerentes = ['VR@GRUPOFEDCOPR.COM.BR']
 
         email1 = emails_gerentes[0][:60] if len(emails_gerentes) > 0 else ' ' * 60
         email2 = emails_gerentes[1][:60] if len(emails_gerentes) > 1 else email1
@@ -198,7 +213,7 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None, movimentacao_id
             f"{cond.cnpj[:30]:<30}"
             f"{' ' * 12}"
             f"CONDOMINIO"
-            f"{func.nome[:40]:<40}"
+            f"{remover_acentos(func.nome)[:40]:<40}"
             f"{' '[:24]:<24}"
             f"{data_nasc}"
             f"{' ' * 187}"
@@ -470,7 +485,7 @@ class ExportTxtCompraView(views.APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        response = HttpResponse(txt_content, content_type='text/plain; charset=utf-8')
+        response = HttpResponse(txt_content.encode('latin-1', errors='replace'), content_type='text/plain; charset=iso-8859-1')
         response['Content-Disposition'] = f'attachment; filename="PEDIDO_VR_{date.today().strftime("%Y%m%d")}.txt"'
         return response
 
