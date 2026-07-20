@@ -18,14 +18,27 @@ logger = logging.getLogger(__name__)
 
 
 def _gerar_e_upload_planilha_editada(file_upload, dados_modificados, data_competencia, request_user):
-    """Gera planilha editada e faz upload para S3."""
+    """Baixa planilha original do S3, edita os dados e reupload como editada."""
     import boto3
+    import tempfile
+    import os
     from datetime import datetime
-    from urllib.parse import quote
-    from .gerar_planilha_editada import gerar_planilha_vr
+    from urllib.parse import quote, urlparse
+    from .gerar_planilha_editada import editar_planilha_original
 
+    tmp_path = None
     try:
-        planilha_bytes = gerar_planilha_vr(dados_modificados, data_competencia)
+        logger.info(f"[PLANILHA_EDITADA] Iniciando edição - file_upload_id: {file_upload.id}")
+        logger.info(f"[PLANILHA_EDITADA] dados_modificados recebidos: {bool(dados_modificados)}")
+        logger.info(f"[PLANILHA_EDITADA] data_competencia: {data_competencia}")
+
+        if not dados_modificados:
+            logger.warning("[PLANILHA_EDITADA] dados_modificados está vazio ou nulo")
+            return None
+
+        if not file_upload.arquivo_s3:
+            logger.warning("[PLANILHA_EDITADA] arquivo_s3 não encontrado no file_upload")
+            return None
 
         s3 = boto3.client(
             's3',
@@ -34,28 +47,63 @@ def _gerar_e_upload_planilha_editada(file_upload, dados_modificados, data_compet
             region_name='us-east-2'
         )
 
+        s3_url = file_upload.arquivo_s3
+        parsed_url = urlparse(s3_url)
+        s3_key_original = parsed_url.path.lstrip('/')
+        bucket_name = parsed_url.netloc.split('.')[0]
+
+        logger.info(f"[PLANILHA_EDITADA] Baixando arquivo original do S3 - bucket: {bucket_name}, key: {s3_key_original}")
+
+        original_ext = os.path.splitext(s3_key_original)[1] or '.xlsm'
+        with tempfile.NamedTemporaryFile(suffix=original_ext, delete=False) as tmp:
+            tmp_path = tmp.name
+            s3.download_file(bucket_name, s3_key_original, tmp_path)
+
+        logger.info(f"[PLANILHA_EDITADA] Arquivo original baixado para: {tmp_path}")
+
+        planilha_bytes = editar_planilha_original(tmp_path, dados_modificados, data_competencia)
+
+        if not planilha_bytes:
+            logger.error("[PLANILHA_EDITADA] editar_planilha_original retornou None")
+            return None
+
+        logger.info(f"[PLANILHA_EDITADA] Planilha editada com sucesso")
+
         original_name = file_upload.file.name.split('.')[0] if file_upload.file else 'importacao'
         user = request_user
         admin_nome_completo = str(user.administradora_ativa) if user.administradora_ativa else 'SISTEMA'
         duas_primeiras = " ".join(admin_nome_completo.split()[:2])
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
 
-        new_file_name = f"{duas_primeiras}-EDITADO-{original_name}-{timestamp}.xlsx"
-        s3_key = f"VR - DOCS/importacoes/editadas/{new_file_name}"
+        new_file_name = f"{duas_primeiras}-EDITADO-{original_name}-{timestamp}{original_ext}"
+        s3_key_editado = f"VR - DOCS/importacoes/editadas/{new_file_name}"
 
-        s3.upload_fileobj(planilha_bytes, "fedcorp-prod", s3_key)
+        logger.info(f"[PLANILHA_EDITADA] Fazendo upload para S3 - key: {s3_key_editado}")
 
-        s3_url = f"https://fedcorp-prod.s3.us-east-2.amazonaws.com/{quote(s3_key)}"
+        planilha_bytes.seek(0)
+        s3.upload_fileobj(planilha_bytes, "fedcorp-prod", s3_key_editado)
 
-        file_upload.arquivo_s3_editado = s3_url
+        s3_url_editado = f"https://fedcorp-prod.s3.us-east-2.amazonaws.com/{quote(s3_key_editado)}"
+        logger.info(f"[PLANILHA_EDITADA] Upload concluído - URL: {s3_url_editado}")
+
+        file_upload.arquivo_s3_editado = s3_url_editado
         file_upload.save(update_fields=['arquivo_s3_editado'])
+        logger.info(f"[PLANILHA_EDITADA] URL salva no banco de dados")
 
-        logger.info(f"Planilha editada salva em: {s3_url}")
-        return s3_url
+        return s3_url_editado
 
     except Exception as e:
-        logger.error(f"Erro ao gerar/upload planilha editada: {traceback.format_exc()}")
+        logger.error(f"[PLANILHA_EDITADA] Erro ao editar/upload planilha: {str(e)}")
+        logger.error(f"[PLANILHA_EDITADA] Traceback: {traceback.format_exc()}")
         return None
+
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+                logger.info(f"[PLANILHA_EDITADA] Arquivo temporário removido: {tmp_path}")
+            except Exception:
+                pass
 
 class ConfirmationView(views.APIView):
     permission_classes = [IsAuthenticated] 
@@ -68,6 +116,7 @@ class ConfirmationView(views.APIView):
         file_id = payload.get("file_upload_id")
         importacao_id = payload.get("importacao_id")
         dados_modificados = payload.get("dados_modificados")
+        condominios_data = payload.get("condominios")
 
         if not file_id and not importacao_id:
             logger.warning("É obrigatório informar 'file_upload_id' ou 'importacao_id'.")
@@ -120,7 +169,15 @@ class ConfirmationView(views.APIView):
 
                 # Gerar planilha editada se dados_modificados foram enviados
                 arquivo_s3_editado_url = None
+                logger.info(f"[CONFIRMACAO] Verificando dados_modificados: {bool(dados_modificados)}")
+                logger.info(f"[CONFIRMACAO] Verificando file_upload: {bool(file_upload)}")
+                
+                if not dados_modificados and condominios_data:
+                    dados_modificados = {"condominios": condominios_data}
+                    logger.info("[CONFIRMACAO] dados_modificados não enviado, usando condominios como fallback")
+                
                 if dados_modificados and file_upload:
+                    logger.info(f"[CONFIRMACAO] Iniciando geração de planilha editada")
                     data_competencia = None
                     if competencia_mes and competencia_ano:
                         from datetime import datetime
@@ -135,11 +192,15 @@ class ConfirmationView(views.APIView):
                         data_competencia=data_competencia,
                         request_user=request.user
                     )
+                    logger.info(f"[CONFIRMACAO] URL da planilha editada: {arquivo_s3_editado_url}")
 
                     # Atualizar Importacao com URL do arquivo editado
                     if arquivo_s3_editado_url:
                         importacao.arquivo_s3_editado = arquivo_s3_editado_url
                         importacao.save(update_fields=['arquivo_s3_editado'])
+                        logger.info(f"[CONFIRMACAO] URL salva na importacao")
+                    else:
+                        logger.warning(f"[CONFIRMACAO] URL da planilha editada é None")
 
                 logger.info(f"Dados para email - file_upload_id: {file_id}, total_condominios: {total_condominios}, total_funcionarios: {total_funcionarios}, total_movimentacoes: {total_movimentacoes}, valor_total: {valor_total}, competencia: {competencia_str}, tipo_processamento: {tipo_display}")
 

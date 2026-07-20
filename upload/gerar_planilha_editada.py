@@ -1,154 +1,137 @@
 import io
-import re
+import os
+import logging
 from datetime import datetime
 from decimal import Decimal
 
 import openpyxl
-from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+
+logger = logging.getLogger(__name__)
+
+COLUNAS_PRODUTO = {
+    'Refeição': '207', 'Multi Refeição': '207', 'Alimentação': '27',
+    'Multi Alimentação': '27', 'Auto': '28', 'Mobilidade': '28',
+    'VR Mobilidade': '28', 'Multi Mobilidade': '28', 'VR Multi Mobilidade': '28',
+    'Cesta': '201', 'Boas Festas': '202', 'Auxílio Alimentação': '204',
+    'Multi Auxílio Alimentação': '204', 'Auxílio Refeição': '207',
+    'Multi Auxílio Refeição': '207', 'Multibenefício': '207', 'Multibenefícios': '207',
+    'Auxílio VR+VA': '207', 'Multi Auxílio VR+VA': '207', 'Multi Premiação': '207',
+    'VR Refeição': '207', 'VR Alimentação': '27', 'VR Auto': '28',
+    'VR Alimentação Cesta': '201', 'VR Boas Festas': '202', 'VR Auxílio Alimentação': '204',
+    'VR Auxílio Refeição': '207', 'VR Multibenefícios': '207', 'VR+VA': '207',
+    'VR Multi Refeição': '207', 'VR Multi Alimentação': '27',
+    'VR Multi Alimentação Valor do crédito': '27',
+    'VR Multi Refeição Auxílio': '207', 'VR Multi Alimentação Auxílio': '204',
+    'VR Multi VR+VA': '207',
+}
 
 
-def gerar_planilha_vr(dados_modificados, data_competencia=None):
+def editar_planilha_original(file_path, dados_modificados, data_competencia=None):
     """
-    Gera planilha no formato VR Template com dados modificados pelo frontend.
-
-    dados_modificados: {
-        "condominios": [
-            {
-                "cnpj": "...", "nome": "...", "rua": "...", "numero": "...",
-                "complemento": "...", "bairro": "...", "cidade": "...",
-                "estado": "...", "cep": "...",
-                "funcionarios": [
-                    {
-                        "cpf": "...", "nome": "...", "matricula": "...",
-                        "data_nascimento": "...", "sexo": "...",
-                        "movimentacoes": [
-                            {"produto": "...", "codigo_produto": "...", "valor": 35.00}
-                        ]
-                    }
-                ]
-            }
-        ]
-    }
-
-    Retorna: BytesIO com o arquivo .xlsm
+    Edita a planilha original preservando formatação e macros.
+    
+    Abre o arquivo original, limpa as linhas de dados e preenche
+    com os dados modificados, mantendo headers, formatação e macros VBA.
+    
+    Retorna: BytesIO com o arquivo editado
     """
-    wb = openpyxl.Workbook()
+    logger.info(f"[EDITAR_PLANILHA] Iniciando edição da planilha original: {file_path}")
+    logger.info(f"[EDITAR_PLANILHA] dados_modificados: {bool(dados_modificados)}")
 
-    # Styles
-    font_header = Font(name='Arial', size=10, bold=True)
-    font_data = Font(name='Arial', size=10)
-    thin_border = Border(
-        left=Side(style='thin'),
-        right=Side(style='thin'),
-        top=Side(style='thin'),
-        bottom=Side(style='thin')
-    )
+    if not dados_modificados:
+        logger.warning("[EDITAR_PLANILHA] dados_modificados está vazio ou nulo")
+        return None
 
-    # ========================
-    # 1. SHEET SUMARIO
-    # ========================
-    ws_sum = wb.active
-    ws_sum.title = 'Sumario'
+    if not os.path.exists(file_path):
+        logger.error(f"[EDITAR_PLANILHA] Arquivo não encontrado: {file_path}")
+        return None
 
-    ws_sum.cell(row=1, column=1, value='RESUMO DA IMPORTAÇÃO').font = Font(name='Arial', size=14, bold=True)
-    ws_sum.cell(row=3, column=1, value='Data de Competência:').font = font_header
+    try:
+        file_ext = os.path.splitext(file_path)[1].lower()
+        keep_vba = file_ext == '.xlsm'
+
+        wb = openpyxl.load_workbook(file_path, keep_vba=keep_vba)
+        logger.info(f"[EDITAR_PLANILHA] Planilha aberta - sheets: {wb.sheetnames}")
+
+        _editar_sheet_sumario(wb, dados_modificados, data_competencia)
+        _editar_sheet_local_entrega(wb, dados_modificados)
+        _editar_sheet_beneficiario(wb, dados_modificados)
+
+        output = io.BytesIO()
+        wb.save(output)
+        wb.close()
+        output.seek(0)
+
+        logger.info(f"[EDITAR_PLANILHA] Planilha editada com sucesso - tamanho: {output.getbuffer().nbytes} bytes")
+        return output
+
+    except Exception as e:
+        logger.error(f"[EDITAR_PLANILHA] Erro ao editar planilha: {str(e)}", exc_info=True)
+        return None
+
+
+def _editar_sheet_sumario(wb, dados_modificados, data_competencia):
+    if 'Sumario' not in wb.sheetnames:
+        logger.warning("[EDITAR_PLANILHA] Sheet 'Sumario' não encontrada")
+        return
+
+    ws = wb['Sumario']
 
     if data_competencia:
         if isinstance(data_competencia, str):
-            ws_sum.cell(row=6, column=1, value=data_competencia).font = font_data
+            ws.cell(row=6, column=1, value=data_competencia)
         else:
-            ws_sum.cell(row=6, column=1, value=data_competencia.strftime('%d/%m/%Y')).font = font_data
-    else:
-        ws_sum.cell(row=6, column=1, value=datetime.now().strftime('%d/%m/%Y')).font = font_data
+            ws.cell(row=6, column=1, value=data_competencia.strftime('%d/%m/%Y'))
 
-    ws_sum.cell(row=8, column=1, value='Total de Condomínios:').font = font_header
-    ws_sum.cell(row=8, column=2, value=len(dados_modificados.get('condominios', []))).font = font_data
+    total_condos = len(dados_modificados.get('condominios', []))
+    total_func = sum(len(c.get('funcionarios', [])) for c in dados_modificados.get('condominios', []))
 
-    total_func = sum(
-        len(c.get('funcionarios', []))
-        for c in dados_modificados.get('condominios', [])
-    )
-    ws_sum.cell(row=9, column=1, value='Total de Funcionários:').font = font_header
-    ws_sum.cell(row=9, column=2, value=total_func).font = font_data
+    ws.cell(row=8, column=2, value=total_condos)
+    ws.cell(row=9, column=2, value=total_func)
 
-    ws_sum.column_dimensions['A'].width = 30
-    ws_sum.column_dimensions['B'].width = 20
+    logger.info(f"[EDITAR_PLANILHA] Sumario atualizado: {total_condos} condominios, {total_func} funcionarios")
 
-    # ========================
-    # 2. SHEET LOCAL DE ENTREGA
-    # ========================
-    ws_locais = wb.create_sheet('Local de Entrega')
 
-    headers_locais = [
-        'Código Local Entrega', 'Nome', 'Tipo Endereço',
-        'Endereço', 'Número', 'Complemento', 'Bairro',
-        'Cidade', 'Estado', 'CEP'
-    ]
-    for col_idx, header in enumerate(headers_locais, start=1):
-        cell = ws_locais.cell(row=1, column=col_idx, value=header)
-        cell.font = font_header
-        cell.alignment = Alignment(horizontal='center', wrap_text=True)
-        cell.border = thin_border
+def _editar_sheet_local_entrega(wb, dados_modificados):
+    if 'Local de Entrega' not in wb.sheetnames:
+        logger.warning("[EDITAR_PLANILHA] Sheet 'Local de Entrega' não encontrada")
+        return
+
+    ws = wb['Local de Entrega']
+
+    max_row = ws.max_row
+    if max_row > 1:
+        ws.delete_rows(2, max_row - 1)
 
     for row_idx, condo in enumerate(dados_modificados.get('condominios', []), start=2):
         cnpj = ''.join(filter(str.isdigit, str(condo.get('cnpj', ''))))
-        ws_locais.cell(row=row_idx, column=1, value=cnpj).font = font_data
-        ws_locais.cell(row=row_idx, column=2, value=condo.get('nome', '')).font = font_data
-        ws_locais.cell(row=row_idx, column=3, value='AV').font = font_data
-        ws_locais.cell(row=row_idx, column=4, value=condo.get('rua', '')).font = font_data
-        ws_locais.cell(row=row_idx, column=5, value=condo.get('numero', '')).font = font_data
-        ws_locais.cell(row=row_idx, column=6, value=condo.get('complemento', '')).font = font_data
-        ws_locais.cell(row=row_idx, column=7, value=condo.get('bairro', '')).font = font_data
-        ws_locais.cell(row=row_idx, column=8, value=condo.get('cidade', '')).font = font_data
-        ws_locais.cell(row=row_idx, column=9, value=condo.get('estado', '')).font = font_data
-        ws_locais.cell(row=row_idx, column=10, value=condo.get('cep', '')).font = font_data
+        ws.cell(row=row_idx, column=1, value=cnpj)
+        ws.cell(row=row_idx, column=2, value=condo.get('nome', ''))
+        ws.cell(row=row_idx, column=3, value='AV')
+        ws.cell(row=row_idx, column=4, value=condo.get('rua', ''))
+        ws.cell(row=row_idx, column=5, value=condo.get('numero', ''))
+        ws.cell(row=row_idx, column=6, value=condo.get('complemento', ''))
+        ws.cell(row=row_idx, column=7, value=condo.get('bairro', ''))
+        ws.cell(row=row_idx, column=8, value=condo.get('cidade', ''))
+        ws.cell(row=row_idx, column=9, value=condo.get('estado', ''))
+        ws.cell(row=row_idx, column=10, value=condo.get('cep', ''))
 
-        for col_idx in range(1, 11):
-            ws_locais.cell(row=row_idx, column=col_idx).border = thin_border
+    logger.info(f"[EDITAR_PLANILHA] Local de Entrega atualizado: {len(dados_modificados.get('condominios', []))} linhas")
 
-    col_widths_locais = [25, 40, 12, 40, 10, 20, 30, 30, 8, 12]
-    for i, width in enumerate(col_widths_locais, start=1):
-        ws_locais.column_dimensions[openpyxl.utils.get_column_letter(i)].width = width
 
-    # ========================
-    # 3. SHEET BENEFICIARIO
-    # ========================
-    ws_ben = wb.create_sheet('Beneficiario')
+def _editar_sheet_beneficiario(wb, dados_modificados):
+    if 'Beneficiario' not in wb.sheetnames:
+        logger.warning("[EDITAR_PLANILHA] Sheet 'Beneficiario' não encontrada")
+        return
 
-    # Coletar todos os produtos únicos
-    produtos_unicos = []
-    produtos_vistos = set()
-    for condo in dados_modificados.get('condominios', []):
-        for func in condo.get('funcionarios', []):
-            for mov in func.get('movimentacoes', []):
-                prod_nome = mov.get('produto', '')
-                if prod_nome and prod_nome not in produtos_vistos:
-                    produtos_unicos.append(prod_nome)
-                    produtos_vistos.add(prod_nome)
+    ws = wb['Beneficiario']
 
-    # Headers fixos
-    headers_fixos = [
-        'CPF*', 'Código local entrega*', 'Código centro de custo',
-        'Matrícula', 'Nome completo*', 'Nome Impressão Cartão',
-        'Data Nascimento*', 'Sexo', 'Faixa Salarial'
-    ]
+    col_produtos = _ler_headers_produtos(ws)
 
-    for col_idx, header in enumerate(headers_fixos, start=1):
-        cell = ws_ben.cell(row=1, column=col_idx, value=header)
-        cell.font = font_header
-        cell.alignment = Alignment(horizontal='center', wrap_text=True)
-        cell.border = thin_border
+    max_row = ws.max_row
+    if max_row > 2:
+        ws.delete_rows(3, max_row - 2)
 
-    # Headers de produto na linha 2
-    prod_start_col = len(headers_fixos) + 1
-    for i, prod_nome in enumerate(produtos_unicos):
-        col_idx = prod_start_col + i
-        cell = ws_ben.cell(row=2, column=col_idx, value=f'{prod_nome}\nValor do crédito\nInserir valor')
-        cell.font = font_header
-        cell.alignment = Alignment(horizontal='center', wrap_text=True)
-        cell.border = thin_border
-
-    # Preencher dados dos funcionários
     row_num = 3
     for condo in dados_modificados.get('condominios', []):
         cnpj = ''.join(filter(str.isdigit, str(condo.get('cnpj', ''))))
@@ -157,7 +140,6 @@ def gerar_planilha_vr(dados_modificados, data_competencia=None):
             cpf = ''.join(filter(str.isdigit, str(func.get('cpf', '')))).zfill(11)
             data_nasc = func.get('data_nascimento', '')
             if data_nasc and isinstance(data_nasc, str):
-                # Tentar converter de YYYY-MM-DD para DDMMYYYY
                 try:
                     dt = datetime.strptime(data_nasc, '%Y-%m-%d')
                     data_nasc = dt.strftime('%d%m%Y')
@@ -166,42 +148,64 @@ def gerar_planilha_vr(dados_modificados, data_competencia=None):
             elif data_nasc and hasattr(data_nasc, 'strftime'):
                 data_nasc = data_nasc.strftime('%d%m%Y')
 
-            # Dados fixos
-            ws_ben.cell(row=row_num, column=1, value=cpf).font = font_data
-            ws_ben.cell(row=row_num, column=2, value=cnpj).font = font_data
-            ws_ben.cell(row=row_num, column=3, value='').font = font_data
-            ws_ben.cell(row=row_num, column=4, value=func.get('matricula', '')).font = font_data
-            ws_ben.cell(row=row_num, column=5, value=func.get('nome', '')).font = font_data
-            ws_ben.cell(row=row_num, column=6, value='').font = font_data
-            ws_ben.cell(row=row_num, column=7, value=data_nasc).font = font_data
-            ws_ben.cell(row=row_num, column=8, value=func.get('sexo', '')).font = font_data
-            ws_ben.cell(row=row_num, column=9, value='').font = font_data
+            ws.cell(row=row_num, column=1, value=cpf)
+            ws.cell(row=row_num, column=2, value=cnpj)
+            ws.cell(row=row_num, column=3, value='')
+            ws.cell(row=row_num, column=4, value=func.get('matricula', ''))
+            ws.cell(row=row_num, column=5, value=func.get('nome', ''))
+            ws.cell(row=row_num, column=6, value='')
+            ws.cell(row=row_num, column=7, value=data_nasc)
+            ws.cell(row=row_num, column=8, value=func.get('sexo', ''))
+            ws.cell(row=row_num, column=9, value='')
 
-            for col_idx in range(1, 10):
-                ws_ben.cell(row=row_num, column=col_idx).border = thin_border
-
-            # Preencher valores de produto
             for mov in func.get('movimentacoes', []):
                 prod_nome = mov.get('produto', '')
                 valor = mov.get('valor', 0)
-                if prod_nome in produtos_vistos:
-                    col_idx = prod_start_col + produtos_unicos.index(prod_nome)
-                    cell = ws_ben.cell(row=row_num, column=col_idx, value=float(valor))
-                    cell.font = font_data
-                    cell.number_format = '#,##0.00'
-                    cell.border = thin_border
+
+                col_idx = _encontrar_coluna_produto(col_produtos, prod_nome)
+                if col_idx:
+                    ws.cell(row=row_num, column=col_idx, value=float(valor))
 
             row_num += 1
 
-    # Ajustar larguras das colunas
-    col_widths_ben = [15, 25, 20, 12, 40, 25, 18, 8, 15]
-    for i, width in enumerate(col_widths_ben, start=1):
-        ws_ben.column_dimensions[openpyxl.utils.get_column_letter(i)].width = width
-    for i in range(len(produtos_unicos)):
-        ws_ben.column_dimensions[openpyxl.utils.get_column_letter(prod_start_col + i)].width = 20
+    logger.info(f"[EDITAR_PLANILHA] Beneficiario atualizado: {row_num - 3} funcionarios")
 
-    # Salvar em BytesIO
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
-    return output
+
+def _ler_headers_produtos(ws):
+    col_produtos = {}
+    header_row = list(ws.iter_rows(min_row=2, max_row=2, values_only=True))
+    if not header_row:
+        return col_produtos
+
+    header_row = header_row[0]
+    for col_idx, val in enumerate(header_row, start=1):
+        if val is None:
+            continue
+        h = str(val).strip().split('\n')[0].strip()
+        if not h:
+            continue
+        if h in COLUNAS_PRODUTO:
+            col_produtos[col_idx] = h
+        else:
+            for nome in COLUNAS_PRODUTO:
+                if nome.lower() in h.lower() or h.lower() in nome.lower():
+                    col_produtos[col_idx] = nome
+                    break
+
+    return col_produtos
+
+
+def _encontrar_coluna_produto(col_produtos, nome_produto):
+    if not nome_produto:
+        return None
+
+    for col_idx, nome in col_produtos.items():
+        if nome == nome_produto:
+            return col_idx
+
+    nome_lower = nome_produto.lower()
+    for col_idx, nome in col_produtos.items():
+        if nome.lower() in nome_lower or nome_lower in nome.lower():
+            return col_idx
+
+    return None
