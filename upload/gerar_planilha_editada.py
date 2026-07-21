@@ -56,8 +56,8 @@ def editar_planilha_original(file_path, dados_modificados, data_competencia=None
         keep_vba = file_ext == '.xlsm'
         logger.debug(f"[EDITAR_PLANILHA] Extensão do arquivo: {file_ext}, keep_vba: {keep_vba}")
 
-        wb = openpyxl.load_workbook(file_path, keep_vba=keep_vba)
-        logger.info(f"[EDITAR_PLANILHA] Planilha aberta - sheets: {wb.sheetnames}")
+        wb = _limpar_dimensoes_extras(file_path, keep_vba=keep_vba)
+        logger.info(f"[EDITAR_PLANILHA] Planilha aberta e limpa - sheets: {wb.sheetnames}")
 
         _editar_sheet_sumario(wb, dados_modificados, data_competencia)
         _editar_sheet_local_entrega(wb, dados_modificados)
@@ -104,8 +104,8 @@ def editar_planilha_vt(file_path, dados_modificados, data_competencia=None):
         keep_vba = file_ext == '.xlsm'
         logger.debug(f"[EDITAR_PLANILHA_VT] Extensão do arquivo: {file_ext}, keep_vba: {keep_vba}")
 
-        wb = openpyxl.load_workbook(file_path, keep_vba=keep_vba)
-        logger.info(f"[EDITAR_PLANILHA_VT] Planilha aberta - sheets: {wb.sheetnames}")
+        wb = _limpar_dimensoes_extras(file_path, keep_vba=keep_vba)
+        logger.info(f"[EDITAR_PLANILHA_VT] Planilha aberta e limpa - sheets: {wb.sheetnames}")
 
         _editar_sheet_empresa_vt(wb, condominios)
         _editar_sheet_usuarios_vt(wb, condominios)
@@ -277,6 +277,67 @@ def _editar_sheet_usuarios_vt(wb, condominios):
             row_num += 1
 
     logger.info(f"[EDITAR_PLANILHA_VT] USUARIOS atualizado: {row_num - header_row_idx - 1} funcionarios")
+
+
+def _limpar_dimensoes_extras(file_path, keep_vba=False):
+    """
+    Remove linhas e colunas vazias além da área real de dados em cada worksheet.
+
+    Planilhas com formatação/estilo residual em colunas/linhas distantes
+    (ex: max_col=16378 com dados apenas até a coluna 17) consomem muita RAM
+    e aumentam o tempo de processamento. Esta função usa read_only para
+    descobrir as dimensões reais e depois abre em modo normal apenas para
+    deletar o excesso, economizando memória.
+
+    Retorna o workbook aberto em modo normal e já limpo.
+    """
+    # 1º passo: descobrir dimensões reais com baixo consumo de memória (read_only)
+    dimensoes = {}
+    wb_read = openpyxl.load_workbook(file_path, read_only=True, keep_vba=keep_vba)
+    try:
+        for sheet_name in wb_read.sheetnames:
+            ws = wb_read[sheet_name]
+
+            last_row = 0
+            last_col = 0
+
+            # Itera uma única vez sobre todas as células para encontrar
+            # a última linha e coluna com dados reais.
+            for row_idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
+                for col_idx, value in enumerate(row, start=1):
+                    if value is not None and str(value).strip() != '':
+                        if row_idx > last_row:
+                            last_row = row_idx
+                        if col_idx > last_col:
+                            last_col = col_idx
+
+            dimensoes[sheet_name] = (last_row, last_col)
+    finally:
+        wb_read.close()
+
+    # 2º passo: abrir normalmente e remover o excesso
+    wb = openpyxl.load_workbook(file_path, keep_vba=keep_vba)
+    for sheet_name, (last_row, last_col) in dimensoes.items():
+        ws = wb[sheet_name]
+
+        if last_row == 0 or last_col == 0:
+            continue
+
+        max_row = ws.max_row
+        max_col = ws.max_column
+
+        rows_removed = max(0, max_row - last_row)
+        cols_removed = max(0, max_col - last_col)
+
+        if cols_removed > 0:
+            ws.delete_cols(last_col + 1, cols_removed)
+        if rows_removed > 0:
+            ws.delete_rows(last_row + 1, rows_removed)
+
+        if rows_removed > 0 or cols_removed > 0:
+            logger.info(f"[LIMPEZA] Sheet '{sheet_name}': {rows_removed} linhas e {cols_removed} colunas vazias removidas (dados até {last_row}x{last_col})")
+
+    return wb
 
 
 def _set_cell_value(ws, row, column, value):

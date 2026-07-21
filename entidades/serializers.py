@@ -1,5 +1,28 @@
 from rest_framework import serializers
 from .models import Condominio, Funcionario, Administradora, VinculoCondominio, Gerente, TaxaConfig
+from beneficios.models import Produto
+
+
+class ProdutoField(serializers.PrimaryKeyRelatedField):
+    """Aceita o ID do Produto ou o código do produto (codigo_produto)."""
+
+    def to_internal_value(self, data):
+        if data in (None, '', 'null'):
+            return None
+
+        try:
+            return super().to_internal_value(data)
+        except serializers.ValidationError:
+            try:
+                return Produto.objects.get(codigo_produto=str(data))
+            except Produto.DoesNotExist:
+                raise serializers.ValidationError(
+                    f'Produto com id/código "{data}" não encontrado.'
+                )
+            except Produto.MultipleObjectsReturned:
+                raise serializers.ValidationError(
+                    f'Existe mais de um produto com código "{data}".'
+                )
 
 
 class CondominioSerializer(serializers.ModelSerializer):
@@ -130,11 +153,28 @@ class VinculoCondominioSerializer(serializers.ModelSerializer):
 
 class TaxaConfigSerializer(serializers.ModelSerializer):
     vinculo_display = serializers.SerializerMethodField(read_only=True)
+    produto = ProdutoField(
+        queryset=Produto.objects.all(),
+        required=False,
+        allow_null=True,
+    )
     produto_nome = serializers.CharField(source='produto.nome', read_only=True, default=None)
     produto_codigo = serializers.CharField(source='produto.codigo_produto', read_only=True, default=None)
 
     def get_vinculo_display(self, obj):
         return str(obj.vinculo)
+
+    def validate_vinculo(self, value):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+
+        if user and getattr(user, 'tipo', None) not in ('dev', 'fat'):
+            if value.administradora_id != getattr(user, 'administradora_ativa_id', None):
+                raise serializers.ValidationError(
+                    'O vínculo selecionado não pertence à sua administradora ativa.'
+                )
+
+        return value
 
     class Meta:
         model = TaxaConfig
