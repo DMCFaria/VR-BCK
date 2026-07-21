@@ -180,7 +180,7 @@ LOGGING = {
     'loggers': {
         'nfse': {
             'handlers': ['console'],
-            'level': 'INFO',
+            'level': 'DEBUG',
             'propagate': False,
         },
     },

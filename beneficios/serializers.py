@@ -80,7 +80,7 @@ class ImportacaoListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Importacao
-        fields = ['id', 'data_importacao','nome_administradora', 'status', 'total_registros', 'registros_processados', 'nome_usuario', 'data_vencimento', 'vigencia_inicio', 'vigencia_fim']
+        fields = ['id', 'data_importacao','nome_administradora', 'status', 'total_registros', 'registros_processados', 'nome_usuario', 'data_vencimento', 'vigencia_inicio', 'vigencia_fim', 'arquivo_s3', 'arquivo_s3_editado']
 
 class ImportacaoDetailSerializer(serializers.ModelSerializer):
     """
@@ -91,7 +91,7 @@ class ImportacaoDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Importacao
-        fields = ['id', 'file_upload', 'nome_file', 'usuario', 'nome_usuario', 'data_importacao', 'status', 'total_registros', 'registros_processados', 'erros', 'arquivo_s3', 'data_vencimento', 'data_recebimento', 'vigencia_inicio', 'vigencia_fim']
+        fields = ['id', 'file_upload', 'nome_file', 'usuario', 'nome_usuario', 'data_importacao', 'status', 'total_registros', 'registros_processados', 'erros', 'arquivo_s3', 'arquivo_s3_editado', 'data_vencimento', 'data_recebimento', 'vigencia_inicio', 'vigencia_fim']
 
 class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
     nome_usuario = serializers.CharField(source='usuario.email', read_only=True)
@@ -116,7 +116,8 @@ class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
             'valor_total',
             'total_funcionarios',
             'modelo_importacao',
-            'arquivo_s3'
+            'arquivo_s3',
+            'arquivo_s3_editado'
         ]
 
 class MovimentacaoReuseSerializer(serializers.Serializer):
