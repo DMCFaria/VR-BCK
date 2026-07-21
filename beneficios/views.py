@@ -742,3 +742,159 @@ class BoletoBaixaView(views.APIView):
 
     def patch(self, request, pk=None):
         return self.post(request, pk)
+
+
+class KanbanFaturasView(views.APIView):
+    """
+    Retorna faturas no formato esperado pelo Kanban do Operacional.
+    Agrupa Importacao + Faturamento + Boletos em estrutura coEstipulantes.
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        from beneficios.models import Faturamento, Boleto
+        from entidades.models import Administradora
+        from datetime import date
+
+        importacoes = Importacao.objects.select_related(
+            'administradora', 'usuario', 'file_upload'
+        ).exclude(status__in=['CANCELADO']).order_by('-data_importacao')
+
+        faturas = []
+        hoje = date.today()
+
+        for imp in importacoes:
+            faturamento = Faturamento.objects.filter(importacao=imp).first()
+            boletos = Boleto.objects.filter(faturamento=faturamento) if faturamento else Boleto.objects.none()
+
+            admin = imp.administradora
+            estipulante_nome = admin.razao_social if admin else ''
+            estipulante_cnpj = admin.cnpj if admin else ''
+
+            co_estipulantes = []
+            for b in boletos:
+                vencimento = b.vencimento.isoformat() if b.vencimento else None
+                pago = b.baixa
+                data_pagamento = b.dt_baixa.isoformat() if b.dt_baixa else None
+                valor_cents = int(float(b.valor or 0) * 100)
+
+                co_estipulantes.append({
+                    'id': b.id,
+                    'idx': b.id,
+                    'name': b.nome_cobrado or '',
+                    'nome': b.nome_cobrado or '',
+                    'condominio': b.nome_cobrado or '',
+                    'condominio_nome': b.nome_cobrado or '',
+                    'cnpj': b.cnpj_cobrado or '',
+                    'documento': b.cnpj_cobrado or '',
+                    'cpf_cnpj': b.cnpj_cobrado or '',
+                    'cpfCnpj': b.cnpj_cobrado or '',
+                    'razao_social': b.nome_cobrado or '',
+                    'valorCents': valor_cents,
+                    'valor_cents': valor_cents,
+                    'valorCentavos': valor_cents,
+                    'valor_total': valor_cents,
+                    'valor': valor_cents,
+                    'total': valor_cents,
+                    'dueDate': vencimento,
+                    'due_date': vencimento,
+                    'vencimento': vencimento,
+                    'data_vencimento': vencimento,
+                    'dt_vencimento': vencimento,
+                    'dataCredito': None,
+                    'data_credito': None,
+                    'credito': None,
+                    'paidAt': data_pagamento if pago else None,
+                    'paid_at': data_pagamento if pago else None,
+                    'data_pagamento': data_pagamento if pago else None,
+                    'pago_em': data_pagamento if pago else None,
+                    'dt_pagamento': data_pagamento if pago else None,
+                    'sentToCP': bool(b.status),
+                    'sent_to_cp': bool(b.status),
+                    'enviado_cp': bool(b.status),
+                    'enviado_contas_pagar': bool(b.status),
+                    'enviadoContasPagar': bool(b.status),
+                    'formaPagamento': None,
+                    'forma_pagamento': None,
+                    'formaPagemento': None,
+                })
+
+            total_cents = int(float(imp.valor_total or 0) * 100)
+            usuario = imp.usuario
+            uploader_name = usuario.email if usuario else ''
+
+            faturas.append({
+                'id': imp.id,
+                'pk': imp.id,
+                'codigo': imp.id,
+                'numero': imp.id,
+                'faturaNum': f'IMP-{imp.id}',
+                'fatura_num': f'IMP-{imp.id}',
+                'numero_fatura': f'IMP-{imp.id}',
+                'emissao': imp.data_importacao.strftime('%Y-%m-%d') if imp.data_importacao else None,
+                'data_emissao': imp.data_importacao.strftime('%Y-%m-%d') if imp.data_importacao else None,
+                'createdAt': imp.data_importacao.isoformat() if imp.data_importacao else None,
+                'created_at': imp.data_importacao.isoformat() if imp.data_importacao else None,
+                'data_criacao': imp.data_importacao.isoformat() if imp.data_importacao else None,
+                'estipulante': {
+                    'name': estipulante_nome,
+                    'nome': estipulante_nome,
+                    'cnpj': estipulante_cnpj,
+                },
+                'estipulante_nome': estipulante_nome,
+                'estipulante_cnpj': estipulante_cnpj,
+                'administradora_nome': estipulante_nome,
+                'uploaderName': uploader_name,
+                'uploader_name': uploader_name,
+                'usuario_nome': uploader_name,
+                'responsavel_nome': uploader_name,
+                'created_by_name': uploader_name,
+                'uploaderId': usuario.id if usuario else None,
+                'uploader_id': usuario.id if usuario else None,
+                'usuario_id': usuario.id if usuario else None,
+                'responsavel_id': usuario.id if usuario else None,
+                'manualStatus': None,
+                'manual_status': None,
+                'status_manual': None,
+                'totalCents': total_cents,
+                'total_cents': total_cents,
+                'valor_total_cents': total_cents,
+                'valor_total': total_cents,
+                'coEstipulantes': co_estipulantes,
+                'co_estipulantes': co_estipulantes,
+                'condominios': co_estipulantes,
+                'itens': co_estipulantes,
+                '_importacao_status': imp.status,
+                '_faturamento_status': faturamento.status if faturamento else None,
+            })
+
+        return Response({'data': faturas})
+
+
+class KanbanBoletosView(views.APIView):
+    """
+    Retorna boletos no formato esperado pelo Kanban de Boletos VR.
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        from beneficios.models import Boleto
+
+        boletos = Boleto.objects.select_related('faturamento').order_by('-created_at')
+
+        result = []
+        for b in boletos:
+            result.append({
+                'id': b.id,
+                'name': b.nome_cobrado or b.fatura or f'Boleto {b.id}',
+                'file_name': b.fatura or '',
+                'due_date': b.vencimento.isoformat() if b.vencimento else None,
+                'value_cents': int(float(b.valor or 0) * 100),
+                'paid_at': b.dt_baixa.isoformat() if b.baixa and b.dt_baixa else None,
+                'uploaderName': '',
+                'uploader_name': '',
+            })
+
+        return Response({'data': result})
