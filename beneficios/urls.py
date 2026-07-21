@@ -8,7 +8,9 @@ from .views import (
     ImportacaoListView,
     ImportacaoDetailView,
     UltimaMovimentacaoDashboard,
-    BoletoBaixaView
+    BoletoBaixaView,
+    KanbanFaturasView,
+    KanbanBoletosView,
 )
 
 router = DefaultRouter()
@@ -25,4 +27,7 @@ urlpatterns = [
     path('importacoes/ultima-movimentacao/', UltimaMovimentacaoDashboard.as_view(), name='ultima-movimentacao'),
     path('boletos/baixa/', BoletoBaixaView.as_view(), name='boleto-baixa-generica'),
     path('boletos/<int:pk>/baixa/', BoletoBaixaView.as_view(), name='boleto-baixa'),
+
+    path('kanban/faturas/', KanbanFaturasView.as_view(), name='kanban-faturas'),
+    path('kanban/boletos/', KanbanBoletosView.as_view(), name='kanban-boletos'),
 ]
