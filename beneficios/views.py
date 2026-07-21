@@ -754,15 +754,12 @@ class KanbanFaturasView(views.APIView):
 
     def get(self, request):
         from beneficios.models import Faturamento, Boleto
-        from entidades.models import Administradora
-        from datetime import date
 
         importacoes = Importacao.objects.select_related(
             'administradora', 'usuario', 'file_upload'
         ).exclude(status__in=['CANCELADO']).order_by('-data_importacao')
 
         faturas = []
-        hoje = date.today()
 
         for imp in importacoes:
             faturamento = Faturamento.objects.filter(importacao=imp).first()
@@ -810,11 +807,11 @@ class KanbanFaturasView(views.APIView):
                     'data_pagamento': data_pagamento if pago else None,
                     'pago_em': data_pagamento if pago else None,
                     'dt_pagamento': data_pagamento if pago else None,
-                    'sentToCP': bool(b.status),
-                    'sent_to_cp': bool(b.status),
-                    'enviado_cp': bool(b.status),
-                    'enviado_contas_pagar': bool(b.status),
-                    'enviadoContasPagar': bool(b.status),
+                    'sentToCP': False,
+                    'sent_to_cp': False,
+                    'enviado_cp': False,
+                    'enviado_contas_pagar': False,
+                    'enviadoContasPagar': False,
                     'formaPagamento': None,
                     'forma_pagamento': None,
                     'formaPagemento': None,
@@ -823,6 +820,18 @@ class KanbanFaturasView(views.APIView):
             total_cents = int(float(imp.valor_total or 0) * 100)
             usuario = imp.usuario
             uploader_name = usuario.email if usuario else ''
+
+            vencimento_imp = imp.data_vencimento.isoformat() if imp.data_vencimento else None
+            recebimento_imp = imp.data_recebimento.isoformat() if imp.data_recebimento else None
+
+            status_map = {
+                'FATURADO': 'faturado',
+                'CONFIRMAR_PAGAMENTO': 'confirmar_pagamento',
+                'BOLETO_VR_ENVIADO': 'boleto_vr_enviado',
+                'PAGO': 'pago',
+                'COMPLETED': 'pago',
+            }
+            kanban = status_map.get(imp.status, 'faturado')
 
             faturas.append({
                 'id': imp.id,
@@ -854,13 +863,19 @@ class KanbanFaturasView(views.APIView):
                 'uploader_id': usuario.id if usuario else None,
                 'usuario_id': usuario.id if usuario else None,
                 'responsavel_id': usuario.id if usuario else None,
-                'manualStatus': None,
-                'manual_status': None,
-                'status_manual': None,
+                'manualStatus': kanban,
+                'manual_status': kanban,
+                'status_manual': kanban,
                 'totalCents': total_cents,
                 'total_cents': total_cents,
                 'valor_total_cents': total_cents,
                 'valor_total': total_cents,
+                'vencimento': vencimento_imp,
+                'data_vencimento': vencimento_imp,
+                'dueDate': vencimento_imp,
+                'due_date': vencimento_imp,
+                'recebimento': recebimento_imp,
+                'data_recebimento': recebimento_imp,
                 'coEstipulantes': co_estipulantes,
                 'co_estipulantes': co_estipulantes,
                 'condominios': co_estipulantes,
@@ -898,3 +913,38 @@ class KanbanBoletosView(views.APIView):
             })
 
         return Response({'data': result})
+
+
+class KanbanMoveFaturaView(views.APIView):
+    """
+    Move uma fatura para outra coluna do Kanban.
+    PATCH /api/beneficios/kanban/{id}/move/
+    Body: { "status": "faturado"|"confirmar_pagamento"|"boleto_vr_enviado"|"pago" }
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def patch(self, request, pk):
+        try:
+            imp = Importacao.objects.get(id=pk)
+        except Importacao.DoesNotExist:
+            return Response({'detail': 'Importação não encontrada.'}, status=404)
+
+        new_status = request.data.get('status')
+
+        kanban_to_importacao = {
+            'faturado': 'FATURADO',
+            'confirmar_pagamento': 'CONFIRMAR_PAGAMENTO',
+            'boleto_vr_enviado': 'BOLETO_VR_ENVIADO',
+            'pago': 'PAGO',
+        }
+
+        importacao_status = kanban_to_importacao.get(new_status)
+
+        if not importacao_status:
+            return Response({'detail': f'Status inválido: {new_status}'}, status=400)
+
+        imp.status = importacao_status
+        imp.save(update_fields=['status'])
+
+        return Response({'success': True, 'status': new_status})
