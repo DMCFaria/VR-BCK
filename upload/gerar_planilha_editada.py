@@ -76,6 +76,209 @@ def editar_planilha_original(file_path, dados_modificados, data_competencia=None
         return None
 
 
+def editar_planilha_vt(file_path, dados_modificados, data_competencia=None):
+    """
+    Edita a planilha de Vale Transporte (VT) com os dados validados.
+
+    Atualiza as abas EMPRESA e USUARIOS preservando o layout do template VT.
+
+    Retorna: BytesIO com o arquivo editado
+    """
+    logger.info(f"[EDITAR_PLANILHA_VT] Iniciando edição da planilha VT: {file_path}")
+    logger.info(f"[EDITAR_PLANILHA_VT] dados_modificados presente: {bool(dados_modificados)}")
+
+    if not dados_modificados:
+        logger.warning("[EDITAR_PLANILHA_VT] dados_modificados está vazio ou nulo")
+        return None
+
+    if not os.path.exists(file_path):
+        logger.error(f"[EDITAR_PLANILHA_VT] Arquivo não encontrado: {file_path}")
+        return None
+
+    try:
+        condominios = dados_modificados.get('condominios', [])
+        total_funcionarios = sum(len(c.get('funcionarios', [])) for c in condominios)
+        logger.info(f"[EDITAR_PLANILHA_VT] Dados recebidos - condominios: {len(condominios)}, funcionarios: {total_funcionarios}")
+
+        file_ext = os.path.splitext(file_path)[1].lower()
+        keep_vba = file_ext == '.xlsm'
+        logger.debug(f"[EDITAR_PLANILHA_VT] Extensão do arquivo: {file_ext}, keep_vba: {keep_vba}")
+
+        wb = openpyxl.load_workbook(file_path, keep_vba=keep_vba)
+        logger.info(f"[EDITAR_PLANILHA_VT] Planilha aberta - sheets: {wb.sheetnames}")
+
+        _editar_sheet_empresa_vt(wb, condominios)
+        _editar_sheet_usuarios_vt(wb, condominios)
+
+        output = io.BytesIO()
+        wb.save(output)
+        wb.close()
+        output.seek(0)
+
+        logger.info(f"[EDITAR_PLANILHA_VT] Planilha VT editada com sucesso - tamanho: {output.getbuffer().nbytes} bytes")
+        return output
+
+    except Exception as e:
+        logger.error(f"[EDITAR_PLANILHA_VT] Erro ao editar planilha VT: {str(e)}", exc_info=True)
+        return None
+
+
+def _editar_sheet_empresa_vt(wb, condominios):
+    if 'EMPRESA' not in wb.sheetnames:
+        logger.warning("[EDITAR_PLANILHA_VT] Sheet 'EMPRESA' não encontrada")
+        return
+
+    ws = wb['EMPRESA']
+    logger.debug("[EDITAR_PLANILHA_VT] Editando sheet 'EMPRESA'")
+
+    if not condominios:
+        logger.warning("[EDITAR_PLANILHA_VT] Nenhum condomínio para atualizar EMPRESA")
+        return
+
+    condo = condominios[0]
+    cnpj = ''.join(filter(str.isdigit, str(condo.get('cnpj', ''))))
+    nome = condo.get('nome', '')
+    logradouro = condo.get('rua', '')
+    numero = condo.get('numero', '')
+    complemento = condo.get('complemento', '')
+    cep = ''.join(filter(str.isdigit, str(condo.get('cep', ''))))
+    bairro = condo.get('bairro', '')
+    cidade = condo.get('cidade', '')
+    estado = condo.get('estado', '')
+
+    # Linha 5 do template: CNPJ, EMPRESA, CÓDIGO, LOGRADOURO, NÚMERO, COMPLEMENTO, CEP, BAIRRO, CIDADE, ESTADO, NOME
+    _set_cell_value(ws, row=5, column=1, value=cnpj)
+    _set_cell_value(ws, row=5, column=2, value=nome)
+    _set_cell_value(ws, row=5, column=4, value=logradouro)
+    _set_cell_value(ws, row=5, column=5, value=numero)
+    _set_cell_value(ws, row=5, column=6, value=complemento)
+    _set_cell_value(ws, row=5, column=7, value=cep)
+    _set_cell_value(ws, row=5, column=8, value=bairro)
+    _set_cell_value(ws, row=5, column=9, value=cidade)
+    _set_cell_value(ws, row=5, column=10, value=estado)
+    _set_cell_value(ws, row=5, column=11, value=f"Local de Entrega {condo.get('codigo', '')}".strip())
+
+    logger.info(f"[EDITAR_PLANILHA_VT] EMPRESA atualizada: cnpj={cnpj}, nome={nome}")
+
+
+def _editar_sheet_usuarios_vt(wb, condominios):
+    if 'USUARIOS' not in wb.sheetnames:
+        logger.warning("[EDITAR_PLANILHA_VT] Sheet 'USUARIOS' não encontrada")
+        return
+
+    ws = wb['USUARIOS']
+    logger.debug("[EDITAR_PLANILHA_VT] Editando sheet 'USUARIOS'")
+
+    # Encontra a linha do cabeçalho (CNPJ*)
+    header_row_idx = None
+    for row_idx in range(1, ws.max_row + 1):
+        val = ws.cell(row=row_idx, column=1).value
+        if val and str(val).strip().upper() in ('CNPJ*', 'CNPJ'):
+            header_row_idx = row_idx
+            break
+
+    if header_row_idx is None:
+        logger.warning("[EDITAR_PLANILHA_VT] Cabeçalho 'CNPJ*' não encontrado em USUARIOS")
+        return
+
+    logger.debug(f"[EDITAR_PLANILHA_VT] Cabeçalho USUARIOS encontrado na linha {header_row_idx}")
+
+    # Remove todas as linhas de dados abaixo do cabeçalho
+    max_row = ws.max_row
+    if max_row > header_row_idx:
+        ws.delete_rows(header_row_idx + 1, max_row - header_row_idx)
+        logger.debug(f"[EDITAR_PLANILHA_VT] USUARIOS - {max_row - header_row_idx} linhas antigas removidas")
+
+    # Mapeamento de colunas conforme Template_VT.xlsx
+    row_num = header_row_idx + 1
+    for condo in condominios:
+        cnpj_empresa = ''.join(filter(str.isdigit, str(condo.get('cnpj', ''))))
+        cnpj_depto = cnpj_empresa
+        nome_depto = condo.get('nome', '')
+        departamento = f"{cnpj_depto} - {nome_depto}" if cnpj_depto and nome_depto else nome_depto
+
+        for func in condo.get('funcionarios', []):
+            cpf = ''.join(filter(str.isdigit, str(func.get('cpf', ''))))
+            matricula = func.get('matricula', '')
+            nome = func.get('nome', '')
+            cargo = func.get('funcao', '')
+            dias_trabalhados = 0
+
+            # Endereço do funcionário
+            logradouro = func.get('endereco_rua', '') or func.get('logradouro', '')
+            numero = func.get('endereco_numero', '') or func.get('numero', '')
+            complemento = func.get('endereco_complemento', '') or func.get('complemento', '')
+            bairro = func.get('endereco_bairro', '') or func.get('bairro', '')
+            cep = ''.join(filter(str.isdigit, str(func.get('cep', '') or condo.get('cep', ''))))
+            cidade = func.get('cidade', '') or condo.get('cidade', '')
+            estado = func.get('estado', '') or condo.get('estado', '')
+
+            # Endereço do departamento (condomínio)
+            endereco_depto = condo.get('rua', '')
+            numero_depto = condo.get('numero', '')
+            complemento_depto = condo.get('complemento', '')
+            bairro_depto = condo.get('bairro', '')
+            cep_depto = ''.join(filter(str.isdigit, str(condo.get('cep', ''))))
+            cidade_depto = condo.get('cidade', '')
+            estado_depto = condo.get('estado', '')
+
+            data_nasc = func.get('data_nascimento', '')
+            if data_nasc and isinstance(data_nasc, str):
+                try:
+                    dt = datetime.strptime(data_nasc, '%Y-%m-%d')
+                    data_nasc = dt.strftime('%d/%m/%Y')
+                except ValueError:
+                    pass
+            elif data_nasc and hasattr(data_nasc, 'strftime'):
+                data_nasc = data_nasc.strftime('%d/%m/%Y')
+
+            _set_cell_value(ws, row=row_num, column=1, value=cnpj_empresa)
+            _set_cell_value(ws, row=row_num, column=2, value=matricula)
+            _set_cell_value(ws, row=row_num, column=3, value=nome)
+            _set_cell_value(ws, row=row_num, column=6, value='ATIVO')
+            _set_cell_value(ws, row=row_num, column=7, value=f"{condo.get('codigo', '')}")
+            _set_cell_value(ws, row=row_num, column=8, value=cargo)
+            _set_cell_value(ws, row=row_num, column=9, value=departamento)
+            _set_cell_value(ws, row=row_num, column=10, value=cep_depto)
+            _set_cell_value(ws, row=row_num, column=11, value=cidade_depto)
+            _set_cell_value(ws, row=row_num, column=12, value=bairro_depto)
+            _set_cell_value(ws, row=row_num, column=13, value=estado_depto)
+            _set_cell_value(ws, row=row_num, column=14, value=endereco_depto)
+            _set_cell_value(ws, row=row_num, column=15, value=dias_trabalhados)
+            _set_cell_value(ws, row=row_num, column=16, value=cpf)
+            _set_cell_value(ws, row=row_num, column=20, value=data_nasc)
+            _set_cell_value(ws, row=row_num, column=22, value=logradouro)
+            _set_cell_value(ws, row=row_num, column=23, value=numero)
+            _set_cell_value(ws, row=row_num, column=24, value=complemento)
+            _set_cell_value(ws, row=row_num, column=25, value=bairro)
+            _set_cell_value(ws, row=row_num, column=26, value=cep)
+            _set_cell_value(ws, row=row_num, column=27, value=cidade)
+            _set_cell_value(ws, row=row_num, column=28, value=estado)
+
+            logger.debug(f"[EDITAR_PLANILHA_VT] USUARIOS - linha {row_num}: cnpj={cnpj_empresa}, matricula={matricula}, nome={nome}, cpf={cpf}")
+
+            # Itens de VT (movimentacoes)
+            # Como o VALOR já é o total do item, mantemos DIAS=1 para que o
+            # parser VT calcule corretamente: QTD x 1 x VALOR = valor total.
+            movimentacoes = func.get('movimentacoes', [])
+            for item_idx, mov in enumerate(movimentacoes[:10], start=1):
+                base_col = 29 + ((item_idx - 1) * 4)
+                codigo = mov.get('codigo_produto', '')
+                quantidade = mov.get('quantidade', 1) or 1
+                dias = 1
+                valor = mov.get('valor', 0) or mov.get('valor_beneficio_total', 0)
+
+                _set_cell_value(ws, row=row_num, column=base_col, value=codigo)
+                _set_cell_value(ws, row=row_num, column=base_col + 1, value=quantidade)
+                _set_cell_value(ws, row=row_num, column=base_col + 2, value=dias)
+                _set_cell_value(ws, row=row_num, column=base_col + 3, value=valor)
+                logger.debug(f"[EDITAR_PLANILHA_VT] USUARIOS - item {item_idx} na coluna {base_col}: codigo={codigo}, qtd={quantidade}, dias={dias}, valor={valor}")
+
+            row_num += 1
+
+    logger.info(f"[EDITAR_PLANILHA_VT] USUARIOS atualizado: {row_num - header_row_idx - 1} funcionarios")
+
+
 def _set_cell_value(ws, row, column, value):
     """
     Define o valor de uma célula, desviando para a célula superior-esquerda
