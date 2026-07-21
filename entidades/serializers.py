@@ -101,7 +101,7 @@ class GerenteSerializer(serializers.ModelSerializer):
 class VinculoCondominioSerializer(serializers.ModelSerializer):
     condominio_nome = serializers.CharField(source='condominio.nome', read_only=True)
     condominio_cnpj = serializers.CharField(source='condominio.cnpj', read_only=True)
-    administradora_nome = serializers.CharField(source='administradora.nome', read_only=True)
+    administradora_nome = serializers.CharField(source='administradora.razao_social', read_only=True)
     administradora_cnpj = serializers.CharField(source='administradora.cnpj', read_only=True)
     gerentes_detalhes = GerenteSerializer(source='gerentes', many=True, read_only=True)
     taxas_config = serializers.SerializerMethodField(read_only=True)
