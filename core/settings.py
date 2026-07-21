@@ -51,7 +51,6 @@ INSTALLED_APPS = [
     'beneficios',
     'entidades',
     'consultas',
-    'operacional',
 ]
 
 APPEND_SLASH = False
