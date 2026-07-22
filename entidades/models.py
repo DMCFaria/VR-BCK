@@ -176,6 +176,12 @@ class Condominio(models.Model):
     estado = models.CharField(max_length=2, verbose_name="Estado (UF)", blank=True, null=True)
     cep = models.CharField(max_length=10, verbose_name="CEP", blank=True, null=True)
 
+    is_searched = models.BooleanField(
+        default=False,
+        verbose_name="Endereço pesquisado automaticamente",
+        help_text="Indica se o endereço já foi preenchido via consulta automática de CNPJ."
+    )
+
     class Meta:
         verbose_name = "Condomínio"
         verbose_name_plural = "Condomínios"

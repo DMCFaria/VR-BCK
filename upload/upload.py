@@ -49,12 +49,14 @@ class UploadView(views.APIView):
             region_name='us-east-2'
         )
         
-        # 2. Busca o valor máximo por funcionário da administradora
+        # 2. Busca o valor máximo por funcionário e CNPJ da administradora
         valor_max = Decimal('9999.99')
+        administradora_cnpj = None
         if administradora_id:
             try:
                 adm = Administradora.objects.get(id=administradora_id)
                 valor_max = adm.valor_max_beneficio
+                administradora_cnpj = adm.cnpj
             except Administradora.DoesNotExist:
                 pass
 
@@ -73,7 +75,12 @@ class UploadView(views.APIView):
                 logger.info(f"Parsed data: {parsed_data}")
             elif extension in ['.xlsx', '.xlsm']:
                 import_mode = None
-                parsed_data = parse_fut_template(file_path, upload_instance.id, valor_max_beneficio=valor_max)
+                parsed_data = parse_fut_template(
+                    file_path,
+                    upload_instance.id,
+                    valor_max_beneficio=valor_max,
+                    administradora_cnpj=administradora_cnpj
+                )
                 logger.info(f"Parsed data (FUT): {parsed_data}")
             
             else:

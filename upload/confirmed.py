@@ -183,6 +183,27 @@ class ConfirmationView(views.APIView):
                 result = serializer.save(processed_by=request.user)
                 logger.info(f"[CONFIRMACAO] Dados salvos com sucesso - result: {result}")
 
+                # Se o modo for cartão admin, dispara pesquisa assíncrona dos CNPJs.
+                if result.get("cartao_admin"):
+                    try:
+                        from upload.tasks import pesquisar_enderecos_condominios
+                        cnpjs_condominios = [
+                            c.get("cnpj") for c in payload.get("condominios", []) if c.get("cnpj")
+                        ]
+                        if cnpjs_condominios:
+                            pesquisar_enderecos_condominios.delay(
+                                cnpjs=cnpjs_condominios,
+                                importacao_id=result.get("importacao_id"),
+                            )
+                            logger.info(
+                                f"[CONFIRMACAO] Pesquisa de endereços disparada para "
+                                f"{len(cnpjs_condominios)} condomínios (cartão admin)."
+                            )
+                    except Exception as e:
+                        logger.exception(
+                            f"[CONFIRMACAO] Erro ao disparar pesquisa de endereços: {e}"
+                        )
+
                 # Extrai dados do payload para o email
                 total_condominios = len(payload.get('condominios', []))
                 total_funcionarios = summary.get('total_funcionarios', 0)

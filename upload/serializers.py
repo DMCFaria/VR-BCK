@@ -109,6 +109,8 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
     status = serializers.CharField(required=False, default='PARSED')
     detail = serializers.CharField(required=False)
     dados_modificados = serializers.JSONField(required=False, allow_null=True, default=None)
+    cartao_admin = serializers.BooleanField(required=False, allow_null=True, default=None)
+    administradora_cnpj = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     def validate(self, data):
         if not data.get('file_upload_id') and not data.get('importacao_id'):
@@ -163,6 +165,13 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 "user_email": processed_by_user.email if processed_by_user else "unknown",
                 "user_id": processed_by_user.id if processed_by_user else None
             })
+
+        # Atualiza o flag cartao_admin da administradora conforme detectado na planilha.
+        cartao_admin_payload = validated_data.get('cartao_admin')
+        if cartao_admin_payload is not None and administradora.cartao_admin != cartao_admin_payload:
+            administradora.cartao_admin = cartao_admin_payload
+            administradora.save(update_fields=['cartao_admin'])
+            logger.info(f"Administradora {administradora.cnpj} atualizada: cartao_admin={cartao_admin_payload}")
 
         # ========== 2. GARANTIR FILE_UPLOAD_ID ==========
         if not file_upload_id and importacao_id_origem:
@@ -273,15 +282,48 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
             else:
                 condo_obj = existing_condos[cnpj_limpo]
                 updated = False
-                
+
+                # Nome sempre atualiza se vier diferente
                 if condo.get('nome') and condo_obj.nome != condo['nome']:
                     condo_obj.nome = condo['nome']
                     updated = True
-                
-                if condo.get('rua') and not condo_obj.endereco:
-                    condo_obj.endereco = condo['rua']
+
+                # Se a planilha trouxer endereço, ela é a fonte fiel e sobrescreve
+                # qualquer dado preenchido automaticamente por consulta de CNPJ.
+                if condo.get('rua'):
+                    if condo_obj.endereco != condo['rua']:
+                        condo_obj.endereco = condo['rua']
+                        updated = True
+                    # Se houve atualização manual/endereço da planilha, resetamos
+                    # o flag para permitir nova pesquisa futura se necessário.
+                    if condo_obj.is_searched:
+                        condo_obj.is_searched = False
+                        updated = True
+
+                if condo.get('numero') and condo_obj.numero != condo['numero']:
+                    condo_obj.numero = condo['numero']
                     updated = True
-                    
+
+                if condo.get('complemento') and condo_obj.complemento != condo['complemento']:
+                    condo_obj.complemento = condo['complemento']
+                    updated = True
+
+                if condo.get('bairro') and condo_obj.bairro != condo['bairro']:
+                    condo_obj.bairro = condo['bairro']
+                    updated = True
+
+                if condo.get('cidade') and condo_obj.cidade != condo['cidade']:
+                    condo_obj.cidade = condo['cidade']
+                    updated = True
+
+                if condo.get('estado') and condo_obj.estado != condo['estado']:
+                    condo_obj.estado = condo['estado']
+                    updated = True
+
+                if condo.get('cep') and condo_obj.cep != condo['cep']:
+                    condo_obj.cep = condo['cep']
+                    updated = True
+
                 if updated:
                     condos_to_update.append(condo_obj)
         
@@ -292,7 +334,10 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
             logger.info(f"Criados {len(condos_to_create)} novos condomínios")
 
         if condos_to_update:
-            Condominio.objects.bulk_update(condos_to_update, ['nome', 'endereco'])
+            Condominio.objects.bulk_update(
+                condos_to_update,
+                ['nome', 'endereco', 'numero', 'complemento', 'bairro', 'cidade', 'estado', 'cep', 'is_searched']
+            )
             logger.info(f"Atualizados {len(condos_to_update)} condomínios existentes")
         
         # ========== 8. CRIAR/ATUALIZAR FUNCIONÁRIOS COM VÍNCULO (CORREÇÃO PRINCIPAL) ==========
@@ -590,7 +635,8 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
             "importacao_id": importacao.id,
             "valor_total": float(valor_total_payload),
             "funcionarios_criados": len(funcs_to_create),
-            "funcionarios_atualizados": len(funcs_to_update)
+            "funcionarios_atualizados": len(funcs_to_update),
+            "cartao_admin": administradora.cartao_admin if administradora else None,
         }
 
 class FaturamentoExportSerializer(serializers.Serializer):

@@ -12,6 +12,111 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def pesquisar_enderecos_condominios(self, cnpjs, importacao_id=None):
+    """
+    Pesquisa os endereços dos condomínios em segundo plano usando BrasilAPI.
+
+    Args:
+        cnpjs: lista de CNPJs (com ou sem formatação) para pesquisar.
+        importacao_id: ID da importação relacionada (apenas para log).
+    """
+    from entidades.models import Condominio
+    from upload.services import CNPJConsultaService
+
+    if not cnpjs:
+        logger.info("[PESQUISA_CNPJ] Nenhum CNPJ para pesquisar.")
+        return {"pesquisados": 0, "atualizados": 0, "importacao_id": importacao_id}
+
+    cnpjs_unicos = list(set(re.sub(r"\D", "", str(c)) for c in cnpjs if c))
+    logger.info(
+        f"[PESQUISA_CNPJ] Iniciando pesquisa de {len(cnpjs_unicos)} CNPJs "
+        f"para importacao_id={importacao_id}"
+    )
+
+    pesquisados = 0
+    atualizados = 0
+
+    for cnpj in cnpjs_unicos:
+        if len(cnpj) != 14:
+            logger.warning(f"[PESQUISA_CNPJ] CNPJ ignorado (tamanho inválido): {cnpj}")
+            continue
+
+        try:
+            condominio = Condominio.objects.filter(cnpj=cnpj).first()
+            if not condominio:
+                logger.warning(f"[PESQUISA_CNPJ] Condomínio {cnpj} não encontrado no banco.")
+                continue
+
+            if condominio.is_searched:
+                logger.info(f"[PESQUISA_CNPJ] Condomínio {cnpj} já pesquisado anteriormente.")
+                continue
+
+            dados = CNPJConsultaService.consultar(cnpj)
+            pesquisados += 1
+
+            if not dados:
+                logger.warning(f"[PESQUISA_CNPJ] Não foi possível obter dados para {cnpj}.")
+                continue
+
+            campos_atualizados = []
+
+            if dados.get("razao_social") and not condominio.nome:
+                condominio.nome = dados["razao_social"]
+                campos_atualizados.append("nome")
+
+            if dados.get("rua") and not condominio.endereco:
+                condominio.endereco = dados["rua"]
+                campos_atualizados.append("endereco")
+
+            if dados.get("numero") and not condominio.numero:
+                condominio.numero = dados["numero"]
+                campos_atualizados.append("numero")
+
+            if dados.get("complemento") and not condominio.complemento:
+                condominio.complemento = dados["complemento"]
+                campos_atualizados.append("complemento")
+
+            if dados.get("bairro") and not condominio.bairro:
+                condominio.bairro = dados["bairro"]
+                campos_atualizados.append("bairro")
+
+            if dados.get("cidade") and not condominio.cidade:
+                condominio.cidade = dados["cidade"]
+                campos_atualizados.append("cidade")
+
+            if dados.get("estado") and not condominio.estado:
+                condominio.estado = dados["estado"]
+                campos_atualizados.append("estado")
+
+            if dados.get("cep") and not condominio.cep:
+                condominio.cep = dados["cep"]
+                campos_atualizados.append("cep")
+
+            condominio.is_searched = True
+            condominio.save(update_fields=campos_atualizados + ["is_searched"])
+            atualizados += 1
+
+            logger.info(
+                f"[PESQUISA_CNPJ] Condomínio {cnpj} atualizado: {campos_atualizados}"
+            )
+
+        except Exception as e:
+            logger.exception(f"[PESQUISA_CNPJ] Erro ao processar CNPJ {cnpj}: {e}")
+            continue
+
+    logger.info(
+        f"[PESQUISA_CNPJ] Finalizado. Pesquisados: {pesquisados}, "
+        f"atualizados: {atualizados}, importacao_id={importacao_id}"
+    )
+
+    return {
+        "pesquisados": pesquisados,
+        "atualizados": atualizados,
+        "importacao_id": importacao_id,
+    }
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuario_id):
     from beneficios.models import Faturamento, FaturamentoDocumento, Importacao
     from entidades.models import Condominio

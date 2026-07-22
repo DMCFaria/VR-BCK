@@ -74,12 +74,21 @@ def _parse_date(val):
     return None
 
 
-def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
+def _normalizar_cnpj(val):
+    """Remove tudo que não for dígito e preenche com zeros à esquerda até 14."""
+    if val is None:
+        return ''
+    return re.sub(r'\D', '', str(val)).zfill(14)[:14]
+
+
+def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, administradora_cnpj=None):
     if valor_max_beneficio is None:
         valor_max_beneficio = Decimal('9999.99')
 
     result = {
         "file_upload_id": file_upload_id,
+        "cartao_admin": None,
+        "administradora_cnpj": None,
         "condominios": [],
         "errors": [],
         "linhas_com_erro": [],
@@ -113,10 +122,22 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
     # ========================
     ws_sum = wb['Sumario']
     data_disponivel = ''
-    for row in ws_sum.iter_rows(min_row=6, max_row=6):
-        cells = list(row)
-        for cell in cells:
-            val = _safe_str(cell.value)
+    cnpj_sumario = ''
+    for row in ws_sum.iter_rows(min_row=1, max_row=6, values_only=True):
+        if not row:
+            continue
+        primeiro_valor = _safe_str(row[0] if len(row) > 0 else '')
+        if 'CNPJ' in primeiro_valor.upper() or 'CÓDIGO DO CLIENTE' in primeiro_valor.upper():
+            for cell in row[1:]:
+                val = _safe_str(cell)
+                if val:
+                    cnpj_sumario = _normalizar_cnpj(val)
+                    if cnpj_sumario:
+                        break
+            continue
+        # data disponível costuma estar na linha 6
+        for cell in row:
+            val = _safe_str(cell)
             if val:
                 parsed = _parse_date(val)
                 if parsed:
@@ -125,17 +146,22 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
 
     result['summary']['data_competencia_arquivo'] = _parse_date(data_disponivel)
 
+    admin_cnpj_normalizado = _normalizar_cnpj(administradora_cnpj or cnpj_sumario)
+    result['administradora_cnpj'] = admin_cnpj_normalizado
+
     # ========================
     # 2. LER LOCAIS DE ENTREGA (condominios)
     # ========================
     ws_locais = wb['Local de Entrega']
     locais = {}  # codigo_local -> dados
+    locais_raw = []  # lista de codigos na ordem da planilha
 
     for row in ws_locais.iter_rows(min_row=2, values_only=True):
         codigo = _safe_str(row[0])
         if not codigo:
             continue
 
+        locais_raw.append(codigo)
         locais[codigo] = {
             "nome": _safe_str(row[1]) if len(row) > 1 else codigo,
             "cnpj": codigo,
@@ -149,6 +175,36 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
             "cep": _safe_str(row[9]) if len(row) > 9 else '',
             "funcionarios": {},
         }
+
+    # Determina se é modo "cartão admin" baseado apenas na aba Local de Entrega.
+    # - Se houver apenas 1 local e ele for o CNPJ da administradora => cartao_admin=True
+    # - Se houver 0 locais => erro
+    # - Se houver 1 local diferente da administradora => condomínio normal (False)
+    # - Se houver >1 local e um deles for a administradora => erro (misturado)
+    # - Se houver >1 local e nenhum for a administradora => condomínios normais (False)
+    cartao_admin = False
+    if not locais_raw:
+        result['errors'].append(
+            "Aba 'Local de Entrega' não contém nenhum local de entrega cadastrado."
+        )
+    elif len(locais_raw) == 1:
+        if admin_cnpj_normalizado and _normalizar_cnpj(locais_raw[0]) == admin_cnpj_normalizado:
+            cartao_admin = True
+        else:
+            cartao_admin = False
+    else:
+        admin_presente = any(
+            admin_cnpj_normalizado and _normalizar_cnpj(cod) == admin_cnpj_normalizado
+            for cod in locais_raw
+        )
+        if admin_presente:
+            result['errors'].append(
+                "Aba 'Local de Entrega' está inconsistente: contém a administradora juntamente com outros locais. "
+                "No modo cartão admin só pode haver a linha da administradora; no modo condomínios não deve haver a administradora."
+            )
+        cartao_admin = False
+
+    result['cartao_admin'] = cartao_admin
 
     # ========================
     # 3. LER BENEFICIARIO
@@ -259,8 +315,12 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
             })
         else:
             if codigo_local not in locais:
+                # No modo cartão admin os condomínios vêm apenas da aba Beneficiário.
+                # A coluna "Matrícula" costuma trazer o nome descritivo do condomínio,
+                # então usamos ela como nome quando disponível.
+                nome_local = matricula.strip() if matricula and str(matricula).strip() else codigo_local
                 locais[codigo_local] = {
-                    "nome": codigo_local,
+                    "nome": nome_local,
                     "cnpj": codigo_local,
                     "valor_condo": Decimal('0.00'),
                     "rua": '',
@@ -343,17 +403,21 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
 
         if lista_func:
             missing_infos = []
-            if local.get("nao_cadastrado_local_entrega"):
+            if not cartao_admin and local.get("nao_cadastrado_local_entrega"):
+                # No modo normal (condomínios) exigimos que o local esteja na aba Local de Entrega
                 missing_infos.append("Não cadastrado na aba 'Local de Entrega'")
             else:
                 if not local.get("nome") or local["nome"].startswith("Local: "):
                     missing_infos.append("Nome do condomínio ausente ou inválido")
                 if not local.get("cnpj"):
                     missing_infos.append("CNPJ do condomínio ausente")
-                if not local.get("estado"):
-                    missing_infos.append("Estado ausente")
-                if not local.get("cep"):
-                    missing_infos.append("CEP ausente")
+                # No modo cartão admin o endereço será pesquisado automaticamente;
+                # ainda assim, se a planilha trouxer endereço, usamos ela como fonte fiel.
+                if not cartao_admin:
+                    if not local.get("estado"):
+                        missing_infos.append("Estado ausente")
+                    if not local.get("cep"):
+                        missing_infos.append("CEP ausente")
 
             if missing_infos:
                 erros_condominios.append({
@@ -383,13 +447,19 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None):
     if result["condominios"]:
         result['summary']['primeiro_cnpj_processado'] = result["condominios"][0].get("cnpj", "N/A")
 
-    # Se há erros acumulados (linhas com erro ou erros de condomínio), retornamos o payload focado nos erros
-    if result["linhas_com_erro"] or result["erros_condominios"]:
+    # Se há erros acumulados (erros gerais, linhas com erro ou erros de condomínio),
+    # retornamos o payload focado nos erros.
+    if result["errors"] or result["linhas_com_erro"] or result["erros_condominios"]:
+        mensagem_erro = "Planilha contém informações obrigatórias ausentes ou incorretas."
+        if result["errors"]:
+            mensagem_erro = "; ".join(result["errors"])
         return {
             "file_upload_id": file_upload_id,
+            "cartao_admin": result["cartao_admin"],
+            "administradora_cnpj": result["administradora_cnpj"],
             "status": "ERRO",
             "condominios": [],
-            "errors": ["Planilha contém informações obrigatórias ausentes ou incorretas."],
+            "errors": [mensagem_erro],
             "linhas_com_erro": result["linhas_com_erro"],
             "erros_condominios": result["erros_condominios"],
             "summary": {
@@ -417,10 +487,17 @@ def test_parse():
         print(f"ERRO: Arquivo não encontrado")
         return
 
-    data = parse_fut_template(file_path, file_upload_id=999, valor_max_beneficio=Decimal('9999.99'))
+    data = parse_fut_template(
+        file_path,
+        file_upload_id=999,
+        valor_max_beneficio=Decimal('9999.99'),
+        administradora_cnpj='35315360000167',
+    )
 
     # resumo
     s = data['summary']
+    print(f"cartao_admin: {data.get('cartao_admin')}")
+    print(f"administradora_cnpj: {data.get('administradora_cnpj')}")
     print(f"Total condominios: {s['total_condominios']}")
     print(f"Total funcionarios: {s['total_funcionarios']}")
     print(f"Total movimentacoes: {s['total_movimentacoes']}")
