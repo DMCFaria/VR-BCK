@@ -1233,6 +1233,9 @@ class ConsultarBoletosView(views.APIView):
         status_map = {
             'PAGO': 'Pago',
             'PENDENTE_PAGAMENTO': 'Pendente Pagamento',
+            'PENDING': 'Pendente',
+            'PROCESSING': 'Processando',
+            'FAILED': 'Falhou',
         }
 
         result = []
