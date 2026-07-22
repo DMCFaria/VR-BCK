@@ -483,7 +483,8 @@ def _editar_sheet_beneficiario(wb, dados_modificados):
             logger.debug(f"[EDITAR_PLANILHA] Beneficiario - linha {row_num}: cpf={cpf}, cnpj={cnpj}, nome={func.get('nome', '')}, matricula={func.get('matricula', '')}, data_nasc={data_nasc}")
 
             for mov in func.get('movimentacoes', []):
-                prod_nome = mov.get('produto', '')
+                # Usa sempre o tipo normalizado para encontrar a coluna.
+                prod_nome = mov.get('tipo') or mov.get('produto', '')
                 valor = mov.get('valor', 0)
 
                 col_idx = _encontrar_coluna_produto(col_produtos, prod_nome)

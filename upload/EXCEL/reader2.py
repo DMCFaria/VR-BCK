@@ -7,6 +7,8 @@ import openpyxl
 
 CODIGO_PRODUTO_PADRAO = '207'
 
+# Mapeamento dos headers de produto encontrados nas planilhas para o
+# código do produto usado nos registros 50/60 do TXT de compra.
 COLUNAS_PRODUTO = {
     # ===== Sem prefixo "VR " (VR-exemplo.xlsm / Template_VR_OLD.xlsx) =====
     'Refeição': CODIGO_PRODUTO_PADRAO,
@@ -29,6 +31,7 @@ COLUNAS_PRODUTO = {
     'Auxílio VR+VA': CODIGO_PRODUTO_PADRAO,
     'Multi Auxílio VR+VA': CODIGO_PRODUTO_PADRAO,
     'Multi Premiação': CODIGO_PRODUTO_PADRAO,
+    'Multi - Home Office': CODIGO_PRODUTO_PADRAO,
     # ===== Com prefixo "VR " (Template_VR.xlsm) =====
     'VR Refeição': CODIGO_PRODUTO_PADRAO,
     'VR Alimentação': '27',
@@ -45,6 +48,49 @@ COLUNAS_PRODUTO = {
     'VR Multi Refeição Auxílio': CODIGO_PRODUTO_PADRAO,
     'VR Multi Alimentação Auxílio': '204',
     'VR Multi VR+VA': CODIGO_PRODUTO_PADRAO,
+    'VR Multi - Home Office': CODIGO_PRODUTO_PADRAO,
+}
+
+# Mapeamento dos headers de produto para o TIPO normalizado.
+# Esse tipo é o valor que deve aparecer em todos os documentos exportados.
+MAPEAMENTO_PRODUTO_TIPO = {
+    'Refeição': 'Refeição',
+    'Multi Refeição': 'Multi - Refeição',
+    'Alimentação': 'Alimentação',
+    'Multi Alimentação': 'Multi - Alimentação',
+    'Auto': 'Auto',
+    'Mobilidade': 'Multi - Mobilidade',
+    'VR Mobilidade': 'Multi - Mobilidade',
+    'Multi Mobilidade': 'Multi - Mobilidade',
+    'VR Multi Mobilidade': 'Multi - Mobilidade',
+    'Cesta': 'Boas Festas',
+    'Boas Festas': 'Boas Festas',
+    'Auxílio Alimentação': 'Alimentação',
+    'Multi Auxílio Alimentação': 'Multi - Alimentação',
+    'Auxílio Refeição': 'Refeição',
+    'Multi Auxílio Refeição': 'Multi - Refeição',
+    'Multibenefício': 'Multi - VR+VA',
+    'Multibenefícios': 'Multi - VR+VA',
+    'Auxílio VR+VA': 'Multi - VR+VA',
+    'Multi Auxílio VR+VA': 'Multi - VR+VA',
+    'Multi Premiação': 'Multi - Home Office',
+    'Multi - Home Office': 'Multi - Home Office',
+    'VR Refeição': 'Refeição',
+    'VR Alimentação': 'Alimentação',
+    'VR Auto': 'Auto',
+    'VR Alimentação Cesta': 'Boas Festas',
+    'VR Boas Festas': 'Boas Festas',
+    'VR Auxílio Alimentação': 'Alimentação',
+    'VR Auxílio Refeição': 'Refeição',
+    'VR Multibenefícios': 'Multi - VR+VA',
+    'VR+VA': 'Multi - VR+VA',
+    'VR Multi Refeição': 'Multi - Refeição',
+    'VR Multi Alimentação': 'Multi - Alimentação',
+    'VR Multi Alimentação Valor do crédito': 'Multi - Alimentação',
+    'VR Multi Refeição Auxílio': 'Multi - Refeição',
+    'VR Multi Alimentação Auxílio': 'Multi - Alimentação',
+    'VR Multi VR+VA': 'Multi - VR+VA',
+    'VR Multi - Home Office': 'Multi - Home Office',
 }
 
 # Sheets 60/99/etc são para geração do TXT via VBA - não precisam ser lidas
@@ -393,6 +439,7 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
 
                 func["movimentacoes"].append({
                     "produto": nome_produto,
+                    "tipo": MAPEAMENTO_PRODUTO_TIPO.get(nome_produto, nome_produto),
                     "codigo_produto": COLUNAS_PRODUTO.get(nome_produto, ''),
                     "valor": valor,
                 })

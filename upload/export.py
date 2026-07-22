@@ -7,6 +7,29 @@ from decimal import Decimal
 import pandas as pd
 
 
+# Mapeamento do tipo do produto para o código usado nos registros 50/60 do TXT de compra.
+TIPO_PARA_CODIGO = {
+    'Alimentação': '27',
+    'Auto': '28',
+    'Refeição': '207',
+    'Multi - Home Office': '207',
+    'Boas Festas': '202',
+    'Multi - Alimentação': '27',
+    'Multi - VR+VA': '207',
+    'Multi - Refeição': '207',
+    'Multi - Mobilidade': '28',
+}
+
+
+def _codigo_produto_por_tipo(produto):
+    """Retorna o código do produto baseado no tipo, ou o código salvo se não houver mapeamento."""
+    if produto.tipo:
+        tipo_display = produto.get_tipo_display()
+        if tipo_display in TIPO_PARA_CODIGO:
+            return TIPO_PARA_CODIGO[tipo_display]
+    return produto.codigo_produto
+
+
 def _consultar_endereco_condominio(cnpj):
     """
     Consulta o endereço real de um condomínio pelo CNPJ.
@@ -240,14 +263,23 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None, movimentacao_id
         seq += 1
 
     # ⭐⭐⭐ APENAS UM BLOCO PARA REGISTROS 50 e 60 ⭐⭐⭐
+    # Agrupamos por TIPO do produto, usando o código mapeado para o TXT.
     from itertools import groupby
     from operator import attrgetter
 
-    movimentacoes_ordenadas = mov_query.order_by('produto_codigo__codigo_produto')
+    def _tipo_ordenacao(mov):
+        prod = mov.produto_codigo
+        return prod.get_tipo_display() if prod.tipo else (prod.nome or prod.codigo_produto)
 
-    for prod_codigo, movimentacoes_grupo in groupby(movimentacoes_ordenadas, key=attrgetter('produto_codigo.codigo_produto')):
-        prod_cod = prod_codigo[:3].upper()
+    movimentacoes_ordenadas = sorted(mov_query, key=_tipo_ordenacao)
+
+    for tipo_display, movimentacoes_grupo in groupby(movimentacoes_ordenadas, key=_tipo_ordenacao):
         mov_list = list(movimentacoes_grupo)
+        if not mov_list:
+            continue
+
+        # Pega o código do produto baseado no tipo (primeiro movimento do grupo).
+        prod_cod = _codigo_produto_por_tipo(mov_list[0].produto_codigo)[:3].upper()
 
         # Registro 50 - Produto Voucher
         data_agend = data_competencia if data_competencia else date.today()
@@ -337,7 +369,8 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
         data_fim = data_ini + timedelta(days=30)
         periodos = f"{data_ini.strftime('%d/%m/%Y')} - {data_fim.strftime('%d/%m/%Y')}"
 
-        produto_display = prod.nome if prod.nome else prod.get_tipo_display_or_codigo()
+        # Sempre usa o tipo do produto nos documentos exportados.
+        produto_display = prod.get_tipo_display() if prod.tipo else (prod.nome or prod.codigo_produto)
 
         # Busca o vínculo entre o condomínio e a administradora
         vinculo = cond.vinculocondominio_set.first()
@@ -448,7 +481,7 @@ class GetImportacaoSelectDataView(views.APIView):
             condominios_dict[cond_cnpj]["funcionarios"][func_cpf]["movimentacoes"].append({
                 "id": m.id,
                 "produto_codigo": m.produto_codigo.codigo_produto,
-                "produto_nome": m.produto_codigo.nome,
+                "produto_nome": m.produto_codigo.get_tipo_display() if m.produto_codigo.tipo else m.produto_codigo.nome,
                 "valor_beneficio": float(m.valor_beneficio),
                 "quantidade_dias": m.quantidade_dias,
                 "data_competencia": m.data_competencia.strftime('%Y-%m-%d') if m.data_competencia else None,

@@ -101,13 +101,14 @@ class Importacao(models.Model):
 class Produto(models.Model):
     TIPO_CHOICES = [
         ('ALIMENTACAO', 'Alimentação'),
-        ('AUX_ALIMENTACAO', 'Auxílio Alimentação'),
-        ('REFEICAO', 'Refeição'),
-        ('AUX_REFEICAO', 'Auxílio Refeição'),
         ('AUTO', 'Auto'),
-        ('MULTI_AUXILIO', 'Multi Auxílio'),
-        ('MULTI_MOBILIDADE', 'Multi Mobilidade'),
-        ('MULTI_PREMIACAO', 'Multi Premiação'),
+        ('REFEICAO', 'Refeição'),
+        ('MULTI_HOME_OFFICE', 'Multi - Home Office'),
+        ('BOAS_FESTAS', 'Boas Festas'),
+        ('MULTI_ALIMENTACAO', 'Multi - Alimentação'),
+        ('MULTI_VR_VA', 'Multi - VR+VA'),
+        ('MULTI_REFEICAO', 'Multi - Refeição'),
+        ('MULTI_MOBILIDADE', 'Multi - Mobilidade'),
     ]
     FORNECEDORA_CHOICES = [
         ('VR', 'VR'),

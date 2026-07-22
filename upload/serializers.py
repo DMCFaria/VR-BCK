@@ -234,21 +234,22 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         cnpj_list = [c['cnpj'] for c in condominios_data if c.get('cnpj')]
         cpf_list = list(set(f['cpf'] for c in condominios_data for f in c.get('funcionarios', []) if f.get('cpf')))
         
-        # Extrair produtos únicos
+        # Extrair produtos únicos com tipo normalizado
         produtos_raw = []
         for c in condominios_data:
             for f in c.get('funcionarios', []):
                 for m in f.get('movimentacoes', []):
                     codigo = m.get('codigo_produto') or ''
                     produto = m.get('produto') or ''
+                    tipo = m.get('tipo') or produto
                     if codigo:
                         key = codigo.strip()[:50]
                     elif produto:
                         key = produto.strip()[:50]
                     else:
                         key = 'SEM_PRODUTO'
-                    produtos_raw.append((key, produto if produto else key))
-        prod_key_list = list(set(k for k, _ in produtos_raw))
+                    produtos_raw.append((key, produto if produto else key, tipo))
+        prod_key_list = list(set(k for k, _, _ in produtos_raw))
         
         # ========== 6. BUSCAR ENTIDADES EXISTENTES ==========
         from entidades.models import Condominio, Funcionario, VinculoCondominio
@@ -478,22 +479,42 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                     except Exception as e2:
                         logger.error(f"Erro ao atualizar {func.nome}: {e2}")
         
-        # ========== 9. CRIAR PRODUTOS QUE NÃO EXISTEM ==========
+        # ========== 9. CRIAR/ATUALIZAR PRODUTOS ==========
+        from beneficios.models import Produto
+
+        # Mapeamento de tipo (string) para o valor interno do choices do Produto.
+        TIPO_PARA_VALUE = {v: k for k, v in Produto.TIPO_CHOICES}
+
         prod_map = {}
-        for key, nome in produtos_raw:
+        for key, nome, tipo in produtos_raw:
             if key not in prod_map:
-                prod_map[key] = nome
-        
+                prod_map[key] = (nome, tipo)
+
         prods_to_create = []
-        for key, nome in prod_map.items():
+        prods_to_update_tipo = []
+        for key, (nome, tipo) in prod_map.items():
+            tipo_value = TIPO_PARA_VALUE.get(tipo)
             if key not in existing_prods:
-                prods_to_create.append(Produto(codigo_produto=key, nome=nome[:255]))
-        
+                prods_to_create.append(Produto(
+                    codigo_produto=key,
+                    nome=nome[:255],
+                    tipo=tipo_value
+                ))
+            else:
+                prod_obj = existing_prods[key]
+                if tipo_value and prod_obj.tipo != tipo_value:
+                    prod_obj.tipo = tipo_value
+                    prods_to_update_tipo.append(prod_obj)
+
         if prods_to_create:
             Produto.objects.bulk_create(prods_to_create, ignore_conflicts=True)
             for p in prods_to_create:
                 existing_prods[p.codigo_produto] = p
             logger.info(f"Criados {len(prods_to_create)} novos produtos")
+
+        if prods_to_update_tipo:
+            Produto.objects.bulk_update(prods_to_update_tipo, ['tipo'])
+            logger.info(f"Atualizado tipo de {len(prods_to_update_tipo)} produtos existentes")
         
         # ========== 10. CRIAR VÍNCULOS CONDOMÍNIO-ADMINISTRADORA ==========
         existing_vinculos = set(VinculoCondominio.objects.filter(
@@ -537,9 +558,14 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                     
                     prod_obj = existing_prods.get(codigo_produto)
                     if not prod_obj and codigo_produto:
+                        tipo_str = mov_data.get('tipo') or mov_data.get('produto', '')
+                        tipo_value = TIPO_PARA_VALUE.get(tipo_str)
                         prod_obj, created = Produto.objects.get_or_create(
                             codigo_produto=codigo_produto,
-                            defaults={'nome': mov_data.get('produto', '') or codigo_produto}
+                            defaults={
+                                'nome': mov_data.get('produto', '') or codigo_produto,
+                                'tipo': tipo_value,
+                            }
                         )
                         if created:
                             existing_prods[codigo_produto] = prod_obj
