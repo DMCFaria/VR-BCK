@@ -1186,17 +1186,17 @@ class ExcluirBaseCondominiosView(views.APIView):
 
 class ConsultarBoletosView(views.APIView):
     """
-    Lista boletos com filtros de status.
+    Lista faturas/boletos com filtros de status.
     GET /api/beneficios/boletos/?administradora_id=1&status=pago
 
     - dev/fat: sem administradora_id retorna todos; com filtro, retorna daquela administradora.
-    - adm: retorna apenas boletos da sua administradora_ativa (ignora param).
+    - adm: retorna apenas faturas da sua administradora_ativa (ignora param).
     """
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
     def get(self, request):
-        from beneficios.models import Faturamento
+        from beneficios.models import Faturamento, FaturamentoDocumento
         from entidades.models import Administradora
 
         user = request.user
@@ -1222,62 +1222,66 @@ class ConsultarBoletosView(views.APIView):
                 administradora=admin
             ).values_list('id', flat=True)
 
-            faturamento_ids = Faturamento.objects.filter(
+            faturas = Faturamento.objects.filter(
                 importacao_id__in=importacao_ids
-            ).values_list('id', flat=True)
-
-            boletos = Boleto.objects.filter(
-                faturamento_id__in=faturamento_ids
-            ).select_related('faturamento', 'faturamento__importacao').order_by('-vencimento')
+            ).select_related('importacao', 'importacao__administradora', 'administradora').order_by('-criado_em')
         else:
-            boletos = Boleto.objects.select_related(
-                'faturamento', 'faturamento__importacao'
-            ).order_by('-vencimento')
+            faturas = Faturamento.objects.select_related(
+                'importacao', 'importacao__administradora', 'administradora'
+            ).order_by('-criado_em')
 
         if status_filtro == 'pago':
-            boletos = boletos.filter(baixa=True)
+            faturas = faturas.filter(status__in=['COMPLETED', 'FATURADO'])
         elif status_filtro == 'pendente':
-            boletos = boletos.filter(baixa=False)
-        elif status_filtro == 'gerado':
-            boletos = boletos.filter(baixa=False, status__isnull=False)
+            faturas = faturas.filter(status__in=['PENDING', 'PROCESSING', 'FAILED'])
 
-        total = boletos.count()
+        total = faturas.count()
         offset = (page - 1) * limit
-        paginated = boletos[offset:offset + limit]
+        paginated = faturas[offset:offset + limit]
 
         result = []
-        for b in paginated:
-            imp = b.faturamento.importacao if b.faturamento else None
-            admin = imp.administradora if imp else None
+        for fat in paginated:
+            imp = fat.importacao
+            admin = imp.administradora if imp else fat.administradora
+            docs = FaturamentoDocumento.objects.filter(faturamento=fat).select_related('condominio')
+
+            condominios_data = []
+            for doc in docs:
+                condominios_data.append({
+                    'condominio_nome': doc.condominio.nome if doc.condominio else '',
+                    'condominio_cnpj': doc.condominio.cnpj if doc.condominio else '',
+                    'url_boleto': doc.url_boleto or '',
+                    'url_nota_debito': doc.url_nota_debito or '',
+                    'url_nota_fiscal': doc.url_nota_fiscal or '',
+                })
+
+            status_map = {
+                'PENDING': 'pendente',
+                'PROCESSING': 'processando',
+                'COMPLETED': 'pago',
+                'FATURADO': 'pago',
+                'FAILED': 'falhou',
+            }
+            status_display = status_map.get(fat.status, fat.status)
+
             result.append({
-                'id': b.id,
-                'documento': b.documento,
-                'fatura': b.fatura,
-                'nome_cobrado': b.nome_cobrado,
-                'cnpj_cobrado': b.cnpj_cobrado,
-                'cedente': b.cedente,
-                'valor': float(b.valor) if b.valor else 0,
-                'deducoes': float(b.deducoes) if b.deducoes else 0,
-                'vencimento': b.vencimento.isoformat() if b.vencimento else None,
-                'dt_emissao': b.dt_emissao.isoformat() if b.dt_emissao else None,
-                'baixa': b.baixa,
-                'dt_baixa': b.dt_baixa.isoformat() if b.dt_baixa else None,
-                'obs_baixa': b.obs_baixa,
-                'status': b.status,
-                'nosso_numero': b.nosso_numero,
-                'identificador': b.identificador,
-                'NFs_id': b.NFs_id,
-                'Numero_nota': b.Numero_nota,
-                'url_nota': b.url_nota,
-                'match': b.match,
-                'faturamento_id': b.faturamento_id if b.faturamento else None,
+                'id': fat.id,
+                'competencia': fat.competencia.isoformat() if fat.competencia else None,
+                'status': fat.status,
+                'status_display': status_display,
+                'progresso': fat.progresso,
+                'valor_total': float(imp.valor_total) if imp and imp.valor_total else 0,
+                'arquivo_unificado_url': fat.arquivo_unificado_url or '',
                 'importacao_id': imp.id if imp else None,
                 'importacao_status': imp.status if imp else None,
                 'administradora_id': admin.id if admin else None,
                 'administradora_nome': admin.nome_fantasia or admin.razao_social if admin else None,
                 'data_vencimento': imp.data_vencimento.isoformat() if imp and imp.data_vencimento else None,
                 'data_recebimento': imp.data_recebimento.isoformat() if imp and imp.data_recebimento else None,
-                'created_at': b.created_at.isoformat() if b.created_at else None,
+                'total_registros': imp.total_registros if imp else 0,
+                'registros_processados': imp.registros_processados if imp else 0,
+                'condominios': condominios_data,
+                'created_at': fat.criado_em.isoformat() if fat.criado_em else None,
             })
 
         return Response({
