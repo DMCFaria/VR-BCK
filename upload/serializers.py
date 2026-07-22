@@ -21,7 +21,7 @@ class MovimentacaoDetalhadaSerializer(serializers.Serializer):
     departamento = serializers.CharField(max_length=255)
     
     vencimento = serializers.DateField(input_formats=['%d/%m/%Y', '%Y-%m-%d'])
-    valor_recarga_bene = serializers.DecimalField(max_digits=12, decimal_places=2)
+    valor_recarga_bene = serializers.DecimalField(max_digits=15, decimal_places=2)
     quantidade = serializers.IntegerField()
     
     endereco = serializers.CharField(required=False, allow_blank=True, allow_null=True)
@@ -44,7 +44,7 @@ class MovimentacaoDetalhadaSerializer(serializers.Serializer):
 class MovimentacaoSerializer(serializers.Serializer):
     produto = serializers.CharField(max_length=255)
     codigo_produto = serializers.CharField(max_length=50, required=False, allow_blank=True, allow_null=True)
-    valor = serializers.DecimalField(max_digits=12, decimal_places=2)
+    valor = serializers.DecimalField(max_digits=15, decimal_places=2)
     quantidade = serializers.IntegerField(required=False, default=1)
 
 class FuncionarioSerializer(serializers.Serializer):
@@ -59,14 +59,14 @@ class FuncionarioSerializer(serializers.Serializer):
     endereco_numero = serializers.CharField(max_length=20, required=False, allow_null=True, allow_blank=True)
     endereco_complemento = serializers.CharField(max_length=100, required=False, allow_null=True, allow_blank=True)
     endereco_bairro = serializers.CharField(max_length=100, required=False, allow_null=True, allow_blank=True)
-    valor_bene = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, default=0)
+    valor_bene = serializers.DecimalField(max_digits=15, decimal_places=2, required=False, default=0)
     movimentacoes = MovimentacaoSerializer(many=True, required=False, default=[])
     condominio = serializers.CharField(max_length=20, required=False, allow_null=True, allow_blank=True)
 
 class CondominioSerializer(serializers.Serializer):
     nome = serializers.CharField(max_length=255)
     cnpj = serializers.CharField(max_length=20)
-    valor_condo = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, default=0)
+    valor_condo = serializers.DecimalField(max_digits=15, decimal_places=2, required=False, default=0)
     rua = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     numero = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     complemento = serializers.CharField(required=False, allow_blank=True, allow_null=True)
@@ -646,7 +646,7 @@ class FaturamentoExportSerializer(serializers.Serializer):
     BENEFICIO = serializers.CharField()
     VALOR_UNITARIO = serializers.DecimalField(max_digits=10, decimal_places=2)
     QUANTIDADE = serializers.IntegerField()
-    VALOR_RECARGA_BENE = serializers.DecimalField(max_digits=12, decimal_places=2)
+    VALOR_RECARGA_BENE = serializers.DecimalField(max_digits=15, decimal_places=2)
     REPASSE_VT = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
     DEPARTAMENTO = serializers.CharField()
     CNPJ = serializers.CharField()

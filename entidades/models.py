@@ -167,6 +167,7 @@ class Condominio(models.Model):
     )
     nome = models.CharField(max_length=255, verbose_name="Razão Social / Departamento")
     tipo_local = models.CharField(max_length=50, verbose_name="Tipo de Local", default="CONDOMINIO")
+    is_searched = models.BooleanField(default=False, verbose_name="Pesquisado")
     
     endereco = models.CharField(max_length=255, verbose_name="Endereço (Rua)", blank=True, null=True)
     numero = models.CharField(max_length=20, blank=True, null=True, verbose_name="Número")

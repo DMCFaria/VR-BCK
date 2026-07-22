@@ -1023,3 +1023,271 @@ class KanbanNotificarCompraView(views.APIView):
             'count': enviados,
             'pendentes': importacoes.count(),
         })
+
+
+class ImportarBaseCondominiosView(views.APIView):
+    """
+    Importa base de condomínios e funcionários via Excel.
+    Não gera faturamento — apenas cria/atualiza registros de Condominio e Funcionario.
+    
+    POST /api/beneficios/importar-base/
+    Body: multipart/form-data com arquivo Excel
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def post(self, request):
+        from entidades.models import Condominio, Funcionario
+        from datetime import datetime
+
+        arquivo = request.FILES.get('file')
+        administradora_id = request.data.get('administradora_id')
+
+        if not arquivo:
+            return Response({'detail': 'Nenhum arquivo enviado.'}, status=400)
+
+        if not arquivo.name.endswith(('.xlsx', '.xls')):
+            return Response({'detail': 'Formato inválido. Envie um arquivo .xlsx ou .xls.'}, status=400)
+
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(arquivo, data_only=True)
+            ws = wb.active
+
+            headers = [str(cell.value or '').strip().lower() for cell in ws[1]]
+
+            condominios_criados = 0
+            condominios_atualizados = 0
+            funcionarios_criados = 0
+            funcionarios_atualizados = 0
+            erros = []
+
+            for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+                try:
+                    data = dict(zip(headers, row))
+
+                    cnpj = str(data.get('cnpj', '') or '').strip()
+                    cnpj = ''.join(filter(str.isdigit, cnpj))
+
+                    if not cnpj or len(cnpj) != 14:
+                        continue
+
+                    nome = str(data.get('nome', '') or data.get('razao_social', '') or '').strip()
+                    if not nome:
+                        continue
+
+                    condominio, created = Condominio.objects.update_or_create(
+                        cnpj=cnpj,
+                        defaults={
+                            'nome': nome,
+                            'tipo_local': str(data.get('tipo_local', '') or 'CONDOMINIO').strip(),
+                            'endereco': str(data.get('endereco', '') or data.get('rua', '') or '').strip(),
+                            'numero': str(data.get('numero', '') or '').strip(),
+                            'complemento': str(data.get('complemento', '') or '').strip(),
+                            'bairro': str(data.get('bairro', '') or '').strip(),
+                            'cidade': str(data.get('cidade', '') or '').strip(),
+                            'estado': str(data.get('estado', '') or data.get('uf', '') or '').strip(),
+                            'cep': str(data.get('cep', '') or '').strip(),
+                        }
+                    )
+
+                    if created:
+                        condominios_criados += 1
+                    else:
+                        condominios_atualizados += 1
+
+                    if administradora_id:
+                        from entidades.models import Administradora, VinculoCondominio
+                        try:
+                            admin = Administradora.objects.get(id=administradora_id)
+                            VinculoCondominio.objects.get_or_create(
+                                administradora=admin,
+                                condominio=condominio,
+                            )
+                        except Administradora.DoesNotExist:
+                            pass
+
+                    cpf = str(data.get('cpf', '') or '').strip()
+                    cpf = ''.join(filter(str.isdigit, cpf))
+
+                    if cpf and len(cpf) == 11:
+                        func_nome = str(data.get('funcionario_nome', '') or data.get('nome_funcionario', '') or '').strip()
+
+                        if func_nome:
+                            func, func_created = Funcionario.objects.update_or_create(
+                                cpf=cpf,
+                                defaults={
+                                    'nome': func_nome,
+                                    'matricula': str(data.get('matricula', '') or '').strip(),
+                                    'departamento': str(data.get('departamento', '') or '').strip(),
+                                    'funcao': str(data.get('funcao', '') or data.get('cargo', '') or '').strip(),
+                                    'sexo': str(data.get('sexo', '') or '').strip()[:1] or None,
+                                    'telefone': str(data.get('telefone', '') or '').strip(),
+                                    'email': str(data.get('email', '') or '').strip(),
+                                    'condominio': condominio,
+                                }
+                            )
+
+                            if func_created:
+                                funcionarios_criados += 1
+                            else:
+                                funcionarios_atualizados += 1
+
+                except Exception as e:
+                    erros.append(f'Linha {row_idx}: {str(e)}')
+
+            return Response({
+                'detail': 'Importação concluída.',
+                'condominios_criados': condominios_criados,
+                'condominios_atualizados': condominios_atualizados,
+                'funcionarios_criados': funcionarios_criados,
+                'funcionarios_atualizados': funcionarios_atualizados,
+                'erros': erros[:20],
+                'total_erros': len(erros),
+            })
+
+        except ImportError:
+            return Response({'detail': 'Biblioteca openpyxl não instalada no servidor.'}, status=500)
+        except Exception as e:
+            logger.error(f"Erro ao importar base: {str(e)}")
+            return Response({'detail': f'Erro ao processar arquivo: {str(e)}'}, status=400)
+
+
+class ExcluirBaseCondominiosView(views.APIView):
+    """
+    Exclui a base de condomínios e funcionários de uma administradora.
+    DELETE /api/beneficios/excluir-base/{administradora_id}/
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def delete(self, request, administradora_id):
+        from entidades.models import Administradora, VinculoCondominio, Condominio, Funcionario
+
+        try:
+            admin = Administradora.objects.get(id=administradora_id)
+        except Administradora.DoesNotExist:
+            return Response({'detail': 'Administradora não encontrada.'}, status=404)
+
+        vinculos = VinculoCondominio.objects.filter(administradora=admin)
+        condominio_ids = vinculos.values_list('condominio_id', flat=True)
+
+        funcionarios_removidos = Funcionario.objects.filter(condominio_id__in=condominio_ids).delete()[0]
+        vinculos_removidos = vinculos.delete()[0]
+        condominios_removidos = Condominio.objects.filter(cnpj__in=condominio_ids).delete()[0]
+
+        return Response({
+            'detail': 'Base excluída com sucesso.',
+            'condominios_removidos': condominios_removidos,
+            'vinculos_removidos': vinculos_removidos,
+            'funcionarios_removidos': funcionarios_removidos,
+        })
+
+
+class ConsultarBoletosView(views.APIView):
+    """
+    Lista faturas/boletos com filtros de status.
+    GET /api/beneficios/boletos/?administradora_id=1&status=pago
+
+    - dev/fat: sem administradora_id retorna todos; com filtro, retorna daquela administradora.
+    - adm: retorna apenas faturas da sua administradora_ativa (ignora param).
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        from beneficios.models import Faturamento, FaturamentoDocumento
+        from entidades.models import Administradora
+
+        user = request.user
+        administradora_id = request.query_params.get('administradora_id')
+        status_filtro = request.query_params.get('status')
+        page = int(request.query_params.get('page', 1))
+        limit = int(request.query_params.get('limit', 50))
+
+        # adm: força filtro pela sua administradora_ativa
+        if user.tipo == 'adm':
+            administradora_ativa = getattr(user, 'administradora_ativa', None)
+            if not administradora_ativa:
+                return Response({'detail': 'Usuário não possui administradora vinculada.'}, status=400)
+            administradora_id = administradora_ativa.id
+
+        if administradora_id:
+            try:
+                admin = Administradora.objects.get(id=administradora_id)
+            except Administradora.DoesNotExist:
+                return Response({'detail': 'Administradora não encontrada.'}, status=404)
+
+            importacao_ids = Importacao.objects.filter(
+                administradora=admin
+            ).values_list('id', flat=True)
+
+            faturas = Faturamento.objects.filter(
+                importacao_id__in=importacao_ids
+            ).select_related('importacao', 'importacao__administradora', 'administradora').order_by('-criado_em')
+        else:
+            faturas = Faturamento.objects.select_related(
+                'importacao', 'importacao__administradora', 'administradora'
+            ).order_by('-criado_em')
+
+        if status_filtro == 'pago':
+            faturas = faturas.filter(status__in=['COMPLETED', 'FATURADO'])
+        elif status_filtro == 'pendente':
+            faturas = faturas.filter(status__in=['PENDING', 'PROCESSING', 'FAILED'])
+
+        total = faturas.count()
+        offset = (page - 1) * limit
+        paginated = faturas[offset:offset + limit]
+
+        result = []
+        for fat in paginated:
+            imp = fat.importacao
+            admin = imp.administradora if imp else fat.administradora
+            docs = FaturamentoDocumento.objects.filter(faturamento=fat).select_related('condominio')
+
+            condominios_data = []
+            for doc in docs:
+                condominios_data.append({
+                    'condominio_nome': doc.condominio.nome if doc.condominio else '',
+                    'condominio_cnpj': doc.condominio.cnpj if doc.condominio else '',
+                    'url_boleto': doc.url_boleto or '',
+                    'url_nota_debito': doc.url_nota_debito or '',
+                    'url_nota_fiscal': doc.url_nota_fiscal or '',
+                })
+
+            status_map = {
+                'PENDING': 'pendente',
+                'PROCESSING': 'processando',
+                'COMPLETED': 'pago',
+                'FATURADO': 'pago',
+                'FAILED': 'falhou',
+            }
+            status_display = status_map.get(fat.status, fat.status)
+
+            result.append({
+                'id': fat.id,
+                'competencia': fat.competencia.isoformat() if fat.competencia else None,
+                'status': fat.status,
+                'status_display': status_display,
+                'progresso': fat.progresso,
+                'valor_total': float(imp.valor_total) if imp and imp.valor_total else 0,
+                'arquivo_unificado_url': fat.arquivo_unificado_url or '',
+                'importacao_id': imp.id if imp else None,
+                'importacao_status': imp.status if imp else None,
+                'administradora_id': admin.id if admin else None,
+                'administradora_nome': admin.nome_fantasia or admin.razao_social if admin else None,
+                'data_vencimento': imp.data_vencimento.isoformat() if imp and imp.data_vencimento else None,
+                'data_recebimento': imp.data_recebimento.isoformat() if imp and imp.data_recebimento else None,
+                'total_registros': imp.total_registros if imp else 0,
+                'registros_processados': imp.registros_processados if imp else 0,
+                'condominios': condominios_data,
+                'created_at': fat.criado_em.isoformat() if fat.criado_em else None,
+            })
+
+        return Response({
+            'data': result,
+            'total': total,
+            'page': page,
+            'pages': max((total + limit - 1) // limit, 1),
+            'limit': limit,
+        })

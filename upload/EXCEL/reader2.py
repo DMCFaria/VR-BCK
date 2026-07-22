@@ -223,11 +223,39 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
         'faixa_salarial': 8,
     }
 
-    # Encontrar colunas de produto na linha 2
+    # Encontrar colunas de produto
+    # Headers podem estar na linha 1, 2 ou 3 dependendo do template
     # Headers podem ter newlines ou estarem colados com "Valor do crédito"
     col_produtos = {}
-    ben_iter = iter(ws_ben.iter_rows(min_row=2, values_only=True))
-    header_row = next(ben_iter, None)
+    ben_rows = list(ws_ben.iter_rows(min_row=1, max_row=5, values_only=True))
+    
+    header_row = None
+    header_row_num = 2
+    for try_idx, try_row in enumerate(ben_rows):
+        if not try_row:
+            continue
+        for val in try_row:
+            if val is None:
+                continue
+            h = _safe_str(val).strip().split('\n')[0].strip()
+            if h in COLUNAS_PRODUTO:
+                header_row = try_row
+                header_row_num = try_idx + 1
+                break
+            for nome in COLUNAS_PRODUTO:
+                if nome.lower() in h.lower() or h.lower() in nome.lower():
+                    header_row = try_row
+                    header_row_num = try_idx + 1
+                    break
+            if header_row:
+                break
+        if header_row:
+            break
+    
+    if not header_row and ben_rows:
+        header_row = ben_rows[1] if len(ben_rows) > 1 else ben_rows[0]
+        header_row_num = 2
+
     if header_row:
         for col_idx, val in enumerate(header_row, start=1):
             if val is None:
@@ -244,7 +272,10 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
                         col_produtos[col_idx] = nome
                         break
 
-    for row_num, row in enumerate(ben_iter, start=3):
+    data_start_row = header_row_num + 1
+
+    data_rows = list(ws_ben.iter_rows(min_row=data_start_row, values_only=True))
+    for row_num, row in enumerate(data_rows, start=data_start_row):
         if not row:
             continue
 
