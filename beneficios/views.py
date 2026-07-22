@@ -1211,6 +1211,9 @@ class ConsultarBoletosView(views.APIView):
             if not administradora_ativa:
                 return Response({'detail': 'Usuário não possui administradora vinculada.'}, status=400)
             administradora_id = administradora_ativa.id
+        # dev/fat: ignora administradora_id, vê tudo
+        elif user.tipo in ('dev', 'fat'):
+            administradora_id = None
 
         # Partir de Importacao (mesmo padrão do KanbanFaturasView)
         importacoes_qs = Importacao.objects.select_related(

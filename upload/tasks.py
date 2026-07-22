@@ -173,7 +173,7 @@ def pesquisar_enderecos_condominios(self, cnpjs, importacao_id=None):
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuario_id):
+def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuario_id, mode='substituir'):
     from beneficios.models import Faturamento, FaturamentoDocumento, Importacao
     from entidades.models import Condominio
     from upload.pdf_reader import ler_boleto, ler_nota_debito, ler_nota_fiscal
@@ -348,13 +348,24 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
                 logger.warning(f"Condomínio {cnpj} não encontrado no banco, pulando...")
                 continue
 
-            FaturamentoDocumento.objects.create(
-                faturamento=faturamento,
-                condominio=condominio,
-                url_boleto=docs.get('boleto', ''),
-                url_nota_debito=docs.get('nota_debito', ''),
-                url_nota_fiscal=docs.get('nota_fiscal', '')
-            )
+            if mode == 'adicionar':
+                FaturamentoDocumento.objects.update_or_create(
+                    faturamento=faturamento,
+                    condominio=condominio,
+                    defaults={
+                        'url_boleto': docs.get('boleto', ''),
+                        'url_nota_debito': docs.get('nota_debito', ''),
+                        'url_nota_fiscal': docs.get('nota_fiscal', '')
+                    }
+                )
+            else:
+                FaturamentoDocumento.objects.create(
+                    faturamento=faturamento,
+                    condominio=condominio,
+                    url_boleto=docs.get('boleto', ''),
+                    url_nota_debito=docs.get('nota_debito', ''),
+                    url_nota_fiscal=docs.get('nota_fiscal', '')
+                )
             
             progresso_banco = 90 + int(((i + 1) / total_condominios) * 10) if total_condominios > 0 else 100
             atualizar_progresso(faturamento.id, progresso_banco)
@@ -365,12 +376,26 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
             from beneficios.models import Importacao, MovimentacaoBeneficio
             from upload.nfse_service import emitir_nfse_lote
 
+            condominios_novos = []
+            condominios_existentes = set()
+
+            if mode == 'adicionar':
+                condominios_existentes = set(
+                    FaturamentoDocumento.objects.filter(
+                        faturamento=faturamento
+                    ).values_list('condominio__cnpj', flat=True)
+                )
+
             dados_condominios = []
             for cnpj, docs in condominios_encontrados.items():
                 try:
                     condominio = Condominio.objects.get(cnpj=cnpj)
                 except Condominio.DoesNotExist:
                     logger.warning(f"NFSe: Condomínio {cnpj} não encontrado, pulando...")
+                    continue
+
+                if mode == 'adicionar' and cnpj in condominios_existentes:
+                    logger.info(f"NFSe: Condomínio {cnpj} já possui NFSe, pulando reemissão")
                     continue
 
                 total_valor = MovimentacaoBeneficio.objects.filter(
@@ -396,8 +421,9 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
 
         try:
             from beneficios.models import Importacao, MovimentacaoBeneficio
-            Importacao.objects.filter(id=importacao_id).update(status='FATURADO')
-            MovimentacaoBeneficio.objects.filter(importacao=importacao_id).update(importacao_status='FATURADO')
+            if mode != 'adicionar':
+                Importacao.objects.filter(id=importacao_id).update(status='FATURADO')
+                MovimentacaoBeneficio.objects.filter(importacao=importacao_id).update(importacao_status='FATURADO')
             faturamento.status = 'COMPLETED'
             faturamento.save(update_fields=['status'])
             MovimentacaoBeneficio.objects.filter(importacao=importacao_id).update(fat_status='COMPLETED')
