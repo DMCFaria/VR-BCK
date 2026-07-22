@@ -56,15 +56,21 @@ def editar_planilha_original(file_path, dados_modificados, data_competencia=None
         keep_vba = file_ext == '.xlsm'
         logger.debug(f"[EDITAR_PLANILHA] Extensão do arquivo: {file_ext}, keep_vba: {keep_vba}")
 
+        logger.info("[EDITAR_PLANILHA] Chamando _limpar_dimensoes_extras")
         wb = _limpar_dimensoes_extras(file_path, keep_vba=keep_vba)
         logger.info(f"[EDITAR_PLANILHA] Planilha aberta e limpa - sheets: {wb.sheetnames}")
 
+        logger.info("[EDITAR_PLANILHA] Editando sheet Sumario")
         _editar_sheet_sumario(wb, dados_modificados, data_competencia)
+        logger.info("[EDITAR_PLANILHA] Editando sheet Local de Entrega")
         _editar_sheet_local_entrega(wb, dados_modificados)
+        logger.info("[EDITAR_PLANILHA] Editando sheet Beneficiario")
         _editar_sheet_beneficiario(wb, dados_modificados)
 
+        logger.info("[EDITAR_PLANILHA] Salvando planilha editada")
         output = io.BytesIO()
         wb.save(output)
+        logger.info("[EDITAR_PLANILHA] Planilha salva em memória, fechando workbook")
         wb.close()
         output.seek(0)
 
@@ -293,18 +299,33 @@ def _limpar_dimensoes_extras(file_path, keep_vba=False):
     """
     # 1º passo: descobrir dimensões reais com baixo consumo de memória (read_only)
     dimensoes = {}
+    # Limites de segurança para evitar travamento em planilhas com dimensões residuais enormes
+    MAX_ROW_LIMPEZA = 20000
+    MAX_COL_LIMPEZA = 500
+    logger.info(f"[LIMPEZA] Abrindo planilha em modo read_only (keep_vba={keep_vba})")
     wb_read = openpyxl.load_workbook(file_path, read_only=True, keep_vba=keep_vba)
     try:
+        logger.info(f"[LIMPEZA] Planilha aberta. Sheets: {wb_read.sheetnames}")
         for sheet_name in wb_read.sheetnames:
             ws = wb_read[sheet_name]
+            logger.info(f"[LIMPEZA] Analisando dimensões da sheet '{sheet_name}'")
 
             last_row = 0
             last_col = 0
 
             # Itera uma única vez sobre todas as células para encontrar
-            # a última linha e coluna com dados reais.
+            # a última linha e coluna com dados reais. Limitamos a área
+            # para evitar loops infinitos/travamentos em planilhas corrompidas.
             for row_idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
+                if row_idx > MAX_ROW_LIMPEZA:
+                    logger.warning(
+                        f"[LIMPEZA] Sheet '{sheet_name}' atingiu limite de {MAX_ROW_LIMPEZA} "
+                        f"linhas durante análise. Usando dimensões parciais."
+                    )
+                    break
                 for col_idx, value in enumerate(row, start=1):
+                    if col_idx > MAX_COL_LIMPEZA:
+                        break
                     if value is not None and str(value).strip() != '':
                         if row_idx > last_row:
                             last_row = row_idx
@@ -312,26 +333,33 @@ def _limpar_dimensoes_extras(file_path, keep_vba=False):
                             last_col = col_idx
 
             dimensoes[sheet_name] = (last_row, last_col)
+            logger.info(f"[LIMPEZA] Dimensões reais de '{sheet_name}': {last_row} linhas x {last_col} colunas")
     finally:
         wb_read.close()
 
     # 2º passo: abrir normalmente e remover o excesso
+    logger.info("[LIMPEZA] Abrindo planilha em modo normal para limpeza")
     wb = openpyxl.load_workbook(file_path, keep_vba=keep_vba)
+    logger.info(f"[LIMPEZA] Planilha aberta em modo normal. Sheets: {wb.sheetnames}")
     for sheet_name, (last_row, last_col) in dimensoes.items():
         ws = wb[sheet_name]
 
         if last_row == 0 or last_col == 0:
+            logger.info(f"[LIMPEZA] Sheet '{sheet_name}' vazia, pulando limpeza")
             continue
 
         max_row = ws.max_row
         max_col = ws.max_column
+        logger.info(f"[LIMPEZA] Sheet '{sheet_name}' dimensões atuais: {max_row} linhas x {max_col} colunas")
 
         rows_removed = max(0, max_row - last_row)
         cols_removed = max(0, max_col - last_col)
 
         if cols_removed > 0:
+            logger.info(f"[LIMPEZA] Removendo {cols_removed} colunas de '{sheet_name}'")
             ws.delete_cols(last_col + 1, cols_removed)
         if rows_removed > 0:
+            logger.info(f"[LIMPEZA] Removendo {rows_removed} linhas de '{sheet_name}'")
             ws.delete_rows(last_row + 1, rows_removed)
 
         if rows_removed > 0 or cols_removed > 0:

@@ -4,10 +4,22 @@ from .models import Condominio, Funcionario, Administradora, VinculoCondominio, 
 
 @admin.register(Administradora)
 class AdministradoraAdmin(admin.ModelAdmin):
-    list_display = ['cnpj', 'razao_social', 'ativo', 'd_mais', 'created_at']
-    list_filter = ['ativo']
-    search_fields = ['cnpj', 'razao_social']
+    list_display = ['cnpj', 'razao_social', 'ativo', 'd_mais', 'cidade', 'estado', 'created_at']
+    list_filter = ['ativo', 'estado', 'cidade']
+    search_fields = ['cnpj', 'razao_social', 'cidade', 'estado']
     ordering = ['razao_social']
+    fieldsets = (
+        (None, {
+            'fields': ('cnpj', 'razao_social', 'nome_fantasia', 'email', 'ativo', 'cartao_admin')
+        }),
+        ('Endereço', {
+            'fields': ('endereco', 'numero', 'complemento', 'bairro', 'cidade', 'estado', 'cep'),
+            'classes': ('collapse',)
+        }),
+        ('Configurações', {
+            'fields': ('valor_max_beneficio', 'd_mais', 'taxa_padrao_tipo', 'taxa_padrao_valor')
+        }),
+    )
 
 
 @admin.register(Gerente)

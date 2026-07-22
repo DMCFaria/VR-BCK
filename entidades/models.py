@@ -15,6 +15,14 @@ class Administradora(models.Model):
     
     cartao_admin = models.BooleanField(default=True, verbose_name="Cartão Admin")
 
+    endereco = models.CharField(max_length=255, verbose_name="Endereço (Rua)", blank=True, null=True)
+    numero = models.CharField(max_length=20, verbose_name="Número", blank=True, null=True)
+    complemento = models.CharField(max_length=100, verbose_name="Complemento", blank=True, null=True)
+    bairro = models.CharField(max_length=100, verbose_name="Bairro", blank=True, null=True)
+    cidade = models.CharField(max_length=100, verbose_name="Cidade", blank=True, null=True)
+    estado = models.CharField(max_length=2, verbose_name="Estado (UF)", blank=True, null=True)
+    cep = models.CharField(max_length=10, verbose_name="CEP", blank=True, null=True)
+
     valor_max_beneficio = models.DecimalField(
         max_digits=10, decimal_places=2, default=9999.99,
         verbose_name="Valor máximo por funcionário"

@@ -7,6 +7,20 @@ from decimal import Decimal
 import pandas as pd
 
 
+def _consultar_endereco_condominio(cnpj):
+    """
+    Consulta o endereço real de um condomínio pelo CNPJ.
+    Usado no faturamento quando o endereço do condomínio está vazio
+    (caso comum no modo cartão admin, onde a planilha traz o endereço
+    da administradora como local de entrega).
+    """
+    from upload.services import CNPJConsultaService
+    try:
+        return CNPJConsultaService.consultar(cnpj, fonte="bigdatacorp_addresses")
+    except Exception:
+        return None
+
+
 def remover_acentos(texto):
     """Remove acentos e caracteres especiais, convertendo para ASCII."""
     if not texto:
@@ -112,22 +126,25 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None, movimentacao_id
         gerentes_str = '/'.join(nomes_gerentes)[:30] if nomes_gerentes else ''
 
         # Local Entrega (TipoRec 10)
-        numero_condo = str(condominio.numero or '').strip()
-        if not numero_condo:
-            numero_condo = ''
+        # Se cartao_admin=True, entrega na administradora; senão, no condomínio.
+        endereco_entrega = admin if admin.cartao_admin else condominio
+        nome_entrega = remover_acentos(endereco_entrega.razao_social if admin.cartao_admin else condominio.nome)
+        numero_entrega = str(endereco_entrega.numero or '').strip()
+        if not numero_entrega:
+            numero_entrega = ''
         linha_local = (
             f"10"
             f"{administradora_cnpj.zfill(14)}"
             f"{condominio.cnpj[:30]:<30}"
-            f"{remover_acentos(condominio.nome)[:80]:<80}"
+            f"{nome_entrega[:80]:<80}"
             f"{'AVENIDA'[:20]:<20}"
-            f"{remover_acentos(condominio.endereco or '')[:40]:<40}"
-            f"{numero_condo.zfill(6)[:6]:<6}"
-            f"{remover_acentos(condominio.complemento or '')[:20]:<20}"
-            f"{remover_acentos(condominio.bairro or '')[:30]:<30}"
-            f"{remover_acentos(condominio.cidade or '')[:30]:<30}"
-            f"{(condominio.estado or '')[:2]:<2}"
-            f"{(condominio.cep or '').replace('-', '')[:8]:<8}"
+            f"{remover_acentos(endereco_entrega.endereco or '')[:40]:<40}"
+            f"{numero_entrega.zfill(6)[:6]:<6}"
+            f"{remover_acentos(endereco_entrega.complemento or '')[:20]:<20}"
+            f"{remover_acentos(endereco_entrega.bairro or '')[:30]:<30}"
+            f"{remover_acentos(endereco_entrega.cidade or '')[:30]:<30}"
+            f"{(endereco_entrega.estado or '')[:2]:<2}"
+            f"{(endereco_entrega.cep or '').replace('-', '')[:8]:<8}"
             f"{gerentes_str[:30]:<30}"
             f"{' ' * 29}"
             f"{str(seq).zfill(9)}"
@@ -136,7 +153,7 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None, movimentacao_id
         seq += 1
 
         # Associação CNPJ ao Local Entrega (TipoRec 11)
-        # Se cartao_admin=True, entrega na administradora; senão, no condomínio
+        # Se cartao_admin=True, entrega na administradora; senão, no condomínio.
         nome_entrega = remover_acentos(admin.razao_social if admin.cartao_admin else condominio.nome)
         linha_assoc = (
             f"11"
@@ -307,24 +324,25 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
         Importacao.objects.filter(id=importacao_id).update(status='EM_FATURAMENTO')
 
     dados = []
+    cache_enderecos = {}
     for mov in movimentacoes:
         func = mov.funcionario_cpf
         cond = mov.empresa_cnpj
         prod = mov.produto_codigo
-        
+
         valor_unitario = mov.valor_beneficio / mov.quantidade_dias if mov.quantidade_dias > 0 else mov.valor_beneficio
-        
+
         datos_periodo = mov.data_competencia.strftime('%d/%m/%Y')
         data_ini = mov.data_competencia.replace(day=1)
         data_fim = data_ini + timedelta(days=30)
         periodos = f"{data_ini.strftime('%d/%m/%Y')} - {data_fim.strftime('%d/%m/%Y')}"
-        
+
         produto_display = prod.nome if prod.nome else prod.get_tipo_display_or_codigo()
 
         # Busca o vínculo entre o condomínio e a administradora
         vinculo = cond.vinculocondominio_set.first()
         administradora = vinculo.administradora if vinculo else None
-        
+
         # Calcula a taxa
         taxa = calcular_taxa(
             valor_beneficio=mov.valor_beneficio,
@@ -332,6 +350,25 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
             vinculo=vinculo,
             produto=prod
         )
+
+        # Endereço do condomínio. Se estiver vazio (comum no modo cartão admin,
+        # pois a planilha traz o endereço da administradora), consulta o CNPJ.
+        endereco_cond = cond.endereco or ''
+        bairro_cond = cond.bairro or ''
+        cidade_cond = cond.cidade or ''
+        estado_cond = cond.estado or ''
+        cep_cond = cond.cep or ''
+
+        if cond.cnpj and not any([endereco_cond, bairro_cond, cidade_cond, estado_cond, cep_cond]):
+            if cond.cnpj not in cache_enderecos:
+                cache_enderecos[cond.cnpj] = _consultar_endereco_condominio(cond.cnpj)
+            dados_cnpj = cache_enderecos[cond.cnpj]
+            if dados_cnpj:
+                endereco_cond = dados_cnpj.get('rua', '')
+                bairro_cond = dados_cnpj.get('bairro', '')
+                cidade_cond = dados_cnpj.get('cidade', '')
+                estado_cond = dados_cnpj.get('estado', '')
+                cep_cond = dados_cnpj.get('cep', '')
 
         dados.append({
             'CPF': func.cpf,
@@ -349,11 +386,11 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
             'REPASSE_VT': None,
             'DEPARTAMENTO': cond.nome,
             'CNPJ': cond.cnpj,
-            'ENDERECO': cond.endereco or '',
-            'BAIRRO': cond.bairro or '',
-            'CIDADE': cond.cidade or '',
-            'UF': cond.estado or '',
-            'CEP': cond.cep or '',
+            'ENDERECO': endereco_cond,
+            'BAIRRO': bairro_cond,
+            'CIDADE': cidade_cond,
+            'UF': estado_cond,
+            'CEP': cep_cond,
             'TAXA': float(taxa),
             'vencimento': datos_periodo,
             'periodos': periodos.split('-')[0],

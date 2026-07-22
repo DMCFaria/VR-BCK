@@ -250,3 +250,8 @@ NFSE_PRESTADOR_RAZAO_SOCIAL = config('NFSE_PRESTADOR_RAZAO_SOCIAL', default='FED
 NFSE_SERVICO_CODIGO = config('NFSE_SERVICO_CODIGO', default='100202')
 NFSE_TOMADOR_CODIGO_PADRAO = config('NFSE_TOMADOR_CODIGO_PADRAO', default='3550308')
 NFSE_X_API_KEY = config('NFSE_X_API_KEY', default='fedcorp_static_token_secure_xyz123')
+
+# BigDataCorp
+BIGDATA_ACCESS_TOKEN = config('BIGDATA_ACCESS_TOKEN', default='')
+BIGDATA_TOKEN_ID = config('BIGDATA_TOKEN_ID', default='')
+BIGDATA_URL = config('BIGDATA_URL', default='https://plataforma.bigdatacorp.com.br/empresas')

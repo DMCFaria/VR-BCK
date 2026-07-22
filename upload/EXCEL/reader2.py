@@ -177,31 +177,17 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
         }
 
     # Determina se é modo "cartão admin" baseado apenas na aba Local de Entrega.
-    # - Se houver apenas 1 local e ele for o CNPJ da administradora => cartao_admin=True
-    # - Se houver 0 locais => erro
-    # - Se houver 1 local diferente da administradora => condomínio normal (False)
-    # - Se houver >1 local e um deles for a administradora => erro (misturado)
-    # - Se houver >1 local e nenhum for a administradora => condomínios normais (False)
+    # Regra acordada: se houver apenas 1 local de entrega => cartao_admin=True
+    # (a administradora centraliza a entrega). Se houver 0 locais => erro.
+    # Se houver >1 local => condomínios normais, cartao_admin=False.
     cartao_admin = False
     if not locais_raw:
         result['errors'].append(
             "Aba 'Local de Entrega' não contém nenhum local de entrega cadastrado."
         )
     elif len(locais_raw) == 1:
-        if admin_cnpj_normalizado and _normalizar_cnpj(locais_raw[0]) == admin_cnpj_normalizado:
-            cartao_admin = True
-        else:
-            cartao_admin = False
+        cartao_admin = True
     else:
-        admin_presente = any(
-            admin_cnpj_normalizado and _normalizar_cnpj(cod) == admin_cnpj_normalizado
-            for cod in locais_raw
-        )
-        if admin_presente:
-            result['errors'].append(
-                "Aba 'Local de Entrega' está inconsistente: contém a administradora juntamente com outros locais. "
-                "No modo cartão admin só pode haver a linha da administradora; no modo condomínios não deve haver a administradora."
-            )
         cartao_admin = False
 
     result['cartao_admin'] = cartao_admin

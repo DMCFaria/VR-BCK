@@ -290,39 +290,44 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
 
                 # Se a planilha trouxer endereço, ela é a fonte fiel e sobrescreve
                 # qualquer dado preenchido automaticamente por consulta de CNPJ.
-                if condo.get('rua'):
-                    if condo_obj.endereco != condo['rua']:
-                        condo_obj.endereco = condo['rua']
+                # EXCEÇÃO: quando cartao_admin=True, a planilha VR traz o endereço
+                # da administradora como "local de entrega" para todos os condomínios.
+                # Nesse caso, não salvamos esse endereço no condomínio; o endereço real
+                # do condomínio deve vir da consulta de CNPJ em background.
+                if not administradora.cartao_admin:
+                    if condo.get('rua'):
+                        if condo_obj.endereco != condo['rua']:
+                            condo_obj.endereco = condo['rua']
+                            updated = True
+                        # Se houve atualização manual/endereço da planilha, resetamos
+                        # o flag para permitir nova pesquisa futura se necessário.
+                        if condo_obj.is_searched:
+                            condo_obj.is_searched = False
+                            updated = True
+
+                    if condo.get('numero') and condo_obj.numero != condo['numero']:
+                        condo_obj.numero = condo['numero']
                         updated = True
-                    # Se houve atualização manual/endereço da planilha, resetamos
-                    # o flag para permitir nova pesquisa futura se necessário.
-                    if condo_obj.is_searched:
-                        condo_obj.is_searched = False
+
+                    if condo.get('complemento') and condo_obj.complemento != condo['complemento']:
+                        condo_obj.complemento = condo['complemento']
                         updated = True
 
-                if condo.get('numero') and condo_obj.numero != condo['numero']:
-                    condo_obj.numero = condo['numero']
-                    updated = True
+                    if condo.get('bairro') and condo_obj.bairro != condo['bairro']:
+                        condo_obj.bairro = condo['bairro']
+                        updated = True
 
-                if condo.get('complemento') and condo_obj.complemento != condo['complemento']:
-                    condo_obj.complemento = condo['complemento']
-                    updated = True
+                    if condo.get('cidade') and condo_obj.cidade != condo['cidade']:
+                        condo_obj.cidade = condo['cidade']
+                        updated = True
 
-                if condo.get('bairro') and condo_obj.bairro != condo['bairro']:
-                    condo_obj.bairro = condo['bairro']
-                    updated = True
+                    if condo.get('estado') and condo_obj.estado != condo['estado']:
+                        condo_obj.estado = condo['estado']
+                        updated = True
 
-                if condo.get('cidade') and condo_obj.cidade != condo['cidade']:
-                    condo_obj.cidade = condo['cidade']
-                    updated = True
-
-                if condo.get('estado') and condo_obj.estado != condo['estado']:
-                    condo_obj.estado = condo['estado']
-                    updated = True
-
-                if condo.get('cep') and condo_obj.cep != condo['cep']:
-                    condo_obj.cep = condo['cep']
-                    updated = True
+                    if condo.get('cep') and condo_obj.cep != condo['cep']:
+                        condo_obj.cep = condo['cep']
+                        updated = True
 
                 if updated:
                     condos_to_update.append(condo_obj)

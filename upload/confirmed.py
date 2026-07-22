@@ -1,4 +1,5 @@
 import logging
+import threading
 import traceback
 
 from rest_framework import views, status
@@ -15,6 +16,100 @@ from django.utils import timezone
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _pesquisar_enderecos_condominios_async(cnpjs, importacao_id, cartao_admin=False):
+    """
+    Pesquisa endereços de condomínios em background via thread.
+
+    Roda dentro do processo do confirmed para não depender do worker Celery,
+    mas sem bloquear a resposta da requisição.
+
+    Args:
+        cnpjs: lista de CNPJs para pesquisar.
+        importacao_id: ID da importação para log.
+        cartao_admin: se True, sobrescreve o endereço do condomínio com os
+            dados da consulta, pois no modo cartão admin a planilha traz o
+            endereço da administradora como local de entrega.
+    """
+    import re
+    from django.db import connection, connections
+    from entidades.models import Condominio
+    from upload.services import CNPJConsultaService
+
+    # Fecha conexões antigas para evitar que a thread reuse conexão do request principal
+    connection.close_if_unusable_or_obsolete()
+
+    try:
+        cnpjs_unicos = list(set(re.sub(r"\D", "", str(c)) for c in cnpjs if c))
+        logger.info(
+            f"[PESQUISA_THREAD] Iniciando pesquisa de {len(cnpjs_unicos)} CNPJs "
+            f"para importacao_id={importacao_id}, cartao_admin={cartao_admin}"
+        )
+
+        for cnpj in cnpjs_unicos:
+            if len(cnpj) != 14:
+                continue
+
+            try:
+                condominio = Condominio.objects.filter(cnpj=cnpj).first()
+                if not condominio:
+                    continue
+
+                # No modo cartão admin, sempre pesquisamos e sobrescrevemos o
+                # endereço, pois a planilha não traz o endereço real do condomínio.
+                # Fora do modo cartão admin, respeitamos is_searched para não
+                # pesquisar o mesmo CNPJ repetidamente.
+                if not cartao_admin and condominio.is_searched:
+                    continue
+
+                dados = CNPJConsultaService.consultar(cnpj, fonte="bigdatacorp_addresses")
+                if not dados:
+                    continue
+
+                campos_atualizados = []
+                if dados.get("razao_social") and condominio.nome != dados["razao_social"]:
+                    condominio.nome = dados["razao_social"]
+                    campos_atualizados.append("nome")
+
+                # Quando cartao_admin=True, preenchemos mesmo que já exista
+                # (pois o endereço existente provavelmente é da administradora).
+                if dados.get("rua") and (cartao_admin or not condominio.endereco):
+                    condominio.endereco = dados["rua"]
+                    campos_atualizados.append("endereco")
+                if dados.get("numero") and (cartao_admin or not condominio.numero):
+                    condominio.numero = dados["numero"]
+                    campos_atualizados.append("numero")
+                if dados.get("complemento") and (cartao_admin or not condominio.complemento):
+                    condominio.complemento = dados["complemento"]
+                    campos_atualizados.append("complemento")
+                if dados.get("bairro") and (cartao_admin or not condominio.bairro):
+                    condominio.bairro = dados["bairro"]
+                    campos_atualizados.append("bairro")
+                if dados.get("cidade") and (cartao_admin or not condominio.cidade):
+                    condominio.cidade = dados["cidade"]
+                    campos_atualizados.append("cidade")
+                if dados.get("estado") and (cartao_admin or not condominio.estado):
+                    condominio.estado = dados["estado"]
+                    campos_atualizados.append("estado")
+                if dados.get("cep") and (cartao_admin or not condominio.cep):
+                    condominio.cep = dados["cep"]
+                    campos_atualizados.append("cep")
+
+                condominio.is_searched = True
+                condominio.save(update_fields=campos_atualizados + ["is_searched"])
+                logger.info(f"[PESQUISA_THREAD] Condomínio {cnpj} atualizado: {campos_atualizados}")
+
+            except Exception as e:
+                logger.exception(f"[PESQUISA_THREAD] Erro ao processar CNPJ {cnpj}: {e}")
+                continue
+
+        logger.info(f"[PESQUISA_THREAD] Finalizado para importacao_id={importacao_id}")
+
+    except Exception as e:
+        logger.exception(f"[PESQUISA_THREAD] Erro geral: {e}")
+    finally:
+        connections.close_all()
 
 
 def _gerar_e_upload_planilha_editada(file_upload, dados_modificados, data_competencia, request_user):
@@ -183,26 +278,33 @@ class ConfirmationView(views.APIView):
                 result = serializer.save(processed_by=request.user)
                 logger.info(f"[CONFIRMACAO] Dados salvos com sucesso - result: {result}")
 
-                # Se o modo for cartão admin, dispara pesquisa assíncrona dos CNPJs.
+                # Se o modo for cartão admin, dispara pesquisa assíncrona dos CNPJs
+                # em uma thread dentro do próprio confirmed. Isso evita depender do
+                # worker Celery e não bloqueia a resposta do frontend.
+                # Passamos o flag cartao_admin para que a thread saiba quando deve
+                # sobrescrever o endereço do condomínio (pois no modo cartão admin
+                # a planilha traz o endereço da administradora como local de entrega).
                 if result.get("cartao_admin"):
-                    try:
-                        from upload.tasks import pesquisar_enderecos_condominios
-                        cnpjs_condominios = [
-                            c.get("cnpj") for c in payload.get("condominios", []) if c.get("cnpj")
-                        ]
-                        if cnpjs_condominios:
-                            pesquisar_enderecos_condominios.delay(
-                                cnpjs=cnpjs_condominios,
-                                importacao_id=result.get("importacao_id"),
+                    cnpjs_condominios = [
+                        c.get("cnpj") for c in payload.get("condominios", []) if c.get("cnpj")
+                    ]
+                    if cnpjs_condominios:
+                        try:
+                            thread = threading.Thread(
+                                target=_pesquisar_enderecos_condominios_async,
+                                args=(cnpjs_condominios, result.get("importacao_id")),
+                                kwargs={"cartao_admin": True},
+                                daemon=True,
                             )
+                            thread.start()
                             logger.info(
-                                f"[CONFIRMACAO] Pesquisa de endereços disparada para "
+                                f"[CONFIRMACAO] Pesquisa de endereços iniciada em thread para "
                                 f"{len(cnpjs_condominios)} condomínios (cartão admin)."
                             )
-                    except Exception as e:
-                        logger.exception(
-                            f"[CONFIRMACAO] Erro ao disparar pesquisa de endereços: {e}"
-                        )
+                        except Exception as e:
+                            logger.exception(
+                                f"[CONFIRMACAO] Erro ao iniciar pesquisa de endereços em thread: {e}"
+                            )
 
                 # Extrai dados do payload para o email
                 total_condominios = len(payload.get('condominios', []))
@@ -233,7 +335,10 @@ class ConfirmationView(views.APIView):
                     arquivo_nome = "Faturamento_Repetido.xlsx" if importacao_id else "arquivo.xlsx"
                 logger.debug(f"[CONFIRMACAO] Nome do arquivo para email: {arquivo_nome}")
 
-                # Gerar planilha editada se dados_modificados foram enviados
+                # Gerar planilha editada se dados_modificados foram enviados.
+                # Essa etapa roda de forma SÍNCRONA no confirmed para garantir
+                # que planilhas corrompidas/inválidas sejam detectadas antes de
+                # finalizar o processamento.
                 arquivo_s3_editado_url = None
                 logger.info(f"[CONFIRMACAO] Verificando geração de planilha editada - dados_modificados: {bool(dados_modificados)}, file_upload: {bool(file_upload)}")
 
@@ -260,7 +365,6 @@ class ConfirmationView(views.APIView):
                     )
                     logger.info(f"[CONFIRMACAO] URL da planilha editada retornada: {arquivo_s3_editado_url}")
 
-                    # Atualizar Importacao com URL do arquivo editado
                     if arquivo_s3_editado_url:
                         importacao.arquivo_s3_editado = arquivo_s3_editado_url
                         importacao.save(update_fields=['arquivo_s3_editado'])
@@ -275,7 +379,7 @@ class ConfirmationView(views.APIView):
 
                 logger.info(f"[CONFIRMACAO] Enviando email para {email_faturamento}")
 
-                # Envia email com dados REAIS
+                # Envia email com dados REAIS de forma síncrona
                 email_payload = {
                     "arquivo_nome": arquivo_nome,
                     "data_envio": timezone.now().strftime('%d/%m/%Y %H:%M'),

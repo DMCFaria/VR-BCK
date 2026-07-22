@@ -11,10 +11,29 @@ from pypdf import PdfReader, PdfWriter
 logger = logging.getLogger(__name__)
 
 
+def _notificar_erro_pesquisa_cnpj(assunto, mensagem):
+    """Envia email de alerta quando a pesquisa automática de CNPJ falha."""
+    from django.core.mail import send_mail
+    from django.conf import settings
+
+    email_destino = getattr(settings, 'EMAIL_FATURAMENTO', 'danielmello@condomed.com.br')
+    try:
+        send_mail(
+            subject=assunto,
+            message=mensagem,
+            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@fedcorp.com.br'),
+            recipient_list=[email_destino],
+            fail_silently=False,
+        )
+        logger.info(f"[PESQUISA_CNPJ] Email de erro enviado para {email_destino}")
+    except Exception as e:
+        logger.exception(f"[PESQUISA_CNPJ] Falha ao enviar email de erro: {e}")
+
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def pesquisar_enderecos_condominios(self, cnpjs, importacao_id=None):
     """
-    Pesquisa os endereços dos condomínios em segundo plano usando BrasilAPI.
+    Pesquisa os endereços dos condomínios em segundo plano usando BigDataCorp.
 
     Args:
         cnpjs: lista de CNPJs (com ou sem formatação) para pesquisar.
@@ -22,10 +41,25 @@ def pesquisar_enderecos_condominios(self, cnpjs, importacao_id=None):
     """
     from entidades.models import Condominio
     from upload.services import CNPJConsultaService
+    from django.conf import settings
 
     if not cnpjs:
         logger.info("[PESQUISA_CNPJ] Nenhum CNPJ para pesquisar.")
         return {"pesquisados": 0, "atualizados": 0, "importacao_id": importacao_id}
+
+    # Verifica configuração das credenciais antes de começar
+    if not getattr(settings, "BIGDATA_ACCESS_TOKEN", "") or not getattr(settings, "BIGDATA_TOKEN_ID", ""):
+        erro_msg = (
+            "[PESQUISA_CNPJ] BIGDATA_ACCESS_TOKEN ou BIGDATA_TOKEN_ID não configurados. "
+            "A pesquisa automática de CNPJs não pode ser executada. "
+            f"Importação: {importacao_id}"
+        )
+        logger.error(erro_msg)
+        _notificar_erro_pesquisa_cnpj(
+            "[ALERTA] Pesquisa automática de CNPJ - Credenciais não configuradas",
+            erro_msg
+        )
+        return {"pesquisados": 0, "atualizados": 0, "importacao_id": importacao_id, "erro": "Credenciais não configuradas"}
 
     cnpjs_unicos = list(set(re.sub(r"\D", "", str(c)) for c in cnpjs if c))
     logger.info(
@@ -35,6 +69,7 @@ def pesquisar_enderecos_condominios(self, cnpjs, importacao_id=None):
 
     pesquisados = 0
     atualizados = 0
+    cnpjs_com_falha = []
 
     for cnpj in cnpjs_unicos:
         if len(cnpj) != 14:
@@ -56,14 +91,20 @@ def pesquisar_enderecos_condominios(self, cnpjs, importacao_id=None):
 
             if not dados:
                 logger.warning(f"[PESQUISA_CNPJ] Não foi possível obter dados para {cnpj}.")
+                cnpjs_com_falha.append(cnpj)
                 continue
 
             campos_atualizados = []
 
-            if dados.get("razao_social") and not condominio.nome:
-                condominio.nome = dados["razao_social"]
-                campos_atualizados.append("nome")
+            # Nome: sempre atualiza quando a consulta retorna um nome mais completo,
+            # evitando abreviações preenchidas pelas administradoras.
+            if dados.get("razao_social"):
+                novo_nome = dados["razao_social"]
+                if condominio.nome != novo_nome:
+                    condominio.nome = novo_nome
+                    campos_atualizados.append("nome")
 
+            # Endereço: preenche apenas campos vazios para manter a planilha como fonte fiel.
             if dados.get("rua") and not condominio.endereco:
                 condominio.endereco = dados["rua"]
                 campos_atualizados.append("endereco")
@@ -102,7 +143,21 @@ def pesquisar_enderecos_condominios(self, cnpjs, importacao_id=None):
 
         except Exception as e:
             logger.exception(f"[PESQUISA_CNPJ] Erro ao processar CNPJ {cnpj}: {e}")
+            cnpjs_com_falha.append(cnpj)
             continue
+
+    # Notifica por email se houve falhas
+    if cnpjs_com_falha:
+        erro_msg = (
+            f"[PESQUISA_CNPJ] A pesquisa automática de CNPJ falhou para os seguintes CNPJs "
+            f"da importação {importacao_id}:\n\n" + "\n".join(cnpjs_com_falha) +
+            f"\n\nTotal: {len(cnpjs_com_falha)} de {pesquisados} pesquisados."
+        )
+        logger.warning(erro_msg)
+        _notificar_erro_pesquisa_cnpj(
+            f"[ALERTA] Pesquisa automática de CNPJ - {len(cnpjs_com_falha)} falhas",
+            erro_msg
+        )
 
     logger.info(
         f"[PESQUISA_CNPJ] Finalizado. Pesquisados: {pesquisados}, "
@@ -113,6 +168,7 @@ def pesquisar_enderecos_condominios(self, cnpjs, importacao_id=None):
         "pesquisados": pesquisados,
         "atualizados": atualizados,
         "importacao_id": importacao_id,
+        "falhas": cnpjs_com_falha,
     }
 
 
