@@ -826,8 +826,8 @@ class KanbanFaturasView(views.APIView):
 
             status_map = {
                 'FATURADO': 'faturado',
-                'CONFIRMAR_PAGAMENTO': 'confirmar_pagamento',
-                'BOLETO_VR_ENVIADO': 'boleto_vr_enviado',
+                'CONFIRMAR_PAGAMENTO': 'atrasado',
+                'BOLETO_VR_ENVIADO': 'aprovado',
                 'PAGO': 'pago',
                 'COMPLETED': 'pago',
             }
@@ -923,7 +923,7 @@ class KanbanMoveFaturaView(views.APIView):
     """
     Move uma fatura para outra coluna do Kanban.
     PATCH /api/beneficios/kanban/{id}/move/
-    Body: { "status": "faturado"|"confirmar_pagamento"|"boleto_vr_enviado"|"pago" }
+    Body: { "status": "faturado"|"atrasado"|"aprovado"|"pago" }
     """
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
@@ -938,8 +938,8 @@ class KanbanMoveFaturaView(views.APIView):
 
         kanban_to_importacao = {
             'faturado': 'FATURADO',
-            'confirmar_pagamento': 'CONFIRMAR_PAGAMENTO',
-            'boleto_vr_enviado': 'BOLETO_VR_ENVIADO',
+            'atrasado': 'CONFIRMAR_PAGAMENTO',
+            'aprovado': 'BOLETO_VR_ENVIADO',
             'pago': 'PAGO',
         }
 
