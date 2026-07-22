@@ -1023,3 +1023,120 @@ class KanbanNotificarCompraView(views.APIView):
             'count': enviados,
             'pendentes': importacoes.count(),
         })
+
+
+class ImportarBaseCondominiosView(views.APIView):
+    """
+    Importa base de condomínios e funcionários via Excel.
+    Não gera faturamento — apenas cria/atualiza registros de Condominio e Funcionario.
+    
+    POST /api/beneficios/importar-base/
+    Body: multipart/form-data com arquivo Excel
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def post(self, request):
+        from entidades.models import Condominio, Funcionario
+        from datetime import datetime
+
+        arquivo = request.FILES.get('file')
+        administradora_id = request.data.get('administradora_id')
+
+        if not arquivo:
+            return Response({'detail': 'Nenhum arquivo enviado.'}, status=400)
+
+        if not arquivo.name.endswith(('.xlsx', '.xls')):
+            return Response({'detail': 'Formato inválido. Envie um arquivo .xlsx ou .xls.'}, status=400)
+
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(arquivo, data_only=True)
+            ws = wb.active
+
+            headers = [str(cell.value or '').strip().lower() for cell in ws[1]]
+
+            condominios_criados = 0
+            condominios_atualizados = 0
+            funcionarios_criados = 0
+            funcionarios_atualizados = 0
+            erros = []
+
+            for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+                try:
+                    data = dict(zip(headers, row))
+
+                    cnpj = str(data.get('cnpj', '') or '').strip()
+                    cnpj = ''.join(filter(str.isdigit, cnpj))
+
+                    if not cnpj or len(cnpj) != 14:
+                        continue
+
+                    nome = str(data.get('nome', '') or data.get('razao_social', '') or '').strip()
+                    if not nome:
+                        continue
+
+                    condominio, created = Condominio.objects.update_or_create(
+                        cnpj=cnpj,
+                        defaults={
+                            'nome': nome,
+                            'tipo_local': str(data.get('tipo_local', '') or 'CONDOMINIO').strip(),
+                            'endereco': str(data.get('endereco', '') or data.get('rua', '') or '').strip(),
+                            'numero': str(data.get('numero', '') or '').strip(),
+                            'complemento': str(data.get('complemento', '') or '').strip(),
+                            'bairro': str(data.get('bairro', '') or '').strip(),
+                            'cidade': str(data.get('cidade', '') or '').strip(),
+                            'estado': str(data.get('estado', '') or data.get('uf', '') or '').strip(),
+                            'cep': str(data.get('cep', '') or '').strip(),
+                        }
+                    )
+
+                    if created:
+                        condominios_criados += 1
+                    else:
+                        condominios_atualizados += 1
+
+                    cpf = str(data.get('cpf', '') or '').strip()
+                    cpf = ''.join(filter(str.isdigit, cpf))
+
+                    if cpf and len(cpf) == 11:
+                        func_nome = str(data.get('funcionario_nome', '') or data.get('nome_funcionario', '') or '').strip()
+
+                        if func_nome:
+                            func, func_created = Funcionario.objects.update_or_create(
+                                cpf=cpf,
+                                defaults={
+                                    'nome': func_nome,
+                                    'matricula': str(data.get('matricula', '') or '').strip(),
+                                    'departamento': str(data.get('departamento', '') or '').strip(),
+                                    'funcao': str(data.get('funcao', '') or data.get('cargo', '') or '').strip(),
+                                    'sexo': str(data.get('sexo', '') or '').strip()[:1] or None,
+                                    'telefone': str(data.get('telefone', '') or '').strip(),
+                                    'email': str(data.get('email', '') or '').strip(),
+                                    'condominio': condominio,
+                                }
+                            )
+
+                            if func_created:
+                                funcionarios_criados += 1
+                            else:
+                                funcionarios_atualizados += 1
+
+                except Exception as e:
+                    erros.append(f'Linha {row_idx}: {str(e)}')
+
+            return Response({
+                'detail': 'Importação concluída.',
+                'condominios_criados': condominios_criados,
+                'condominios_atualizados': condominios_atualizados,
+                'funcionarios_criados': funcionarios_criados,
+                'funcionarios_atualizados': funcionarios_atualizados,
+                'erros': erros[:20],
+                'total_erros': len(erros),
+            })
+
+        except ImportError:
+            return Response({'detail': 'Biblioteca openpyxl não instalada no servidor.'}, status=500)
+        except Exception as e:
+            logger.error(f"Erro ao importar base: {str(e)}")
+            return Response({'detail': f'Erro ao processar arquivo: {str(e)}'}, status=400)
