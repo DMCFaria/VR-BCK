@@ -837,6 +837,12 @@ class KanbanFaturasView(views.APIView):
             if todos_boletos.exists() and all(b.baixa for b in todos_boletos):
                 kanban = 'pago'
 
+            if imp.data_recebimento:
+                from datetime import date, timedelta
+                amanha = date.today() + timedelta(days=1)
+                if imp.data_recebimento == amanha:
+                    kanban = 'enviar_compra'
+
             faturas.append({
                 'id': imp.id,
                 'pk': imp.id,
@@ -952,3 +958,68 @@ class KanbanMoveFaturaView(views.APIView):
         imp.save(update_fields=['status'])
 
         return Response({'success': True, 'status': new_status})
+
+
+class KanbanNotificarCompraView(views.APIView):
+    """
+    Verifica faturas com data de crédito para amanhã e envia email de notificação.
+    GET /api/beneficios/kanban/notificar-compra/
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        from datetime import date, timedelta
+        from django.conf import settings
+        from core.fedhub.services.fedhub_service import FedhubService
+
+        amanha = date.today() + timedelta(days=1)
+
+        importacoes = Importacao.objects.filter(
+            data_recebimento=amanha,
+            status__in=['FATURADO', 'CONFIRMAR_PAGAMENTO', 'BOLETO_VR_ENVIADO'],
+        ).select_related('administradora', 'usuario')
+
+        if not importacoes.exists():
+            return Response({'detail': 'Nenhuma fatura pendente para amanhã.', 'count': 0})
+
+        fedhub_service = FedhubService()
+        email_faturamento = getattr(settings, 'EMAIL_FATURAMENTO', None)
+        enviados = 0
+
+        for imp in importacoes:
+            admin = imp.administradora
+            admin_nome = admin.razao_social if admin else 'N/A'
+            vencimento = imp.data_vencimento.strftime('%d/%m/%Y') if imp.data_vencimento else '-'
+            recebimento = imp.data_recebimento.strftime('%d/%m/%Y') if imp.data_recebimento else '-'
+            valor = f"R$ {imp.valor_total:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.') if imp.valor_total else 'R$ 0,00'
+
+            try:
+                if email_faturamento:
+                    fedhub_service.enviar_email_upload(
+                        email=email_faturamento,
+                        user=imp.usuario,
+                        dados_processamento={
+                            "arquivo_nome": f"Compra VR - {admin_nome}",
+                            "data_envio": date.today().strftime('%d/%m/%Y'),
+                            "competencia": f"Recebimento: {recebimento}",
+                            "total_registros": imp.total_registros or 0,
+                            "total_funcionarios": imp.total_funcionarios or 0,
+                            "total_condominios": 0,
+                            "valor_total": float(imp.valor_total or 0),
+                            "tipo_processamento": "⚠️ Enviar Compra VR - Amanhã",
+                            "faturamento_id": imp.id,
+                            "vencimento": vencimento,
+                            "periodo_inicio": recebimento,
+                            "periodo_fim": recebimento,
+                        }
+                    )
+                    enviados += 1
+            except Exception as e:
+                logger.error(f"Erro ao enviar notificação para importação {imp.id}: {str(e)}")
+
+        return Response({
+            'detail': f'{enviados} notificação(ões) enviada(s).',
+            'count': enviados,
+            'pendentes': importacoes.count(),
+        })
