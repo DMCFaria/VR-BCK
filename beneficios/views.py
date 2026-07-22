@@ -1231,11 +1231,8 @@ class ConsultarBoletosView(views.APIView):
         paginated_imps = importacoes_qs[offset:offset + limit]
 
         status_map = {
-            'FATURADO': 'pago',
-            'CONFIRMAR_PAGAMENTO': 'pendente',
-            'BOLETO_VR_ENVIADO': 'pago',
-            'PAGO': 'pago',
-            'COMPLETED': 'pago',
+            'PAGO': 'Pago',
+            'PENDENTE_PAGAMENTO': 'Pendente Pagamento',
         }
 
         result = []
@@ -1244,10 +1241,6 @@ class ConsultarBoletosView(views.APIView):
             admin = imp.administradora
 
             status_fat = faturamento.status if faturamento else 'PENDING'
-            if status_filtro == 'pago' and status_fat not in ['COMPLETED', 'FATURADO']:
-                continue
-            elif status_filtro == 'pendente' and status_fat in ['COMPLETED', 'FATURADO']:
-                continue
 
             docs = []
             boletos_data = []
@@ -1283,7 +1276,23 @@ class ConsultarBoletosView(views.APIView):
                         'nosso_numero': boleto.nosso_numero or '',
                     })
 
-            status_display = status_map.get(imp.status, imp.status.lower())
+                # Status real baseado nos boletos
+                if boletos_data:
+                    total_boletos = len(boletos_data)
+                    boletos_pagos = sum(1 for bl in boletos_data if bl['baixa'])
+                    if boletos_pagos == total_boletos:
+                        status_fat = 'PAGO'
+                    else:
+                        status_fat = 'PENDENTE_PAGAMENTO'
+                else:
+                    status_fat = 'PENDENTE_PAGAMENTO'
+
+            if status_filtro == 'pago' and status_fat != 'PAGO':
+                continue
+            elif status_filtro == 'pendente' and status_fat == 'PAGO':
+                continue
+
+            status_display = status_map.get(status_fat, status_fat)
 
             result.append({
                 'id': faturamento.id if faturamento else imp.id,
