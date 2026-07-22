@@ -1231,11 +1231,11 @@ class ConsultarBoletosView(views.APIView):
         paginated_imps = importacoes_qs[offset:offset + limit]
 
         status_map = {
-            'FATURADO': 'pago',
-            'CONFIRMAR_PAGAMENTO': 'pendente',
-            'BOLETO_VR_ENVIADO': 'pago',
-            'PAGO': 'pago',
-            'COMPLETED': 'pago',
+            'PAGO': 'Pago',
+            'PENDENTE_PAGAMENTO': 'Pendente Pagamento',
+            'PENDING': 'Pendente',
+            'PROCESSING': 'Processando',
+            'FAILED': 'Falhou',
         }
 
         result = []
@@ -1244,12 +1244,9 @@ class ConsultarBoletosView(views.APIView):
             admin = imp.administradora
 
             status_fat = faturamento.status if faturamento else 'PENDING'
-            if status_filtro == 'pago' and status_fat not in ['COMPLETED', 'FATURADO']:
-                continue
-            elif status_filtro == 'pendente' and status_fat in ['COMPLETED', 'FATURADO']:
-                continue
 
             docs = []
+            boletos_data = []
             if faturamento:
                 docs_qs = FaturamentoDocumento.objects.filter(
                     faturamento=faturamento
@@ -1263,7 +1260,42 @@ class ConsultarBoletosView(views.APIView):
                         'url_nota_fiscal': doc.url_nota_fiscal or '',
                     })
 
-            status_display = status_map.get(imp.status, imp.status.lower())
+                from beneficios.models import Boleto
+                boletos_qs = Boleto.objects.filter(
+                    faturamento=faturamento
+                ).order_by('vencimento')
+                for boleto in boletos_qs:
+                    boletos_data.append({
+                        'id': boleto.id,
+                        'nome_cobrado': boleto.nome_cobrado or '',
+                        'cnpj_cobrado': boleto.cnpj_cobrado or '',
+                        'documento': boleto.documento or '',
+                        'fatura': boleto.fatura or '',
+                        'vencimento': boleto.vencimento.isoformat() if boleto.vencimento else None,
+                        'valor': float(boleto.valor) if boleto.valor else 0,
+                        'baixa': boleto.baixa,
+                        'dt_baixa': boleto.dt_baixa.isoformat() if boleto.dt_baixa else None,
+                        'status': boleto.status or '',
+                        'nosso_numero': boleto.nosso_numero or '',
+                    })
+
+                # Status real baseado nos boletos
+                if boletos_data:
+                    total_boletos = len(boletos_data)
+                    boletos_pagos = sum(1 for bl in boletos_data if bl['baixa'])
+                    if boletos_pagos == total_boletos:
+                        status_fat = 'PAGO'
+                    else:
+                        status_fat = 'PENDENTE_PAGAMENTO'
+                else:
+                    status_fat = 'PENDENTE_PAGAMENTO'
+
+            if status_filtro == 'pago' and status_fat != 'PAGO':
+                continue
+            elif status_filtro == 'pendente' and status_fat == 'PAGO':
+                continue
+
+            status_display = status_map.get(status_fat, status_fat)
 
             result.append({
                 'id': faturamento.id if faturamento else imp.id,
@@ -1283,6 +1315,7 @@ class ConsultarBoletosView(views.APIView):
                 'total_registros': imp.total_registros or 0,
                 'registros_processados': imp.registros_processados or 0,
                 'condominios': docs,
+                'boletos': boletos_data,
                 'created_at': faturamento.criado_em.isoformat() if faturamento and faturamento.criado_em else (imp.data_importacao.isoformat() if imp.data_importacao else None),
             })
 
