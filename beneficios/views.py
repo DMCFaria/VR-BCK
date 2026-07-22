@@ -833,6 +833,10 @@ class KanbanFaturasView(views.APIView):
             }
             kanban = status_map.get(imp.status, 'faturado')
 
+            todos_boletos = Boleto.objects.filter(faturamento_id=imp.id)
+            if todos_boletos.exists() and all(b.baixa for b in todos_boletos):
+                kanban = 'pago'
+
             faturas.append({
                 'id': imp.id,
                 'pk': imp.id,
