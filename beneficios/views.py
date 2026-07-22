@@ -1250,6 +1250,7 @@ class ConsultarBoletosView(views.APIView):
                 continue
 
             docs = []
+            boletos_data = []
             if faturamento:
                 docs_qs = FaturamentoDocumento.objects.filter(
                     faturamento=faturamento
@@ -1261,6 +1262,25 @@ class ConsultarBoletosView(views.APIView):
                         'url_boleto': doc.url_boleto or '',
                         'url_nota_debito': doc.url_nota_debito or '',
                         'url_nota_fiscal': doc.url_nota_fiscal or '',
+                    })
+
+                from beneficios.models import Boleto
+                boletos_qs = Boleto.objects.filter(
+                    faturamento=faturamento
+                ).order_by('vencimento')
+                for boleto in boletos_qs:
+                    boletos_data.append({
+                        'id': boleto.id,
+                        'nome_cobrado': boleto.nome_cobrado or '',
+                        'cnpj_cobrado': boleto.cnpj_cobrado or '',
+                        'documento': boleto.documento or '',
+                        'fatura': boleto.fatura or '',
+                        'vencimento': boleto.vencimento.isoformat() if boleto.vencimento else None,
+                        'valor': float(boleto.valor) if boleto.valor else 0,
+                        'baixa': boleto.baixa,
+                        'dt_baixa': boleto.dt_baixa.isoformat() if boleto.dt_baixa else None,
+                        'status': boleto.status or '',
+                        'nosso_numero': boleto.nosso_numero or '',
                     })
 
             status_display = status_map.get(imp.status, imp.status.lower())
@@ -1283,6 +1303,7 @@ class ConsultarBoletosView(views.APIView):
                 'total_registros': imp.total_registros or 0,
                 'registros_processados': imp.registros_processados or 0,
                 'condominios': docs,
+                'boletos': boletos_data,
                 'created_at': faturamento.criado_em.isoformat() if faturamento and faturamento.criado_em else (imp.data_importacao.isoformat() if imp.data_importacao else None),
             })
 
