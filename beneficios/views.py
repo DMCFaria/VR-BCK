@@ -1189,8 +1189,8 @@ class ConsultarBoletosView(views.APIView):
     Lista faturas/boletos com filtros de status.
     GET /api/beneficios/boletos/?administradora_id=1&status=pago
 
-    - dev/fat: sem administradora_id retorna todos; com filtro, retorna daquela administradora.
-    - adm: retorna apenas faturas da sua administradora_ativa (ignora param).
+    - dev/fat: vê TODOS os faturamentos.
+    - adm: vê apenas faturas da sua administradora_ativa.
     """
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
@@ -1212,82 +1212,83 @@ class ConsultarBoletosView(views.APIView):
                 return Response({'detail': 'Usuário não possui administradora vinculada.'}, status=400)
             administradora_id = administradora_ativa.id
 
+        # Partir de Importacao (mesmo padrão do KanbanFaturasView)
+        importacoes_qs = Importacao.objects.select_related(
+            'administradora', 'usuario'
+        ).exclude(status__in=['CANCELADO'])
+
         if administradora_id:
-            try:
-                admin = Administradora.objects.get(id=administradora_id)
-            except Administradora.DoesNotExist:
-                return Response({'detail': 'Administradora não encontrada.'}, status=404)
+            importacoes_qs = importacoes_qs.filter(administradora_id=administradora_id)
 
-            importacao_ids = Importacao.objects.filter(
-                administradora=admin
-            ).values_list('id', flat=True)
+        importacoes_qs = importacoes_qs.order_by('-data_importacao')
 
-            faturas = Faturamento.objects.filter(
-                importacao_id__in=importacao_ids
-            ).select_related('importacao', 'importacao__administradora', 'administradora').order_by('-criado_em')
-        else:
-            faturas = Faturamento.objects.select_related(
-                'importacao', 'importacao__administradora', 'administradora'
-            ).order_by('-criado_em')
-
-        if status_filtro == 'pago':
-            faturas = faturas.filter(status__in=['COMPLETED', 'FATURADO'])
-        elif status_filtro == 'pendente':
-            faturas = faturas.filter(status__in=['PENDING', 'PROCESSING', 'FAILED'])
-
-        total = faturas.count()
+        # Paginar importações
+        total_importacoes = importacoes_qs.count()
         offset = (page - 1) * limit
-        paginated = faturas[offset:offset + limit]
+        paginated_imps = importacoes_qs[offset:offset + limit]
+
+        status_map = {
+            'FATURADO': 'pago',
+            'CONFIRMAR_PAGAMENTO': 'pendente',
+            'BOLETO_VR_ENVIADO': 'pago',
+            'PAGO': 'pago',
+            'COMPLETED': 'pago',
+        }
 
         result = []
-        for fat in paginated:
-            imp = fat.importacao
-            admin = imp.administradora if imp else fat.administradora
-            docs = FaturamentoDocumento.objects.filter(faturamento=fat).select_related('condominio')
+        for imp in paginated_imps:
+            faturamento = Faturamento.objects.filter(importacao=imp).first()
+            admin = imp.administradora
 
-            condominios_data = []
-            for doc in docs:
-                condominios_data.append({
-                    'condominio_nome': doc.condominio.nome if doc.condominio else '',
-                    'condominio_cnpj': doc.condominio.cnpj if doc.condominio else '',
-                    'url_boleto': doc.url_boleto or '',
-                    'url_nota_debito': doc.url_nota_debito or '',
-                    'url_nota_fiscal': doc.url_nota_fiscal or '',
-                })
+            status_fat = faturamento.status if faturamento else 'PENDING'
+            if status_filtro == 'pago' and status_fat not in ['COMPLETED', 'FATURADO']:
+                continue
+            elif status_filtro == 'pendente' and status_fat in ['COMPLETED', 'FATURADO']:
+                continue
 
-            status_map = {
-                'PENDING': 'pendente',
-                'PROCESSING': 'processando',
-                'COMPLETED': 'pago',
-                'FATURADO': 'pago',
-                'FAILED': 'falhou',
-            }
-            status_display = status_map.get(fat.status, fat.status)
+            docs = []
+            if faturamento:
+                docs_qs = FaturamentoDocumento.objects.filter(
+                    faturamento=faturamento
+                ).select_related('condominio')
+                for doc in docs_qs:
+                    docs.append({
+                        'condominio_nome': doc.condominio.nome if doc.condominio else '',
+                        'condominio_cnpj': doc.condominio.cnpj if doc.condominio else '',
+                        'url_boleto': doc.url_boleto or '',
+                        'url_nota_debito': doc.url_nota_debito or '',
+                        'url_nota_fiscal': doc.url_nota_fiscal or '',
+                    })
+
+            status_display = status_map.get(imp.status, imp.status.lower())
 
             result.append({
-                'id': fat.id,
-                'competencia': fat.competencia.isoformat() if fat.competencia else None,
-                'status': fat.status,
+                'id': faturamento.id if faturamento else imp.id,
+                'faturamento_id': faturamento.id if faturamento else None,
+                'competencia': faturamento.competencia.isoformat() if faturamento and faturamento.competencia else None,
+                'status': status_fat,
                 'status_display': status_display,
-                'progresso': fat.progresso,
-                'valor_total': float(imp.valor_total) if imp and imp.valor_total else 0,
-                'arquivo_unificado_url': fat.arquivo_unificado_url or '',
-                'importacao_id': imp.id if imp else None,
-                'importacao_status': imp.status if imp else None,
+                'progresso': faturamento.progresso if faturamento else 0,
+                'valor_total': float(imp.valor_total) if imp.valor_total else 0,
+                'arquivo_unificado_url': faturamento.arquivo_unificado_url if faturamento else '',
+                'importacao_id': imp.id,
+                'importacao_status': imp.status,
                 'administradora_id': admin.id if admin else None,
                 'administradora_nome': admin.nome_fantasia or admin.razao_social if admin else None,
-                'data_vencimento': imp.data_vencimento.isoformat() if imp and imp.data_vencimento else None,
-                'data_recebimento': imp.data_recebimento.isoformat() if imp and imp.data_recebimento else None,
-                'total_registros': imp.total_registros if imp else 0,
-                'registros_processados': imp.registros_processados if imp else 0,
-                'condominios': condominios_data,
-                'created_at': fat.criado_em.isoformat() if fat.criado_em else None,
+                'data_vencimento': imp.data_vencimento.isoformat() if imp.data_vencimento else None,
+                'data_recebimento': imp.data_recebimento.isoformat() if imp.data_recebimento else None,
+                'total_registros': imp.total_registros or 0,
+                'registros_processados': imp.registros_processados or 0,
+                'condominios': docs,
+                'created_at': faturamento.criado_em.isoformat() if faturamento and faturamento.criado_em else (imp.data_importacao.isoformat() if imp.data_importacao else None),
             })
+
+        pages = max((total_importacoes + limit - 1) // limit, 1)
 
         return Response({
             'data': result,
-            'total': total,
+            'total': total_importacoes,
             'page': page,
-            'pages': max((total + limit - 1) // limit, 1),
+            'pages': pages,
             'limit': limit,
         })
