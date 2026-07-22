@@ -15,6 +15,7 @@ from .views import (
     KanbanNotificarCompraView,
     ImportarBaseCondominiosView,
     ExcluirBaseCondominiosView,
+    ConsultarBoletosView,
 )
 
 router = DefaultRouter()
@@ -39,4 +40,6 @@ urlpatterns = [
 
     path('importar-base/', ImportarBaseCondominiosView.as_view(), name='importar-base-condominios'),
     path('excluir-base/<int:administradora_id>/', ExcluirBaseCondominiosView.as_view(), name='excluir-base-condominios'),
+
+    path('boletos/', ConsultarBoletosView.as_view(), name='consultar-boletos'),
 ]

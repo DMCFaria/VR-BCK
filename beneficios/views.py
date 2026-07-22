@@ -1182,3 +1182,108 @@ class ExcluirBaseCondominiosView(views.APIView):
             'vinculos_removidos': vinculos_removidos,
             'funcionarios_removidos': funcionarios_removidos,
         })
+
+
+class ConsultarBoletosView(views.APIView):
+    """
+    Lista boletos com filtros de status.
+    GET /api/beneficios/boletos/?administradora_id=1&status=pago
+
+    - dev/fat: sem administradora_id retorna todos; com filtro, retorna daquela administradora.
+    - adm: retorna apenas boletos da sua administradora_ativa (ignora param).
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        from beneficios.models import Faturamento
+        from entidades.models import Administradora
+
+        user = request.user
+        administradora_id = request.query_params.get('administradora_id')
+        status_filtro = request.query_params.get('status')
+        page = int(request.query_params.get('page', 1))
+        limit = int(request.query_params.get('limit', 50))
+
+        # adm: força filtro pela sua administradora_ativa
+        if user.tipo == 'adm':
+            administradora_ativa = getattr(user, 'administradora_ativa', None)
+            if not administradora_ativa:
+                return Response({'detail': 'Usuário não possui administradora vinculada.'}, status=400)
+            administradora_id = administradora_ativa.id
+
+        if administradora_id:
+            try:
+                admin = Administradora.objects.get(id=administradora_id)
+            except Administradora.DoesNotExist:
+                return Response({'detail': 'Administradora não encontrada.'}, status=404)
+
+            importacao_ids = Importacao.objects.filter(
+                administradora=admin
+            ).values_list('id', flat=True)
+
+            faturamento_ids = Faturamento.objects.filter(
+                importacao_id__in=importacao_ids
+            ).values_list('id', flat=True)
+
+            boletos = Boleto.objects.filter(
+                faturamento_id__in=faturamento_ids
+            ).select_related('faturamento', 'faturamento__importacao').order_by('-vencimento')
+        else:
+            boletos = Boleto.objects.select_related(
+                'faturamento', 'faturamento__importacao'
+            ).order_by('-vencimento')
+
+        if status_filtro == 'pago':
+            boletos = boletos.filter(baixa=True)
+        elif status_filtro == 'pendente':
+            boletos = boletos.filter(baixa=False)
+        elif status_filtro == 'gerado':
+            boletos = boletos.filter(baixa=False, status__isnull=False)
+
+        total = boletos.count()
+        offset = (page - 1) * limit
+        paginated = boletos[offset:offset + limit]
+
+        result = []
+        for b in paginated:
+            imp = b.faturamento.importacao if b.faturamento else None
+            admin = imp.administradora if imp else None
+            result.append({
+                'id': b.id,
+                'documento': b.documento,
+                'fatura': b.fatura,
+                'nome_cobrado': b.nome_cobrado,
+                'cnpj_cobrado': b.cnpj_cobrado,
+                'cedente': b.cedente,
+                'valor': float(b.valor) if b.valor else 0,
+                'deducoes': float(b.deducoes) if b.deducoes else 0,
+                'vencimento': b.vencimento.isoformat() if b.vencimento else None,
+                'dt_emissao': b.dt_emissao.isoformat() if b.dt_emissao else None,
+                'baixa': b.baixa,
+                'dt_baixa': b.dt_baixa.isoformat() if b.dt_baixa else None,
+                'obs_baixa': b.obs_baixa,
+                'status': b.status,
+                'nosso_numero': b.nosso_numero,
+                'identificador': b.identificador,
+                'NFs_id': b.NFs_id,
+                'Numero_nota': b.Numero_nota,
+                'url_nota': b.url_nota,
+                'match': b.match,
+                'faturamento_id': b.faturamento_id if b.faturamento else None,
+                'importacao_id': imp.id if imp else None,
+                'importacao_status': imp.status if imp else None,
+                'administradora_id': admin.id if admin else None,
+                'administradora_nome': admin.nome_fantasia or admin.razao_social if admin else None,
+                'data_vencimento': imp.data_vencimento.isoformat() if imp and imp.data_vencimento else None,
+                'data_recebimento': imp.data_recebimento.isoformat() if imp and imp.data_recebimento else None,
+                'created_at': b.created_at.isoformat() if b.created_at else None,
+            })
+
+        return Response({
+            'data': result,
+            'total': total,
+            'page': page,
+            'pages': max((total + limit - 1) // limit, 1),
+            'limit': limit,
+        })
