@@ -23,7 +23,7 @@ class MovimentacaoBeneficioSerializer(serializers.ModelSerializer):
 class MovimentacaoSerializer(serializers.Serializer):
     produto = serializers.CharField(max_length=255)
     codigo_produto = serializers.CharField(max_length=50, required=False, allow_blank=True, allow_null=True)
-    valor = serializers.DecimalField(max_digits=12, decimal_places=2)
+    valor = serializers.DecimalField(max_digits=15, decimal_places=2)
 
 class FuncionarioSerializer(serializers.Serializer):
     nome = serializers.CharField(max_length=255)
@@ -37,7 +37,7 @@ class FuncionarioSerializer(serializers.Serializer):
     endereco_numero = serializers.CharField(max_length=20, required=False, allow_null=True, allow_blank=True)
     endereco_complemento = serializers.CharField(max_length=100, required=False, allow_null=True, allow_blank=True)
     endereco_bairro = serializers.CharField(max_length=100, required=False, allow_null=True, allow_blank=True)
-    valor_bene = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, allow_null=True)
+    valor_bene = serializers.DecimalField(max_digits=15, decimal_places=2, required=False, allow_null=True)
     
     movimentacoes = MovimentacaoSerializer(many=True, required=False)
     
@@ -60,7 +60,7 @@ class FuncionarioSerializer(serializers.Serializer):
 class CondominioSerializer(serializers.Serializer):
     nome = serializers.CharField(max_length=255)
     cnpj = serializers.CharField(max_length=20)
-    valor_condo = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, allow_null=True)
+    valor_condo = serializers.DecimalField(max_digits=15, decimal_places=2, required=False, allow_null=True)
     rua = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     numero = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     complemento = serializers.CharField(required=False, allow_blank=True, allow_null=True)
@@ -96,7 +96,7 @@ class ImportacaoDetailSerializer(serializers.ModelSerializer):
 class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
     nome_usuario = serializers.CharField(source='usuario.email', read_only=True)
 
-    valor_total = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
+    valor_total = serializers.DecimalField(max_digits=15, decimal_places=2, required=False)
     total_funcionarios = serializers.IntegerField(required=False)
     nome_administradora = serializers.CharField(source='administradora.razao_social', read_only=True)
     class Meta:
