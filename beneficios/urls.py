@@ -12,6 +12,7 @@ from .views import (
     KanbanFaturasView,
     KanbanBoletosView,
     KanbanMoveFaturaView,
+    KanbanNotificarCompraView,
 )
 
 router = DefaultRouter()
@@ -32,4 +33,5 @@ urlpatterns = [
     path('kanban/faturas/', KanbanFaturasView.as_view(), name='kanban-faturas'),
     path('kanban/boletos/', KanbanBoletosView.as_view(), name='kanban-boletos'),
     path('kanban/<int:pk>/move/', KanbanMoveFaturaView.as_view(), name='kanban-move'),
+    path('kanban/notificar-compra/', KanbanNotificarCompraView.as_view(), name='kanban-notificar-compra'),
 ]
