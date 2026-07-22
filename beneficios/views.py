@@ -1096,6 +1096,17 @@ class ImportarBaseCondominiosView(views.APIView):
                     else:
                         condominios_atualizados += 1
 
+                    if administradora_id:
+                        from entidades.models import Administradora, VinculoCondominio
+                        try:
+                            admin = Administradora.objects.get(id=administradora_id)
+                            VinculoCondominio.objects.get_or_create(
+                                administradora=admin,
+                                condominio=condominio,
+                            )
+                        except Administradora.DoesNotExist:
+                            pass
+
                     cpf = str(data.get('cpf', '') or '').strip()
                     cpf = ''.join(filter(str.isdigit, cpf))
 
@@ -1140,3 +1151,34 @@ class ImportarBaseCondominiosView(views.APIView):
         except Exception as e:
             logger.error(f"Erro ao importar base: {str(e)}")
             return Response({'detail': f'Erro ao processar arquivo: {str(e)}'}, status=400)
+
+
+class ExcluirBaseCondominiosView(views.APIView):
+    """
+    Exclui a base de condomínios e funcionários de uma administradora.
+    DELETE /api/beneficios/excluir-base/{administradora_id}/
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def delete(self, request, administradora_id):
+        from entidades.models import Administradora, VinculoCondominio, Condominio, Funcionario
+
+        try:
+            admin = Administradora.objects.get(id=administradora_id)
+        except Administradora.DoesNotExist:
+            return Response({'detail': 'Administradora não encontrada.'}, status=404)
+
+        vinculos = VinculoCondominio.objects.filter(administradora=admin)
+        condominio_ids = vinculos.values_list('condominio_id', flat=True)
+
+        funcionarios_removidos = Funcionario.objects.filter(condominio_id__in=condominio_ids).delete()[0]
+        vinculos_removidos = vinculos.delete()[0]
+        condominios_removidos = Condominio.objects.filter(cnpj__in=condominio_ids).delete()[0]
+
+        return Response({
+            'detail': 'Base excluída com sucesso.',
+            'condominios_removidos': condominios_removidos,
+            'vinculos_removidos': vinculos_removidos,
+            'funcionarios_removidos': funcionarios_removidos,
+        })
