@@ -228,49 +228,58 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
     # Headers podem ter newlines ou estarem colados com "Valor do crédito"
     col_produtos = {}
     ben_rows = list(ws_ben.iter_rows(min_row=1, max_row=5, values_only=True))
-    
-    header_row = None
-    header_row_num = 2
+
+    def _match_produto_header(val):
+        """Retorna o nome do produto se o valor for um header conhecido."""
+        if val is None:
+            return None
+        h = _safe_str(val).strip().split('\n')[0].strip()
+        if not h:
+            return None
+        if h in COLUNAS_PRODUTO:
+            return h
+        # Match parcial: o header deve conter o nome do produto como palavra/frase
+        # (evita que "VR Multi" casse com "VR Multi Mobilidade").
+        h_lower = h.lower()
+        for nome in COLUNAS_PRODUTO:
+            if nome.lower() in h_lower:
+                return nome
+        return None
+
+    # Escolhe a linha com maior número de headers de produto reconhecidos.
+    best_row = None
+    best_row_num = 2
+    best_count = 0
     for try_idx, try_row in enumerate(ben_rows):
         if not try_row:
             continue
-        for val in try_row:
-            if val is None:
-                continue
-            h = _safe_str(val).strip().split('\n')[0].strip()
-            if h in COLUNAS_PRODUTO:
-                header_row = try_row
-                header_row_num = try_idx + 1
+        matches = [_match_produto_header(v) for v in try_row]
+        count = sum(1 for m in matches if m)
+        # Só considera se tiver pelo menos 2 produtos (evita falsos positivos)
+        if count >= 2 and count > best_count:
+            best_row = try_row
+            best_row_num = try_idx + 1
+            best_count = count
+
+    if not best_row and ben_rows:
+        # Fallback: usa a primeira linha que tiver algum match
+        for try_idx, try_row in enumerate(ben_rows):
+            if any(_match_produto_header(v) for v in try_row):
+                best_row = try_row
+                best_row_num = try_idx + 1
                 break
-            for nome in COLUNAS_PRODUTO:
-                if nome.lower() in h.lower() or h.lower() in nome.lower():
-                    header_row = try_row
-                    header_row_num = try_idx + 1
-                    break
-            if header_row:
-                break
-        if header_row:
-            break
-    
-    if not header_row and ben_rows:
-        header_row = ben_rows[1] if len(ben_rows) > 1 else ben_rows[0]
-        header_row_num = 2
+        if not best_row:
+            best_row = ben_rows[1] if len(ben_rows) > 1 else ben_rows[0]
+            best_row_num = 2
+
+    header_row = best_row
+    header_row_num = best_row_num
 
     if header_row:
         for col_idx, val in enumerate(header_row, start=1):
-            if val is None:
-                continue
-            h = _safe_str(val).strip()
-            h = h.split('\n')[0].strip()
-            if not h:
-                continue
-            if h in COLUNAS_PRODUTO:
-                col_produtos[col_idx] = h
-            else:
-                for nome, codigo in COLUNAS_PRODUTO.items():
-                    if nome.lower() in h.lower() or h.lower() in nome.lower():
-                        col_produtos[col_idx] = nome
-                        break
+            produto = _match_produto_header(val)
+            if produto:
+                col_produtos[col_idx] = produto
 
     data_start_row = header_row_num + 1
 
