@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('beneficios', '0033_auto_20260722_1619'),
-        ('entidades', '0016_administradora_bairro_administradora_cep_and_more'),
+        ('entidades', '0017_remove_taxaconfig_unique_vinculo_produto_and_more'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
