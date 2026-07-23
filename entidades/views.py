@@ -571,6 +571,7 @@ class TaxaConfigViewSet(viewsets.ModelViewSet):
         administradora_id = self.request.query_params.get('administradora')
         condominio_cnpj = self.request.query_params.get('condominio')
         produto_codigo = self.request.query_params.get('produto')
+        tipo = self.request.query_params.get('tipo')
         ativo = self.request.query_params.get('ativo')
 
         if vinculo_id:
@@ -581,6 +582,8 @@ class TaxaConfigViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(vinculo__condominio__cnpj=condominio_cnpj)
         if produto_codigo:
             queryset = queryset.filter(produto__codigo_produto=produto_codigo)
+        if tipo:
+            queryset = queryset.filter(tipo=tipo)
         if ativo is not None:
             queryset = queryset.filter(ativo=ativo.lower() == 'true')
 

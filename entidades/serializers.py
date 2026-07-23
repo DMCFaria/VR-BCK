@@ -161,9 +161,27 @@ class TaxaConfigSerializer(serializers.ModelSerializer):
     )
     produto_nome = serializers.CharField(source='produto.nome', read_only=True, default=None)
     produto_codigo = serializers.CharField(source='produto.codigo_produto', read_only=True, default=None)
+    tipo = serializers.ChoiceField(
+        choices=Produto.TIPO_CHOICES,
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+    )
+    tipo_display = serializers.CharField(source='get_tipo_display', read_only=True)
 
     def get_vinculo_display(self, obj):
         return str(obj.vinculo)
+
+    def validate(self, data):
+        produto = data.get('produto')
+        tipo = data.get('tipo')
+
+        if produto and tipo:
+            raise serializers.ValidationError(
+                "Informe apenas o produto ou o tipo, não ambos."
+            )
+
+        return data
 
     def validate_vinculo(self, value):
         request = self.context.get('request')
@@ -186,6 +204,8 @@ class TaxaConfigSerializer(serializers.ModelSerializer):
             'produto',
             'produto_nome',
             'produto_codigo',
+            'tipo',
+            'tipo_display',
             'taxa_tipo',
             'taxa_valor',
             'ativo',
