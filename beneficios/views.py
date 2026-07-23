@@ -559,13 +559,9 @@ class PedidoCartaoView(views.APIView):
         if not administradora:
             return Response({'detail': 'Usuário não possui administradora vinculada.'}, status=400)
 
-        data = request.data.copy()
-        data['administradora'] = administradora.id
-        data['criado_por'] = user.id
-
-        serializer = PedidoCartaoSerializer(data=data)
+        serializer = PedidoCartaoSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        serializer.save(administradora=administradora, criado_por=user)
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
