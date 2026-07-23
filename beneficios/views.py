@@ -1235,6 +1235,13 @@ class ConsultarBoletosView(views.APIView):
             'PENDENTE_PAGAMENTO': 'Pendente Pagamento',
             'PENDING': 'Pendente',
             'PROCESSING': 'Processando',
+            'AGUARDANDO_FATURAMENTO': 'Aguardando Faturamento',
+            'FATURADO': 'Faturado',
+            'CONFIRMAR_PAGAMENTO': 'Confirmar Pagamento',
+            'BOLETO_VR_ENVIADO': 'Boleto VR Enviado',
+            'COMPRADO': 'Comprado',
+            'CANCELADO': 'Cancelado',
+            'COMPLETED': 'Concluída',
             'FAILED': 'Falhou',
         }
 
@@ -1295,7 +1302,10 @@ class ConsultarBoletosView(views.APIView):
             elif status_filtro == 'pendente' and status_fat == 'PAGO':
                 continue
 
-            status_display = status_map.get(status_fat, status_fat)
+            if status_fat == 'PAGO':
+                status_display = 'Pago'
+            else:
+                status_display = status_map.get(imp.status, imp.status)
 
             result.append({
                 'id': faturamento.id if faturamento else imp.id,
