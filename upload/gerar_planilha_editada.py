@@ -16,13 +16,14 @@ COLUNAS_PRODUTO = {
     'Multi Auxílio Alimentação': '204', 'Auxílio Refeição': '207',
     'Multi Auxílio Refeição': '207', 'Multibenefício': '207', 'Multibenefícios': '207',
     'Auxílio VR+VA': '207', 'Multi Auxílio VR+VA': '207', 'Multi Premiação': '207',
+    'Multi - Home Office': '207', 'Multi Home office': '207',
     'VR Refeição': '207', 'VR Alimentação': '27', 'VR Auto': '28',
     'VR Alimentação Cesta': '201', 'VR Boas Festas': '202', 'VR Auxílio Alimentação': '204',
     'VR Auxílio Refeição': '207', 'VR Multibenefícios': '207', 'VR+VA': '207',
     'VR Multi Refeição': '207', 'VR Multi Alimentação': '27',
     'VR Multi Alimentação Valor do crédito': '27',
     'VR Multi Refeição Auxílio': '207', 'VR Multi Alimentação Auxílio': '204',
-    'VR Multi VR+VA': '207',
+    'VR Multi VR+VA': '207', 'VR Multi - Home Office': '207', 'VR Multi Home office': '207',
 }
 
 

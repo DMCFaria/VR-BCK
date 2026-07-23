@@ -30,9 +30,10 @@ COLUNAS_PRODUTO = {
     'Multibenefícios': CODIGO_PRODUTO_PADRAO,
     'Auxílio VR+VA': CODIGO_PRODUTO_PADRAO,
     'Multi Auxílio VR+VA': CODIGO_PRODUTO_PADRAO,
-    'Multi Premiação': CODIGO_PRODUTO_PADRAO,
     'Multi - Home Office': CODIGO_PRODUTO_PADRAO,
+    'Multi Home office': CODIGO_PRODUTO_PADRAO,
     # ===== Com prefixo "VR " (Template_VR.xlsm) =====
+    'VR Multi Home office': CODIGO_PRODUTO_PADRAO,
     'VR Refeição': CODIGO_PRODUTO_PADRAO,
     'VR Alimentação': '27',
     'VR Auto': '28',
@@ -73,8 +74,9 @@ MAPEAMENTO_PRODUTO_TIPO = {
     'Multibenefícios': 'Multi - VR+VA',
     'Auxílio VR+VA': 'Multi - VR+VA',
     'Multi Auxílio VR+VA': 'Multi - VR+VA',
-    'Multi Premiação': 'Multi - Home Office',
     'Multi - Home Office': 'Multi - Home Office',
+    'Multi Home office': 'Multi - Home Office',
+    'VR Multi Home office': 'Multi - Home Office',
     'VR Refeição': 'Refeição',
     'VR Alimentação': 'Alimentação',
     'VR Auto': 'Auto',
@@ -91,6 +93,15 @@ MAPEAMENTO_PRODUTO_TIPO = {
     'VR Multi Alimentação Auxílio': 'Multi - Alimentação',
     'VR Multi VR+VA': 'Multi - VR+VA',
     'VR Multi - Home Office': 'Multi - Home Office',
+}
+
+# Headers de produtos que devem ser reconhecidos mas rejeitados com erro claro.
+# Útil para produtos não contratados/não suportados no momento.
+PRODUTOS_REJEITADOS = {
+    'Cultura': 'Produto "Cultura" não é permitido. Remova a coluna ou entre em contato com o suporte.',
+    'VR Cultura': 'Produto "Cultura" não é permitido. Remova a coluna ou entre em contato com o suporte.',
+    'Multi Premiação': 'Produto "Multi Premiação" não é permitido. Use "Multi - Home Office" ou remova a coluna.',
+    'VR Multi Premiação': 'Produto "Multi Premiação" não é permitido. Use "VR Multi - Home Office" ou remova a coluna.',
 }
 
 # Sheets 60/99/etc são para geração do TXT via VBA - não precisam ser lidas
@@ -278,6 +289,21 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
                 return nome
         return None
 
+    def _match_produto_rejeitado(val):
+        """Retorna o nome do produto se for um header de produto rejeitado."""
+        if val is None:
+            return None
+        h = _safe_str(val).strip().split('\n')[0].strip()
+        if not h:
+            return None
+        if h in PRODUTOS_REJEITADOS:
+            return h
+        h_lower = h.lower()
+        for nome in PRODUTOS_REJEITADOS:
+            if nome.lower() in h_lower:
+                return nome
+        return None
+
     # Escolhe a linha com maior número de headers de produto reconhecidos.
     best_row = None
     best_row_num = 2
@@ -307,11 +333,16 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
     header_row = best_row
     header_row_num = best_row_num
 
+    col_rejeitados = {}
     if header_row:
         for col_idx, val in enumerate(header_row, start=1):
             produto = _match_produto_header(val)
             if produto:
                 col_produtos[col_idx] = produto
+            else:
+                rejeitado = _match_produto_rejeitado(val)
+                if rejeitado:
+                    col_rejeitados[col_idx] = rejeitado
 
     data_start_row = header_row_num + 1
 
@@ -371,6 +402,17 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
 
         if not tem_beneficio:
             erros_linha_atual.append("Nenhum benefício preenchido com valor maior que zero")
+
+        # 7. Validar produtos rejeitados (ex: Cultura, Premiação)
+        for col_idx, nome_rejeitado in col_rejeitados.items():
+            raw_val = row[col_idx - 1] if len(row) > col_idx - 1 else None
+            if raw_val is not None:
+                try:
+                    valor = Decimal(str(raw_val).replace(',', '.'))
+                    if valor > 0:
+                        erros_linha_atual.append(PRODUTOS_REJEITADOS[nome_rejeitado])
+                except:
+                    pass
 
         if erros_linha_atual:
             result['linhas_com_erro'].append({

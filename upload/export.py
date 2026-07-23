@@ -65,37 +65,47 @@ from beneficios.models import MovimentacaoBeneficio, Produto, Importacao, Boleto
 def calcular_taxa(valor_beneficio, quantidade_dias, vinculo=None, produto=None):
     """
     Calcula a taxa de faturamento para um funcionário.
-    
+
     Regras:
     - Se não houver vínculo, retorna 0
     - Busca TaxaConfig para o produto específico
-    - Se não encontrar para o produto, busca configuração genérica (produto=NULL)
+    - Se não encontrar para o produto, busca configuração pelo tipo do produto
+    - Se não encontrar por tipo, busca configuração genérica (produto=NULL, tipo=NULL)
     - Se não encontrar nenhuma configuração, retorna 0
     - Tipo PERC: valor_beneficio * (taxa_valor / 100)
     - Tipo FIXO: taxa_valor * quantidade_dias
     """
     if not vinculo:
         return Decimal('0.00')
-    
+
     # Busca configuração para o produto específico
     taxa_config = TaxaConfig.objects.filter(
         vinculo=vinculo,
         produto=produto,
         ativo=True
     ).first()
-    
-    # Se não encontrar para o produto específico, busca configuração genérica
+
+    # Se não encontrar para o produto específico, busca pelo tipo do produto
+    if not taxa_config and produto and produto.tipo:
+        taxa_config = TaxaConfig.objects.filter(
+            vinculo=vinculo,
+            tipo=produto.tipo,
+            ativo=True
+        ).first()
+
+    # Se não encontrar por tipo, busca configuração genérica
     if not taxa_config:
         taxa_config = TaxaConfig.objects.filter(
             vinculo=vinculo,
             produto__isnull=True,
+            tipo__isnull=True,
             ativo=True
         ).first()
-    
+
     # Se não encontrar nenhuma configuração, retorna 0
     if not taxa_config:
         return Decimal('0.00')
-    
+
     # Calcula a taxa
     if taxa_config.taxa_tipo == 'PERC':
         return round(valor_beneficio * (taxa_config.taxa_valor / Decimal('100')), 2)
@@ -351,9 +361,6 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
             query = query.filter(empresa_cnpj__cnpj=condominio_cnpj)
 
     movimentacoes = query.order_by('empresa_cnpj', 'funcionario_cpf', 'data_competencia')
-    
-    if importacao_id:
-        Importacao.objects.filter(id=importacao_id).update(status='EM_FATURAMENTO')
 
     dados = []
     cache_enderecos = {}

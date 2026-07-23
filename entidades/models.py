@@ -116,6 +116,18 @@ class TaxaConfig(models.Model):
         ('PERC', 'Percentual (%)'),
         ('FIXO', 'Valor Fixo (R$)'),
     ]
+    # Replica das escolhas do modelo Produto para evitar importação circular.
+    TIPO_PRODUTO_CHOICES = [
+        ('ALIMENTACAO', 'Alimentação'),
+        ('AUTO', 'Auto'),
+        ('REFEICAO', 'Refeição'),
+        ('MULTI_HOME_OFFICE', 'Multi - Home Office'),
+        ('BOAS_FESTAS', 'Boas Festas'),
+        ('MULTI_ALIMENTACAO', 'Multi - Alimentação'),
+        ('MULTI_VR_VA', 'Multi - VR+VA'),
+        ('MULTI_REFEICAO', 'Multi - Refeição'),
+        ('MULTI_MOBILIDADE', 'Multi - Mobilidade'),
+    ]
 
     vinculo = models.ForeignKey(
         VinculoCondominio,
@@ -130,6 +142,14 @@ class TaxaConfig(models.Model):
         null=True,
         blank=True,
         help_text="Se vazio, aplica a todos os produtos deste vínculo"
+    )
+    tipo = models.CharField(
+        max_length=30,
+        choices=TIPO_PRODUTO_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name="Tipo do Produto",
+        help_text="Se preenchido, aplica a todos os produtos deste tipo"
     )
     taxa_tipo = models.CharField(
         max_length=4,
@@ -158,13 +178,29 @@ class TaxaConfig(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=['vinculo', 'produto'],
+                condition=models.Q(produto__isnull=False),
                 name='unique_vinculo_produto'
-            )
+            ),
+            models.UniqueConstraint(
+                fields=['vinculo', 'tipo'],
+                condition=models.Q(tipo__isnull=False),
+                name='unique_vinculo_tipo'
+            ),
+            models.UniqueConstraint(
+                fields=['vinculo'],
+                condition=models.Q(produto__isnull=True, tipo__isnull=True),
+                name='unique_vinculo_geral'
+            ),
         ]
 
     def __str__(self):
-        produto_nome = self.produto.nome if self.produto else "Todos os produtos"
-        return f"{self.vinculo} - {produto_nome} ({self.get_taxa_tipo_display()})"
+        if self.tipo:
+            alvo = f"Tipo: {self.get_tipo_display()}"
+        elif self.produto:
+            alvo = self.produto.nome
+        else:
+            alvo = "Todos os produtos"
+        return f"{self.vinculo} - {alvo} ({self.get_taxa_tipo_display()})"
 
 
 class Condominio(models.Model):

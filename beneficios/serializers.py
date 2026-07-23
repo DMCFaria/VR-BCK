@@ -7,9 +7,18 @@ class ProdutoSerializer(serializers.ModelSerializer):
     """
     Serializer para operações CRUD no modelo Produto (Catálogo de Benefícios).
     """
+    tipo_display = serializers.CharField(source='get_tipo_display', read_only=True)
+
     class Meta:
         model = Produto
-        fields = '__all__'
+        fields = [
+            'codigo_produto',
+            'nome',
+            'tipo',
+            'tipo_display',
+            'fornecedora',
+            'cod_fornecedora',
+        ]
         read_only_fields = ('codigo_produto',)
 
 class MovimentacaoBeneficioSerializer(serializers.ModelSerializer):

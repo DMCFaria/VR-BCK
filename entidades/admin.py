@@ -33,7 +33,7 @@ class GerenteAdmin(admin.ModelAdmin):
 class TaxaConfigInline(admin.TabularInline):
     model = TaxaConfig
     extra = 1
-    fields = ['produto', 'taxa_tipo', 'taxa_valor', 'ativo']
+    fields = ['produto', 'tipo', 'taxa_tipo', 'taxa_valor', 'ativo']
     verbose_name = "Configuração de Taxa"
     verbose_name_plural = "Configurações de Taxas"
 
@@ -65,10 +65,10 @@ class FuncionarioAdmin(admin.ModelAdmin):
 
 @admin.register(TaxaConfig)
 class TaxaConfigAdmin(admin.ModelAdmin):
-    list_display = ['vinculo', 'produto', 'taxa_tipo', 'taxa_valor', 'ativo', 'created_at']
-    list_filter = ['ativo', 'taxa_tipo', 'vinculo__administradora']
+    list_display = ['vinculo', 'produto', 'tipo', 'taxa_tipo', 'taxa_valor', 'ativo', 'created_at']
+    list_filter = ['ativo', 'taxa_tipo', 'tipo', 'vinculo__administradora']
     search_fields = [
-        'vinculo__condominio__nome', 
+        'vinculo__condominio__nome',
         'vinculo__condominio__cnpj',
         'vinculo__administradora__razao_social',
         'produto__nome',
