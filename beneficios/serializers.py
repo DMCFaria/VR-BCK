@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Produto, MovimentacaoBeneficio, Importacao
+from .models import Produto, MovimentacaoBeneficio, Importacao, PedidoCartao
 from entidades.models import Condominio, Funcionario
 
 
