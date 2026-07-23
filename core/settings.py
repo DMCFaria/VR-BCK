@@ -205,7 +205,15 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "https://vr-beneficios-backend-fedcorp-ju482.ondigitalocean.app", 
+    "https://vr-beneficios-backend-fedcorp-ju482.ondigitalocean.app",
+    "https://vr-fedcorp-portal-beneficios-2kxoa.ondigitalocean.app",
+    "https://beneficios.fedhub.com.br"
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://vr-beneficios-backend-fedcorp-ju482.ondigitalocean.app",
     "https://vr-fedcorp-portal-beneficios-2kxoa.ondigitalocean.app",
     "https://beneficios.fedhub.com.br"
 ]
