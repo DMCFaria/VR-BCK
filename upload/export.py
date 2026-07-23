@@ -361,9 +361,6 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
             query = query.filter(empresa_cnpj__cnpj=condominio_cnpj)
 
     movimentacoes = query.order_by('empresa_cnpj', 'funcionario_cpf', 'data_competencia')
-    
-    if importacao_id:
-        Importacao.objects.filter(id=importacao_id).update(status='EM_FATURAMENTO')
 
     dados = []
     cache_enderecos = {}
