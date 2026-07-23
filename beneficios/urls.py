@@ -16,6 +16,9 @@ from .views import (
     ImportarBaseCondominiosView,
     ExcluirBaseCondominiosView,
     ConsultarBoletosView,
+    PedidoCartaoView,
+    PedidoCartaoOperacionalView,
+    PedidoCartaoStatusView,
 )
 
 router = DefaultRouter()
@@ -42,4 +45,8 @@ urlpatterns = [
     path('excluir-base/<int:administradora_id>/', ExcluirBaseCondominiosView.as_view(), name='excluir-base-condominios'),
 
     path('boletos/', ConsultarBoletosView.as_view(), name='consultar-boletos'),
+
+    path('pedidos-cartao/', PedidoCartaoView.as_view(), name='pedidos-cartao'),
+    path('pedidos-cartao/operacional/', PedidoCartaoOperacionalView.as_view(), name='pedidos-cartao-operacional'),
+    path('pedidos-cartao/<int:pk>/status/', PedidoCartaoStatusView.as_view(), name='pedidos-cartao-status'),
 ]

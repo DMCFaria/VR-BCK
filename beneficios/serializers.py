@@ -125,3 +125,25 @@ class MovimentacaoReuseSerializer(serializers.Serializer):
     Serializer para formatar movimentações no formato esperado pelo confirmed.
     """
     condominios = CondominioSerializer(many=True)
+
+
+class PedidoCartaoSerializer(serializers.ModelSerializer):
+    administradora_nome = serializers.CharField(source='administradora.nome_fantasia', read_only=True)
+    criado_por_nome = serializers.CharField(source='criado_por.username', read_only=True)
+    tipo_pedido_display = serializers.CharField(source='get_tipo_pedido_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model = PedidoCartao
+        fields = [
+            'id', 'tipo_pedido', 'tipo_pedido_display',
+            'nome_completo', 'cpf', 'data_nascimento',
+            'produto', 'nome_condominio',
+            'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'estado',
+            'valor',
+            'status', 'status_display', 'observacao',
+            'administradora', 'administradora_nome',
+            'criado_por', 'criado_por_nome',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'status', 'administradora', 'criado_por', 'created_at', 'updated_at']
