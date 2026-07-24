@@ -459,6 +459,7 @@ class GetImportacaoSelectDataView(views.APIView):
                 "valor": float(b.valor) if b.valor else 0.0,
                 "vencimento": b.vencimento.strftime('%Y-%m-%d') if b.vencimento else None,
                 "baixa": b.baixa,
+                "status": b.status,
                 "dt_baixa": b.dt_baixa.strftime('%Y-%m-%d') if b.dt_baixa else None,
             }
             for b in boletos
