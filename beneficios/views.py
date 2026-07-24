@@ -69,6 +69,7 @@ class AlterarStatusImportacaoView(views.APIView):
             'em_faturamento': 'EM_FATURAMENTO',
             'faturado': 'FATURADO',
             'comprado': 'COMPRADO',
+            'pago_parcialmente': 'PAGO_PARCIALMENTE',
             'cancelado': 'CANCELADO',
         }
         

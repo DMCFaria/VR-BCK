@@ -16,6 +16,7 @@ class Importacao(models.Model):
         ('BOLETO_VR_ENVIADO', 'Boleto VR Enviado'),
         ('PAGO', 'Pago'),
         ('COMPRADO', 'Comprado'),
+        ('PAGO_PARCIALMENTE', 'Pago Parcialmente'),
         ('CANCELADO', 'Cancelado'),
         ('COMPLETED', 'Concluída'),
         ('FAILED', 'Falhou'),
