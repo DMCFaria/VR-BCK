@@ -947,7 +947,7 @@ class ListarBoletosView(views.APIView):
                 importacao_status = importacao.status if importacao else None
 
             data.append({
-                "id": faturamento.id if faturamento else fat_num,
+                "id": fat_num,
                 "administradora_nome": faturamento.administradora.razao_social if faturamento and faturamento.administradora else '-',
                 "competencia": faturamento.competencia.strftime('%Y-%m-%d') if faturamento and faturamento.competencia else None,
                 "valor_total": sum(bl["valor"] for bl in boletos_list),
