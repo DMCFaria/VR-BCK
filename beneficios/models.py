@@ -188,6 +188,10 @@ class Faturamento(models.Model):
         verbose_name = "Faturamento"
         verbose_name_plural = "Faturamentos"
         ordering = ['-criado_em']
+        indexes = [
+            models.Index(fields=['importacao'], name='idx_fat_importacao'),
+            models.Index(fields=['administradora'], name='idx_fat_adm'),
+        ]
 
     def __str__(self):
         return f"Faturamento #{self.id} - {self.competencia}"
@@ -283,6 +287,12 @@ class MovimentacaoBeneficio(models.Model):
             'produto_codigo', 
             'data_competencia'
         )
+        indexes = [
+            models.Index(fields=['importacao'], name='idx_mov_importacao'),
+            models.Index(fields=['empresa_cnpj'], name='idx_mov_empresa'),
+            models.Index(fields=['funcionario_cpf'], name='idx_mov_funcionario'),
+            models.Index(fields=['importacao', 'empresa_cnpj'], name='idx_mov_imp_emp'),
+        ]
 
     def __str__(self):
         return f"{self.produto_codigo} - {self.funcionario_cpf} ({self.data_competencia})"
@@ -305,12 +315,12 @@ class Boleto(models.Model):
     qr_imagem = models.TextField(verbose_name="QR Imagem", null=True, blank=True)
     vencimento = models.DateField(verbose_name="Vencimento", null=True, blank=True)
     nome_cobrado = models.CharField(max_length=255, verbose_name="Nome Cobrado", null=True, blank=True)
-    cnpj_cobrado = models.CharField(max_length=50, verbose_name="CNPJ Cobrado", null=True, blank=True)
+    cnpj_cobrado = models.CharField(max_length=14, verbose_name="CNPJ Cobrado", null=True, blank=True)
     cedente = models.CharField(max_length=255, verbose_name="Cedente", null=True, blank=True)
     cnpj_cedente = models.CharField(max_length=50, verbose_name="CNPJ do Cedente", null=True, blank=True)
     valor = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="Valor", null=True, blank=True)
     deducoes = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="Deduções", null=True, blank=True)
-    status = models.CharField(max_length=50, verbose_name="Status", null=True, blank=True)
+    status = models.CharField(max_length=1, verbose_name="Status", null=True, blank=True)
     nosso_numero = models.CharField(max_length=100, verbose_name="Nosso Número", null=True, blank=True)
     identificador = models.CharField(max_length=100, verbose_name="Identificador", null=True, blank=True)
     baixa = models.BooleanField(default=False, verbose_name="Baixa")
@@ -328,6 +338,10 @@ class Boleto(models.Model):
         verbose_name = "Boleto"
         verbose_name_plural = "Boletos"
         ordering = ['-vencimento']
+        indexes = [
+            models.Index(fields=['faturamento'], name='idx_boleto_fat'),
+            models.Index(fields=['vencimento'], name='idx_boleto_venc'),
+        ]
 
     def __str__(self):
         return f"Boleto #{self.id} - Fatura: {self.fatura} - Vencimento: {self.vencimento}"

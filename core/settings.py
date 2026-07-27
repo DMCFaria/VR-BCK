@@ -22,7 +22,7 @@ FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173')
 
 EMAIL_FATURAMENTO= config('EMAIL_FATURAMENTO', default='faturamento@fedcorp.com')
 
-DEBUG = True
+DEBUG = config('DEBUG', default=False, cast=bool)
 
 ALLOWED_HOSTS = [
     "127.0.0.1",
@@ -96,7 +96,7 @@ DATABASES = {
         'PASSWORD':config('DB_PASSWORD'),  
         'HOST': config('DB_HOST'),                    
         'PORT': config('DB_PORT'),     
-        'CONN_MAX_AGE': 300,                   
+        'CONN_MAX_AGE': 600,                   
     }
     
 }
@@ -181,6 +181,11 @@ LOGGING = {
         'nfse': {
             'handlers': ['console'],
             'level': 'DEBUG',
+            'propagate': False,
+        },
+        'django.db.backends': {
+            'handlers': ['console'],
+            'level': 'WARNING',
             'propagate': False,
         },
     },

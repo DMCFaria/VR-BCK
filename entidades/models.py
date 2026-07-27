@@ -286,6 +286,9 @@ class Funcionario(models.Model):
     class Meta:
         verbose_name = "Funcionário"
         verbose_name_plural = "Funcionários"
+        indexes = [
+            models.Index(fields=['condominio'], name='idx_func_condo'),
+        ]
 
     def __str__(self):
         return f"{self.nome} ({self.cpf})"

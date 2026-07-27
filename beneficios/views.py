@@ -748,22 +748,43 @@ class KanbanFaturasView(views.APIView):
     """
     Retorna faturas no formato esperado pelo Kanban do Operacional.
     Agrupa Importacao + Faturamento + Boletos em estrutura coEstipulantes.
+    Exclui importacoes PAGO com mais de 30 dias para reduzir carga.
     """
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
     def get(self, request):
+        from datetime import date, timedelta
+        from django.db.models import Prefetch
         from beneficios.models import Faturamento, Boleto
+
+        hoje = date.today()
+        corte_pago = hoje - timedelta(days=30)
+
+        boletos_prefetch = Prefetch(
+            'boletos_rel',
+            queryset=Boleto.objects.order_by('vencimento'),
+        )
+        faturamentos_prefetch = Prefetch(
+            'faturamentos',
+            queryset=Faturamento.objects.prefetch_related(boletos_prefetch),
+        )
 
         importacoes = Importacao.objects.select_related(
             'administradora', 'usuario', 'file_upload'
-        ).exclude(status__in=['CANCELADO']).order_by('-data_importacao')
+        ).prefetch_related(faturamentos_prefetch).exclude(
+            status__in=['CANCELADO']
+        ).exclude(
+            status='PAGO', data_importacao__lt=corte_pago
+        ).order_by('-data_importacao')
 
         faturas = []
 
         for imp in importacoes:
-            faturamento = Faturamento.objects.filter(importacao=imp).first()
-            boletos = Boleto.objects.filter(faturamento=faturamento) if faturamento else Boleto.objects.none()
+            faturamentos_rel = list(imp.faturamentos.all())
+            faturamento = faturamentos_rel[0] if faturamentos_rel else None
+
+            boletos = list(faturamento.boletos_rel.all()) if faturamento else []
 
             admin = imp.administradora
             estipulante_nome = admin.razao_social if admin else ''
@@ -833,13 +854,11 @@ class KanbanFaturasView(views.APIView):
             }
             kanban = status_map.get(imp.status, 'faturado')
 
-            todos_boletos = Boleto.objects.filter(faturamento_id=imp.id)
-            if todos_boletos.exists() and all(b.baixa for b in todos_boletos):
+            if boletos and all(b.baixa for b in boletos):
                 kanban = 'pago'
 
             if imp.data_recebimento:
-                from datetime import date, timedelta
-                amanha = date.today() + timedelta(days=1)
+                amanha = hoje + timedelta(days=1)
                 if imp.data_recebimento == amanha:
                     kanban = 'enviar_compra'
 
@@ -1191,12 +1210,15 @@ class ConsultarBoletosView(views.APIView):
 
     - dev/fat: vê TODOS os faturamentos.
     - adm: vê apenas faturas da sua administradora_ativa.
+    Exclui importacoes PAGO com mais de 30 dias.
     """
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
     def get(self, request):
-        from beneficios.models import Faturamento, FaturamentoDocumento
+        from datetime import date, timedelta
+        from django.db.models import Prefetch
+        from beneficios.models import Faturamento, FaturamentoDocumento, Boleto
         from entidades.models import Administradora
 
         user = request.user
@@ -1215,10 +1237,30 @@ class ConsultarBoletosView(views.APIView):
         elif user.tipo in ('dev', 'fat'):
             administradora_id = None
 
-        # Partir de Importacao (mesmo padrão do KanbanFaturasView)
+        hoje = date.today()
+        corte_pago = hoje - timedelta(days=30)
+
+        boletos_prefetch = Prefetch(
+            'boletos_rel',
+            queryset=Boleto.objects.order_by('vencimento'),
+        )
+        docs_prefetch = Prefetch(
+            'documentos',
+            queryset=FaturamentoDocumento.objects.select_related('condominio'),
+        )
+        faturamentos_prefetch = Prefetch(
+            'faturamentos',
+            queryset=Faturamento.objects.prefetch_related(boletos_prefetch, docs_prefetch),
+        )
+
+        # Partir de Importacao
         importacoes_qs = Importacao.objects.select_related(
             'administradora', 'usuario'
-        ).exclude(status__in=['CANCELADO'])
+        ).prefetch_related(faturamentos_prefetch).exclude(
+            status__in=['CANCELADO']
+        ).exclude(
+            status='PAGO', data_importacao__lt=corte_pago
+        )
 
         if administradora_id:
             importacoes_qs = importacoes_qs.filter(administradora_id=administradora_id)
@@ -1247,7 +1289,8 @@ class ConsultarBoletosView(views.APIView):
 
         result = []
         for imp in paginated_imps:
-            faturamento = Faturamento.objects.filter(importacao=imp).first()
+            faturamentos_rel = list(imp.faturamentos.all())
+            faturamento = faturamentos_rel[0] if faturamentos_rel else None
             admin = imp.administradora
 
             status_fat = faturamento.status if faturamento else 'PENDING'
@@ -1255,10 +1298,7 @@ class ConsultarBoletosView(views.APIView):
             docs = []
             boletos_data = []
             if faturamento:
-                docs_qs = FaturamentoDocumento.objects.filter(
-                    faturamento=faturamento
-                ).select_related('condominio')
-                for doc in docs_qs:
+                for doc in faturamento.documentos.all():
                     docs.append({
                         'condominio_nome': doc.condominio.nome if doc.condominio else '',
                         'condominio_cnpj': doc.condominio.cnpj if doc.condominio else '',
@@ -1267,11 +1307,7 @@ class ConsultarBoletosView(views.APIView):
                         'url_nota_fiscal': doc.url_nota_fiscal or '',
                     })
 
-                from beneficios.models import Boleto
-                boletos_qs = Boleto.objects.filter(
-                    faturamento=faturamento
-                ).order_by('vencimento')
-                for boleto in boletos_qs:
+                for boleto in faturamento.boletos_rel.all():
                     boletos_data.append({
                         'id': boleto.id,
                         'nome_cobrado': boleto.nome_cobrado or '',
