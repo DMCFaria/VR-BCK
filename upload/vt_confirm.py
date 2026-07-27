@@ -9,11 +9,113 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from core.fedhub.services.fedhub_service import FedhubService
 from .serializers import ProcessamentoFinalSerializer
 from .models import FileUpload
+from .utils import validar_extensao_arquivo
+from .gerar_planilha_editada import editar_planilha_vt
 from beneficios.models import Importacao
 from django.utils import timezone
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _gerar_e_upload_planilha_editada_vt(file_upload, condominios, data_competencia, request_user):
+    """Baixa planilha VT original do S3, edita os dados e reupload como editada."""
+    import boto3
+    import tempfile
+    import os
+    from datetime import datetime
+    from urllib.parse import quote, urlparse, unquote
+
+    tmp_path = None
+    tmp_edit_path = None
+    try:
+        logger.info(f"[PLANILHA_EDITADA_VT] Iniciando edição - file_upload_id: {file_upload.id}")
+
+        if not file_upload.arquivo_s3:
+            logger.warning("[PLANILHA_EDITADA_VT] arquivo_s3 não encontrado no file_upload")
+            return None
+
+        s3 = boto3.client(
+            's3',
+            aws_access_key_id=getattr(settings, 'ACCESS_KEY_S3', ''),
+            aws_secret_access_key=getattr(settings, 'SECRET_KEY_S3', ''),
+            region_name='us-east-2'
+        )
+
+        s3_url = file_upload.arquivo_s3
+        parsed_url = urlparse(s3_url)
+        s3_key_original = unquote(parsed_url.path.lstrip('/'))
+        bucket_name = parsed_url.netloc.split('.')[0]
+
+        logger.info(f"[PLANILHA_EDITADA_VT] Baixando arquivo original do S3 - bucket: {bucket_name}, key: {s3_key_original}")
+
+        original_ext = os.path.splitext(s3_key_original)[1] or '.xlsm'
+        with tempfile.NamedTemporaryFile(suffix=original_ext, delete=False) as tmp:
+            tmp_path = tmp.name
+            s3.download_file(bucket_name, s3_key_original, tmp_path)
+
+        downloaded_size = os.path.getsize(tmp_path)
+        logger.info(f"[PLANILHA_EDITADA_VT] Arquivo original baixado para: {tmp_path} - tamanho: {downloaded_size} bytes")
+
+        dados_modificados = {"condominios": condominios}
+        planilha_bytes = editar_planilha_vt(tmp_path, dados_modificados, data_competencia)
+
+        if not planilha_bytes:
+            logger.error("[PLANILHA_EDITADA_VT] editar_planilha_vt retornou None")
+            return None
+
+        edited_size = planilha_bytes.getbuffer().nbytes
+        logger.info(f"[PLANILHA_EDITADA_VT] Planilha VT editada com sucesso - tamanho: {edited_size} bytes")
+
+        original_name = file_upload.file.name.split('.')[0] if file_upload.file else 'importacao'
+        user = request_user
+        admin_nome_completo = str(user.administradora_ativa) if user.administradora_ativa else 'SISTEMA'
+        duas_primeiras = " ".join(admin_nome_completo.split()[:2])
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+
+        base_name = f"{duas_primeiras}-EDITADO-VT-{original_name}-{timestamp}"
+        candidate_name = f"{base_name}{original_ext}"
+
+        with tempfile.NamedTemporaryFile(suffix=original_ext, delete=False) as tmp_edit:
+            tmp_edit_path = tmp_edit.name
+            planilha_bytes.seek(0)
+            tmp_edit.write(planilha_bytes.read())
+
+        new_file_name = validar_extensao_arquivo(tmp_edit_path, candidate_name)
+        s3_key_editado = f"VR - DOCS/importacoes_vt/editadas/{new_file_name}"
+
+        logger.info(f"[PLANILHA_EDITADA_VT] Fazendo upload para S3 - bucket: fedcorp-prod, key: {s3_key_editado}")
+
+        planilha_bytes.seek(0)
+        s3.upload_fileobj(planilha_bytes, "fedcorp-prod", s3_key_editado)
+
+        s3_url_editado = f"https://fedcorp-prod.s3.us-east-2.amazonaws.com/{quote(s3_key_editado)}"
+        logger.info(f"[PLANILHA_EDITADA_VT] Upload concluído - URL: {s3_url_editado}")
+
+        file_upload.arquivo_s3_editado = s3_url_editado
+        file_upload.save(update_fields=['arquivo_s3_editado'])
+        logger.info(f"[PLANILHA_EDITADA_VT] URL salva no banco de dados - file_upload_id: {file_upload.id}")
+
+        return s3_url_editado
+
+    except Exception as e:
+        logger.error(f"[PLANILHA_EDITADA_VT] Erro ao editar/upload planilha VT: {str(e)}", exc_info=True)
+        return None
+
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+                logger.info(f"[PLANILHA_EDITADA_VT] Arquivo temporário removido: {tmp_path}")
+            except Exception:
+                pass
+        if tmp_edit_path and os.path.exists(tmp_edit_path):
+            try:
+                os.remove(tmp_edit_path)
+                logger.info(f"[PLANILHA_EDITADA_VT] Arquivo temporário editado removido: {tmp_edit_path}")
+            except Exception:
+                pass
+
 
 class ConfirmVTView(views.APIView):
     permission_classes = [IsAuthenticated] 
@@ -92,6 +194,33 @@ class ConfirmVTView(views.APIView):
             tipo_processamento = payload.get('tipo_processamento', 'compra')
             tipo_display = "Compra de Benefícios" if tipo_processamento == "compra" else "Faturamento"
 
+            # Gerar planilha VT editada
+            arquivo_s3_editado_url = None
+            if file_upload and file_upload.arquivo_s3:
+                logger.info("[CONFIRMACAO_VT] Iniciando geração de planilha VT editada")
+                data_competencia = None
+                if competencia_mes and competencia_ano:
+                    from datetime import datetime
+                    try:
+                        data_competencia = datetime(int(competencia_ano), int(competencia_mes), 1).date()
+                    except Exception:
+                        pass
+
+                arquivo_s3_editado_url = _gerar_e_upload_planilha_editada_vt(
+                    file_upload=file_upload,
+                    condominios=condominios,
+                    data_competencia=data_competencia,
+                    request_user=request.user
+                )
+                logger.info(f"[CONFIRMACAO_VT] URL da planilha VT editada: {arquivo_s3_editado_url}")
+
+                if arquivo_s3_editado_url:
+                    importacao.arquivo_s3_editado = arquivo_s3_editado_url
+                    importacao.save(update_fields=['arquivo_s3_editado'])
+                    logger.info(f"[CONFIRMACAO_VT] URL da planilha VT editada salva na Importacao - id: {importacao.id}")
+                else:
+                    logger.warning("[CONFIRMACAO_VT] URL da planilha VT editada é None")
+
             fedhub_service = FedhubService()
             email_faturamento = settings.EMAIL_FATURAMENTO
 
@@ -114,13 +243,22 @@ class ConfirmVTView(views.APIView):
                 }
             )
 
-            return Response({
+            response_data = {
                 "detail": "Dados de Vale Transporte salvos com sucesso.",
                 "registros_processados": result.get("count"),
                 "importacao_id": result.get("importacao_id"),
                 "status": "AGUARDANDO_FATURAMENTO",
                 "email_enviado": email_enviado
-            }, status=status.HTTP_200_OK)
+            }
+
+            if arquivo_s3_editado_url:
+                response_data["arquivo_s3_editado"] = arquivo_s3_editado_url
+
+            if file_upload and file_upload.arquivo_s3:
+                response_data["arquivo_s3_original"] = file_upload.arquivo_s3
+
+            logger.info(f"[CONFIRMACAO_VT] Resposta final: {response_data}")
+            return Response(response_data, status=status.HTTP_200_OK)
 
         except Exception as e:
             logger.error(f"Erro ao processar VT: {str(e)}", exc_info=True)
@@ -186,7 +324,8 @@ class ConfirmVTView(views.APIView):
                 "produto": item.get("nome_produto", "Vale Transporte"),
                 "codigo_produto": item.get("codigo_produto", "VT"),
                 "valor": float(item.get("valor_beneficio_total", 0)),
-                "quantidade": int(item.get("quantidade_dias", 0) or item.get("quantidade", 1))
+                "quantidade": int(item.get("quantidade", 1)),
+                "quantidade_dias": int(item.get("quantidade_dias", 0))
             })
 
         result = []

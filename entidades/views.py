@@ -1,24 +1,52 @@
 import json
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, BasePermission, SAFE_METHODS
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.exceptions import ValidationError
 import logging
 
-from .models import Condominio, Funcionario, Administradora, VinculoCondominio, Gerente
+from .models import Condominio, Funcionario, Administradora, VinculoCondominio, Gerente, TaxaConfig
 from .serializers import (
     CondominioSerializer,
     FuncionarioSerializer,
     AdministradoraSerializer,
     VinculoCondominioSerializer,
-    GerenteSerializer
+    GerenteSerializer,
+    TaxaConfigSerializer
 )
 
 logger = logging.getLogger(__name__)
+
+class IsDevFatOrAdministradoraOwnerOrReadOnly(BasePermission):
+    """
+    Permite leitura para qualquer usuário autenticado.
+    dev/fat podem criar, alterar ou excluir qualquer taxa.
+    Usuários do tipo 'adm' podem alterar apenas taxas da administradora ativa.
+    """
+    def has_permission(self, request, view):
+        if request.method in SAFE_METHODS:
+            return True
+        user = request.user
+        if getattr(user, 'tipo', None) in ('dev', 'fat'):
+            return True
+        if getattr(user, 'tipo', None) == 'adm' and getattr(user, 'administradora_ativa_id', None):
+            return True
+        return False
+
+    def has_object_permission(self, request, view, obj):
+        if request.method in SAFE_METHODS:
+            return True
+        user = request.user
+        if getattr(user, 'tipo', None) in ('dev', 'fat'):
+            return True
+        if getattr(user, 'tipo', None) == 'adm':
+            return obj.vinculo.administradora_id == user.administradora_ativa_id
+        return False
+
 
 class CondominioPagination(PageNumberPagination):
     page_size = 10
@@ -41,25 +69,35 @@ class CondominioViewSet(viewsets.ModelViewSet):
             queryset = super().get_queryset().prefetch_related(vinculos_prefetch)
 
             administradora_id = self.request.user.administradora_ativa_id
+            search = self.request.query_params.get('search')
+            # mantém compatibilidade com chamadas antigas que usam ?cnpj=
             cnpj = self.request.query_params.get('cnpj')
+            nome = self.request.query_params.get('nome')
 
             if not administradora_id:
                 raise ValidationError({"error": "O parâmetro 'administradora' é obrigatório."})
 
-            if self.request.user.tipo in ['fat', 'dev']:
-                if cnpj:
-                    queryset = queryset.filter(cnpj__icontains=cnpj)
-                return queryset
-
-            if cnpj:
-                queryset = queryset.filter(cnpj__icontains=cnpj)
+            # Usuários comuns só veem condomínios vinculados à administradora ativa.
+            # Usuários fat/dev veem todos.
+            if self.request.user.tipo not in ['fat', 'dev']:
                 queryset = queryset.filter(
                     vinculocondominio__administradora_id=administradora_id,
                 ).distinct()
 
+            if search:
+                queryset = queryset.filter(
+                    Q(cnpj__icontains=search) | Q(nome__icontains=search)
+                )
+            else:
+                if cnpj:
+                    queryset = queryset.filter(cnpj__icontains=cnpj)
+                if nome:
+                    queryset = queryset.filter(nome__icontains=nome)
+
             return queryset
 
         except Exception as e:
+            logger.exception(f'[CondominioViewSet] Erro no get_queryset: {str(e)}')
             return Condominio.objects.none()
 
     def create(self, request, *args, **kwargs):
@@ -519,4 +557,34 @@ class VinculoCondominioViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(condominio__cnpj=condominio_cnpj)
         if gerente_id:
             queryset = queryset.filter(gerentes__id=gerente_id)
+        return queryset
+
+
+class TaxaConfigViewSet(viewsets.ModelViewSet):
+    queryset = TaxaConfig.objects.select_related('vinculo', 'produto').all()
+    serializer_class = TaxaConfigSerializer
+    permission_classes = [IsAuthenticated, IsDevFatOrAdministradoraOwnerOrReadOnly]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        vinculo_id = self.request.query_params.get('vinculo')
+        administradora_id = self.request.query_params.get('administradora')
+        condominio_cnpj = self.request.query_params.get('condominio')
+        produto_codigo = self.request.query_params.get('produto')
+        tipo = self.request.query_params.get('tipo')
+        ativo = self.request.query_params.get('ativo')
+
+        if vinculo_id:
+            queryset = queryset.filter(vinculo_id=vinculo_id)
+        if administradora_id:
+            queryset = queryset.filter(vinculo__administradora_id=administradora_id)
+        if condominio_cnpj:
+            queryset = queryset.filter(vinculo__condominio__cnpj=condominio_cnpj)
+        if produto_codigo:
+            queryset = queryset.filter(produto__codigo_produto=produto_codigo)
+        if tipo:
+            queryset = queryset.filter(tipo=tipo)
+        if ativo is not None:
+            queryset = queryset.filter(ativo=ativo.lower() == 'true')
+
         return queryset

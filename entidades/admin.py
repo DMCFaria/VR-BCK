@@ -1,13 +1,25 @@
 from django.contrib import admin
-from .models import Condominio, Funcionario, Administradora, VinculoCondominio, Gerente
+from .models import Condominio, Funcionario, Administradora, VinculoCondominio, Gerente, TaxaConfig
 
 
 @admin.register(Administradora)
 class AdministradoraAdmin(admin.ModelAdmin):
-    list_display = ['cnpj', 'razao_social', 'ativo', 'd_mais', 'created_at']
-    list_filter = ['ativo']
-    search_fields = ['cnpj', 'razao_social']
+    list_display = ['cnpj', 'razao_social', 'ativo', 'd_mais', 'cidade', 'estado', 'created_at']
+    list_filter = ['ativo', 'estado', 'cidade']
+    search_fields = ['cnpj', 'razao_social', 'cidade', 'estado']
     ordering = ['razao_social']
+    fieldsets = (
+        (None, {
+            'fields': ('cnpj', 'razao_social', 'nome_fantasia', 'email', 'ativo', 'cartao_admin')
+        }),
+        ('Endereço', {
+            'fields': ('endereco', 'numero', 'complemento', 'bairro', 'cidade', 'estado', 'cep'),
+            'classes': ('collapse',)
+        }),
+        ('Configurações', {
+            'fields': ('valor_max_beneficio', 'd_mais', 'taxa_padrao_tipo', 'taxa_padrao_valor')
+        }),
+    )
 
 
 @admin.register(Gerente)
@@ -18,12 +30,21 @@ class GerenteAdmin(admin.ModelAdmin):
     ordering = ['nome']
 
 
+class TaxaConfigInline(admin.TabularInline):
+    model = TaxaConfig
+    extra = 1
+    fields = ['produto', 'tipo', 'taxa_tipo', 'taxa_valor', 'ativo']
+    verbose_name = "Configuração de Taxa"
+    verbose_name_plural = "Configurações de Taxas"
+
+
 @admin.register(VinculoCondominio)
 class VinculoCondominioAdmin(admin.ModelAdmin):
     list_display = ['administradora', 'condominio', 'created_at']
     list_filter = ['administradora']
     search_fields = ['condominio__nome', 'condominio__cnpj', 'administradora__razao_social']
     filter_horizontal = ['gerentes']
+    inlines = [TaxaConfigInline]
 
 
 @admin.register(Condominio)
@@ -40,3 +61,18 @@ class FuncionarioAdmin(admin.ModelAdmin):
     list_filter = ['departamento']
     search_fields = ['cpf', 'nome', 'matricula']
     ordering = ['nome']
+
+
+@admin.register(TaxaConfig)
+class TaxaConfigAdmin(admin.ModelAdmin):
+    list_display = ['vinculo', 'produto', 'tipo', 'taxa_tipo', 'taxa_valor', 'ativo', 'created_at']
+    list_filter = ['ativo', 'taxa_tipo', 'tipo', 'vinculo__administradora']
+    search_fields = [
+        'vinculo__condominio__nome',
+        'vinculo__condominio__cnpj',
+        'vinculo__administradora__razao_social',
+        'produto__nome',
+        'produto__codigo_produto'
+    ]
+    list_editable = ['ativo', 'taxa_tipo', 'taxa_valor']
+    ordering = ['-created_at']

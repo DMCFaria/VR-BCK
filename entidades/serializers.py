@@ -1,5 +1,28 @@
 from rest_framework import serializers
-from .models import Condominio, Funcionario, Administradora, VinculoCondominio, Gerente
+from .models import Condominio, Funcionario, Administradora, VinculoCondominio, Gerente, TaxaConfig
+from beneficios.models import Produto
+
+
+class ProdutoField(serializers.PrimaryKeyRelatedField):
+    """Aceita o ID do Produto ou o código do produto (codigo_produto)."""
+
+    def to_internal_value(self, data):
+        if data in (None, '', 'null'):
+            return None
+
+        try:
+            return super().to_internal_value(data)
+        except serializers.ValidationError:
+            try:
+                return Produto.objects.get(codigo_produto=str(data))
+            except Produto.DoesNotExist:
+                raise serializers.ValidationError(
+                    f'Produto com id/código "{data}" não encontrado.'
+                )
+            except Produto.MultipleObjectsReturned:
+                raise serializers.ValidationError(
+                    f'Existe mais de um produto com código "{data}".'
+                )
 
 
 class CondominioSerializer(serializers.ModelSerializer):
@@ -55,6 +78,7 @@ class AdministradoraSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'cnpj', 'razao_social', 'nome_fantasia', 'email', 'ativo',
             'cartao_admin', 'd_mais',
+            'endereco', 'numero', 'complemento', 'bairro', 'cidade', 'estado', 'cep',
             'taxa_padrao_tipo', 'taxa_padrao_valor',
             'created_at', 'updated_at'
         ]
@@ -101,9 +125,14 @@ class GerenteSerializer(serializers.ModelSerializer):
 class VinculoCondominioSerializer(serializers.ModelSerializer):
     condominio_nome = serializers.CharField(source='condominio.nome', read_only=True)
     condominio_cnpj = serializers.CharField(source='condominio.cnpj', read_only=True)
-    administradora_nome = serializers.CharField(source='administradora.nome', read_only=True)
+    administradora_nome = serializers.CharField(source='administradora.razao_social', read_only=True)
     administradora_cnpj = serializers.CharField(source='administradora.cnpj', read_only=True)
     gerentes_detalhes = GerenteSerializer(source='gerentes', many=True, read_only=True)
+    taxas_config = serializers.SerializerMethodField(read_only=True)
+
+    def get_taxas_config(self, obj):
+        taxas = obj.taxas_config.all()
+        return TaxaConfigSerializer(taxas, many=True).data
 
     class Meta:
         model = VinculoCondominio
@@ -117,9 +146,70 @@ class VinculoCondominioSerializer(serializers.ModelSerializer):
             'administradora_cnpj',
             'gerentes',
             'gerentes_detalhes',
-            'usar_taxa_padrao',
-            'taxa_tipo',
-            'taxa_valor',
+            'taxas_config',
             'created_at'
         ]
         read_only_fields = ['created_at']
+
+
+class TaxaConfigSerializer(serializers.ModelSerializer):
+    vinculo_display = serializers.SerializerMethodField(read_only=True)
+    produto = ProdutoField(
+        queryset=Produto.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    produto_nome = serializers.CharField(source='produto.nome', read_only=True, default=None)
+    produto_codigo = serializers.CharField(source='produto.codigo_produto', read_only=True, default=None)
+    tipo = serializers.ChoiceField(
+        choices=Produto.TIPO_CHOICES,
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+    )
+    tipo_display = serializers.CharField(source='get_tipo_display', read_only=True)
+
+    def get_vinculo_display(self, obj):
+        return str(obj.vinculo)
+
+    def validate(self, data):
+        produto = data.get('produto')
+        tipo = data.get('tipo')
+
+        if produto and tipo:
+            raise serializers.ValidationError(
+                "Informe apenas o produto ou o tipo, não ambos."
+            )
+
+        return data
+
+    def validate_vinculo(self, value):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+
+        if user and getattr(user, 'tipo', None) not in ('dev', 'fat'):
+            if value.administradora_id != getattr(user, 'administradora_ativa_id', None):
+                raise serializers.ValidationError(
+                    'O vínculo selecionado não pertence à sua administradora ativa.'
+                )
+
+        return value
+
+    class Meta:
+        model = TaxaConfig
+        fields = [
+            'id',
+            'vinculo',
+            'vinculo_display',
+            'produto',
+            'produto_nome',
+            'produto_codigo',
+            'tipo',
+            'tipo_display',
+            'taxa_tipo',
+            'taxa_valor',
+            'ativo',
+            'created_at',
+            'updated_at'
+        ]
+        read_only_fields = ['created_at', 'updated_at']

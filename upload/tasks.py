@@ -11,8 +11,169 @@ from pypdf import PdfReader, PdfWriter
 logger = logging.getLogger(__name__)
 
 
+def _notificar_erro_pesquisa_cnpj(assunto, mensagem):
+    """Envia email de alerta quando a pesquisa automática de CNPJ falha."""
+    from django.core.mail import send_mail
+    from django.conf import settings
+
+    email_destino = getattr(settings, 'EMAIL_FATURAMENTO', 'danielmello@condomed.com.br')
+    try:
+        send_mail(
+            subject=assunto,
+            message=mensagem,
+            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@fedcorp.com.br'),
+            recipient_list=[email_destino],
+            fail_silently=False,
+        )
+        logger.info(f"[PESQUISA_CNPJ] Email de erro enviado para {email_destino}")
+    except Exception as e:
+        logger.exception(f"[PESQUISA_CNPJ] Falha ao enviar email de erro: {e}")
+
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuario_id):
+def pesquisar_enderecos_condominios(self, cnpjs, importacao_id=None):
+    """
+    Pesquisa os endereços dos condomínios em segundo plano usando BigDataCorp.
+
+    Args:
+        cnpjs: lista de CNPJs (com ou sem formatação) para pesquisar.
+        importacao_id: ID da importação relacionada (apenas para log).
+    """
+    from entidades.models import Condominio
+    from upload.services import CNPJConsultaService
+    from django.conf import settings
+
+    if not cnpjs:
+        logger.info("[PESQUISA_CNPJ] Nenhum CNPJ para pesquisar.")
+        return {"pesquisados": 0, "atualizados": 0, "importacao_id": importacao_id}
+
+    # Verifica configuração das credenciais antes de começar
+    if not getattr(settings, "BIGDATA_ACCESS_TOKEN", "") or not getattr(settings, "BIGDATA_TOKEN_ID", ""):
+        erro_msg = (
+            "[PESQUISA_CNPJ] BIGDATA_ACCESS_TOKEN ou BIGDATA_TOKEN_ID não configurados. "
+            "A pesquisa automática de CNPJs não pode ser executada. "
+            f"Importação: {importacao_id}"
+        )
+        logger.error(erro_msg)
+        _notificar_erro_pesquisa_cnpj(
+            "[ALERTA] Pesquisa automática de CNPJ - Credenciais não configuradas",
+            erro_msg
+        )
+        return {"pesquisados": 0, "atualizados": 0, "importacao_id": importacao_id, "erro": "Credenciais não configuradas"}
+
+    cnpjs_unicos = list(set(re.sub(r"\D", "", str(c)) for c in cnpjs if c))
+    logger.info(
+        f"[PESQUISA_CNPJ] Iniciando pesquisa de {len(cnpjs_unicos)} CNPJs "
+        f"para importacao_id={importacao_id}"
+    )
+
+    pesquisados = 0
+    atualizados = 0
+    cnpjs_com_falha = []
+
+    for cnpj in cnpjs_unicos:
+        if len(cnpj) != 14:
+            logger.warning(f"[PESQUISA_CNPJ] CNPJ ignorado (tamanho inválido): {cnpj}")
+            continue
+
+        try:
+            condominio = Condominio.objects.filter(cnpj=cnpj).first()
+            if not condominio:
+                logger.warning(f"[PESQUISA_CNPJ] Condomínio {cnpj} não encontrado no banco.")
+                continue
+
+            if condominio.is_searched:
+                logger.info(f"[PESQUISA_CNPJ] Condomínio {cnpj} já pesquisado anteriormente.")
+                continue
+
+            dados = CNPJConsultaService.consultar(cnpj)
+            pesquisados += 1
+
+            if not dados:
+                logger.warning(f"[PESQUISA_CNPJ] Não foi possível obter dados para {cnpj}.")
+                cnpjs_com_falha.append(cnpj)
+                continue
+
+            campos_atualizados = []
+
+            # Nome: sempre atualiza quando a consulta retorna um nome mais completo,
+            # evitando abreviações preenchidas pelas administradoras.
+            if dados.get("razao_social"):
+                novo_nome = dados["razao_social"]
+                if condominio.nome != novo_nome:
+                    condominio.nome = novo_nome
+                    campos_atualizados.append("nome")
+
+            # Endereço: preenche apenas campos vazios para manter a planilha como fonte fiel.
+            if dados.get("rua") and not condominio.endereco:
+                condominio.endereco = dados["rua"]
+                campos_atualizados.append("endereco")
+
+            if dados.get("numero") and not condominio.numero:
+                condominio.numero = dados["numero"]
+                campos_atualizados.append("numero")
+
+            if dados.get("complemento") and not condominio.complemento:
+                condominio.complemento = dados["complemento"]
+                campos_atualizados.append("complemento")
+
+            if dados.get("bairro") and not condominio.bairro:
+                condominio.bairro = dados["bairro"]
+                campos_atualizados.append("bairro")
+
+            if dados.get("cidade") and not condominio.cidade:
+                condominio.cidade = dados["cidade"]
+                campos_atualizados.append("cidade")
+
+            if dados.get("estado") and not condominio.estado:
+                condominio.estado = dados["estado"]
+                campos_atualizados.append("estado")
+
+            if dados.get("cep") and not condominio.cep:
+                condominio.cep = dados["cep"]
+                campos_atualizados.append("cep")
+
+            condominio.is_searched = True
+            condominio.save(update_fields=campos_atualizados + ["is_searched"])
+            atualizados += 1
+
+            logger.info(
+                f"[PESQUISA_CNPJ] Condomínio {cnpj} atualizado: {campos_atualizados}"
+            )
+
+        except Exception as e:
+            logger.exception(f"[PESQUISA_CNPJ] Erro ao processar CNPJ {cnpj}: {e}")
+            cnpjs_com_falha.append(cnpj)
+            continue
+
+    # Notifica por email se houve falhas
+    if cnpjs_com_falha:
+        erro_msg = (
+            f"[PESQUISA_CNPJ] A pesquisa automática de CNPJ falhou para os seguintes CNPJs "
+            f"da importação {importacao_id}:\n\n" + "\n".join(cnpjs_com_falha) +
+            f"\n\nTotal: {len(cnpjs_com_falha)} de {pesquisados} pesquisados."
+        )
+        logger.warning(erro_msg)
+        _notificar_erro_pesquisa_cnpj(
+            f"[ALERTA] Pesquisa automática de CNPJ - {len(cnpjs_com_falha)} falhas",
+            erro_msg
+        )
+
+    logger.info(
+        f"[PESQUISA_CNPJ] Finalizado. Pesquisados: {pesquisados}, "
+        f"atualizados: {atualizados}, importacao_id={importacao_id}"
+    )
+
+    return {
+        "pesquisados": pesquisados,
+        "atualizados": atualizados,
+        "importacao_id": importacao_id,
+        "falhas": cnpjs_com_falha,
+    }
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuario_id, mode='substituir'):
     from beneficios.models import Faturamento, FaturamentoDocumento, Importacao
     from entidades.models import Condominio
     from upload.pdf_reader import ler_boleto, ler_nota_debito, ler_nota_fiscal
@@ -187,13 +348,24 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
                 logger.warning(f"Condomínio {cnpj} não encontrado no banco, pulando...")
                 continue
 
-            FaturamentoDocumento.objects.create(
-                faturamento=faturamento,
-                condominio=condominio,
-                url_boleto=docs.get('boleto', ''),
-                url_nota_debito=docs.get('nota_debito', ''),
-                url_nota_fiscal=docs.get('nota_fiscal', '')
-            )
+            if mode == 'adicionar':
+                FaturamentoDocumento.objects.update_or_create(
+                    faturamento=faturamento,
+                    condominio=condominio,
+                    defaults={
+                        'url_boleto': docs.get('boleto', ''),
+                        'url_nota_debito': docs.get('nota_debito', ''),
+                        'url_nota_fiscal': docs.get('nota_fiscal', '')
+                    }
+                )
+            else:
+                FaturamentoDocumento.objects.create(
+                    faturamento=faturamento,
+                    condominio=condominio,
+                    url_boleto=docs.get('boleto', ''),
+                    url_nota_debito=docs.get('nota_debito', ''),
+                    url_nota_fiscal=docs.get('nota_fiscal', '')
+                )
             
             progresso_banco = 90 + int(((i + 1) / total_condominios) * 10) if total_condominios > 0 else 100
             atualizar_progresso(faturamento.id, progresso_banco)
@@ -204,12 +376,26 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
             from beneficios.models import Importacao, MovimentacaoBeneficio
             from upload.nfse_service import emitir_nfse_lote
 
+            condominios_novos = []
+            condominios_existentes = set()
+
+            if mode == 'adicionar':
+                condominios_existentes = set(
+                    FaturamentoDocumento.objects.filter(
+                        faturamento=faturamento
+                    ).values_list('condominio__cnpj', flat=True)
+                )
+
             dados_condominios = []
             for cnpj, docs in condominios_encontrados.items():
                 try:
                     condominio = Condominio.objects.get(cnpj=cnpj)
                 except Condominio.DoesNotExist:
                     logger.warning(f"NFSe: Condomínio {cnpj} não encontrado, pulando...")
+                    continue
+
+                if mode == 'adicionar' and cnpj in condominios_existentes:
+                    logger.info(f"NFSe: Condomínio {cnpj} já possui NFSe, pulando reemissão")
                     continue
 
                 total_valor = MovimentacaoBeneficio.objects.filter(
@@ -235,8 +421,9 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
 
         try:
             from beneficios.models import Importacao, MovimentacaoBeneficio
-            Importacao.objects.filter(id=importacao_id).update(status='FATURADO')
-            MovimentacaoBeneficio.objects.filter(importacao=importacao_id).update(importacao_status='FATURADO')
+            if mode != 'adicionar':
+                Importacao.objects.filter(id=importacao_id).update(status='FATURADO')
+                MovimentacaoBeneficio.objects.filter(importacao=importacao_id).update(importacao_status='FATURADO')
             faturamento.status = 'COMPLETED'
             faturamento.save(update_fields=['status'])
             MovimentacaoBeneficio.objects.filter(importacao=importacao_id).update(fat_status='COMPLETED')

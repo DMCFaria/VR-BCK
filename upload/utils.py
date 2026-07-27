@@ -1,5 +1,33 @@
 import decimal
+import os
 from collections import defaultdict
+
+EXTENSOES_PERMITIDAS = {'.xlsx', '.xlsm', '.txt'}
+
+def validar_extensao_arquivo(file_path, original_filename):
+    if not original_filename:
+        return original_filename
+    
+    nome, ext = os.path.splitext(original_filename)
+    
+    if ext.lower() in EXTENSOES_PERMITIDAS:
+        return original_filename
+    
+    try:
+        with open(file_path, 'rb') as f:
+            header = f.read(8)
+        
+        if header[:4] == b'PK\x03\x04':
+            return f"{nome}.xlsx"
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                f.read(1024)
+            return f"{nome}.txt"
+        except UnicodeDecodeError:
+            return f"{nome}.xlsm"
+    except Exception:
+        return f"{nome}.xlsm"
 
 def convert_decimals_to_json_safe(data):
     if isinstance(data, dict):

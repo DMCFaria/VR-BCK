@@ -68,6 +68,8 @@ class AlterarStatusImportacaoView(views.APIView):
             'aprovado': 'APROVADO',
             'em_faturamento': 'EM_FATURAMENTO',
             'faturado': 'FATURADO',
+            'comprado': 'COMPRADO',
+            'pago_parcialmente': 'PAGO_PARCIALMENTE',
             'cancelado': 'CANCELADO',
         }
         
@@ -879,6 +881,12 @@ class BoletoBaixaView(views.APIView):
 
 
 class ListarBoletosView(views.APIView):
+class KanbanFaturasView(views.APIView):
+    """
+    Retorna faturas no formato esperado pelo Kanban do Operacional.
+    Agrupa Importacao + Faturamento + Boletos em estrutura coEstipulantes.
+    Exclui importacoes PAGO com mais de 30 dias para reduzir carga.
+    """
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
