@@ -885,19 +885,8 @@ class ListarBoletosView(views.APIView):
     def get(self, request):
         page = int(request.query_params.get('page', 1))
         limit = int(request.query_params.get('limit', 50))
-        administradora_id = request.query_params.get('administradora_id')
-        status_filter = request.query_params.get('status')
 
-        all_boletos = Boleto.objects.select_related(
-            'faturamento',
-            'faturamento__importacao',
-            'faturamento__administradora',
-        ).all()
-
-        if administradora_id:
-            all_boletos = all_boletos.filter(
-                faturamento__administradora_id=administradora_id
-            )
+        all_boletos = Boleto.objects.all()
 
         from collections import defaultdict
         grupos = defaultdict(list)
@@ -913,7 +902,7 @@ class ListarBoletosView(views.APIView):
         fedhub_status_map = {}
         try:
             fedhub = FedhubService()
-            for fat_num in faturas_page:
+            for fat_num in faturas_page[:10]:
                 fedhub_boletos = fedhub.buscar_todos_boletos_por_fatura(fat_num)
                 if isinstance(fedhub_boletos, list):
                     for fb in fedhub_boletos:
@@ -925,30 +914,17 @@ class ListarBoletosView(views.APIView):
                                 "dt_baixa": fb.get("dt_baixa"),
                             }
         except Exception as e:
-            logger.warning(f"Erro ao buscar status no FedHub: {e}", exc_info=True)
-
-        STATUS_DISPLAY = {
-            'PAGO': 'Pago',
-            'PENDENTE_PAGAMENTO': 'Pendente',
-            'PENDING': 'Pendente',
-            'FATURADO': 'Faturado',
-            'COMPLETED': 'Concluído',
-            'CANCELADO': 'Cancelado',
-            'FAILED': 'Falhou',
-        }
+            logger.warning(f"Erro ao buscar status no FedHub: {e}")
 
         data = []
         for fat_num in faturas_page:
             boletos_grupo = grupos[fat_num]
             primeiro = boletos_grupo[0]
-            faturamento = primeiro.faturamento
-            importacao = faturamento.importacao if faturamento else None
 
             boletos_list = []
             for b in boletos_grupo:
                 doc_key = str(b.documento).strip() if b.documento else None
                 fh = fedhub_status_map.get(doc_key, {}) if doc_key else {}
-
                 boletos_list.append({
                     "id": b.id,
                     "documento": b.documento,
@@ -963,7 +939,11 @@ class ListarBoletosView(views.APIView):
                     "nosso_numero": b.nosso_numero,
                 })
 
-            importacao_status = importacao.status if importacao else None
+            importacao_status = None
+            faturamento = primeiro.faturamento
+            if faturamento:
+                importacao = getattr(faturamento, 'importacao', None)
+                importacao_status = importacao.status if importacao else None
 
             data.append({
                 "id": faturamento.id if faturamento else fat_num,
@@ -971,17 +951,10 @@ class ListarBoletosView(views.APIView):
                 "competencia": faturamento.competencia.strftime('%Y-%m-%d') if faturamento and faturamento.competencia else None,
                 "valor_total": sum(bl["valor"] for bl in boletos_list),
                 "status": importacao_status or 'PENDING',
-                "status_display": STATUS_DISPLAY.get(importacao_status, importacao_status or 'Pendente'),
+                "status_display": importacao_status or 'Pendente',
                 "data_vencimento": boletos_list[0]["vencimento"] if boletos_list else None,
                 "boletos": boletos_list,
             })
-
-        if status_filter:
-            sf = status_filter.lower()
-            if sf in ('pago', 'paid'):
-                data = [d for d in data if d['status'] in ('PAGO', 'COMPLETED')]
-            elif sf in ('pendente', 'pending'):
-                data = [d for d in data if d['status'] not in ('PAGO', 'COMPLETED')]
 
         return Response({
             "data": data,
