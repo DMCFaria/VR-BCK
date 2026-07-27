@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from core.fedhub.services.fedhub_service import FedhubService
-from .models import Produto, MovimentacaoBeneficio, Importacao, Boleto
+from .models import Produto, MovimentacaoBeneficio, Importacao, Boleto, Faturamento
 from .serializers import (
     ImportacaoComMovimentacoesSerializer,
     ProdutoSerializer,
@@ -741,3 +741,106 @@ class BoletoBaixaView(views.APIView):
 
     def patch(self, request, pk=None):
         return self.post(request, pk)
+
+
+class ListarBoletosView(views.APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        page = int(request.query_params.get('page', 1))
+        limit = int(request.query_params.get('limit', 50))
+        administradora_id = request.query_params.get('administradora_id')
+        status_filter = request.query_params.get('status')
+
+        faturamentos = Faturamento.objects.select_related('importacao', 'administradora').all()
+
+        if administradora_id:
+            faturamentos = faturamentos.filter(administradora_id=administradora_id)
+
+        total = faturamentos.count()
+        total_pages = max(1, (total + limit - 1) // limit)
+        faturamentos = faturamentos[(page - 1) * limit : page * limit]
+
+        fedhub_status_map = {}
+        try:
+            fedhub = FedhubService()
+            faturas_nums = list(set(
+                b.fatura for f in faturamentos
+                for b in f.boletos_rel.all() if b.fatura
+            ))
+            for fat_num in faturas_nums:
+                fedhub_boletos = fedhub.buscar_todos_boletos_por_fatura(fat_num)
+                if isinstance(fedhub_boletos, list):
+                    for fb in fedhub_boletos:
+                        doc = fb.get("documento")
+                        if doc:
+                            fedhub_status_map[str(doc).strip()] = {
+                                "status": fb.get("status"),
+                                "baixa": bool(fb.get("baixa", False)),
+                                "dt_baixa": fb.get("dt_baixa"),
+                            }
+        except Exception as e:
+            logger.warning(f"Erro ao buscar status no FedHub: {e}")
+
+        STATUS_DISPLAY = {
+            'PAGO': 'Pago',
+            'PENDENTE_PAGAMENTO': 'Pendente',
+            'PENDING': 'Pendente',
+            'FATURADO': 'Faturado',
+            'COMPLETED': 'Concluído',
+            'CANCELADO': 'Cancelado',
+            'FAILED': 'Falhou',
+        }
+
+        data = []
+        for f in faturamentos:
+            importacao = f.importacao
+            boletos_qs = f.boletos_rel.all()
+
+            boletos_list = []
+            for b in boletos_qs:
+                doc_key = str(b.documento).strip() if b.documento else None
+                fh = fedhub_status_map.get(doc_key, {}) if doc_key else {}
+
+                boletos_list.append({
+                    "id": b.id,
+                    "documento": b.documento,
+                    "cnpj_cobrado": b.cnpj_cobrado,
+                    "nome_cobrado": b.nome_cobrado,
+                    "fatura": b.fatura,
+                    "valor": float(b.valor) if b.valor else 0.0,
+                    "vencimento": b.vencimento.strftime('%Y-%m-%d') if b.vencimento else None,
+                    "baixa": fh.get("baixa", b.baixa),
+                    "dt_baixa": fh.get("dt_baixa", b.dt_baixa.strftime('%Y-%m-%d') if b.dt_baixa else None),
+                    "status": fh.get("status", b.status),
+                    "nosso_numero": b.nosso_numero,
+                })
+
+            total_boletos = len(boletos_list)
+            boletos_pago = sum(1 for bl in boletos_list if bl.get("baixa"))
+            importacao_status = importacao.status if importacao else None
+
+            data.append({
+                "id": f.id,
+                "administradora_nome": f.administradora.nome if f.administradora else '-',
+                "competencia": f.competencia.strftime('%Y-%m-%d') if f.competencia else None,
+                "valor_total": sum(bl["valor"] for bl in boletos_list),
+                "status": importacao_status or 'PENDING',
+                "status_display": STATUS_DISPLAY.get(importacao_status, importacao_status or 'Pendente'),
+                "data_vencimento": boletos_list[0]["vencimento"] if boletos_list else None,
+                "boletos": boletos_list,
+            })
+
+        if status_filter:
+            sf = status_filter.lower()
+            if sf in ('pago', 'paid'):
+                data = [d for d in data if d['status'] in ('PAGO', 'COMPLETED')]
+            elif sf in ('pendente', 'pending'):
+                data = [d for d in data if d['status'] not in ('PAGO', 'COMPLETED')]
+
+        return Response({
+            "data": data,
+            "pages": total_pages,
+            "total": total,
+        })
