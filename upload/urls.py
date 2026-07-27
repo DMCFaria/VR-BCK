@@ -5,7 +5,7 @@ from upload.vt_upload import UploadVTView
 from .confirmed import ConfirmationView
 from .upload import UploadView
 from .EXCEL.template import baixar_template_VR, baixar_template_VT
-from .export import ExportTxtCompraView, ExportFaturamentoView, ExportVTCompraView, GetImportacaoSelectDataView
+from .export import ExportTxtCompraView, ExportFaturamentoView, ExportVTCompraView, GetImportacaoSelectDataView, ListarTodosBoletosView
 from .faturamento import UploadFaturamentoView, StatusFaturamentoView
 from .download_views import DownloadArquivoView, DownloadFaturamentoView, DownloadBoletosView, DownloadNotasDebitoView, DownloadNotasFiscaisView, DownloadBoletoOriginalView, DownloadNotaDebitoOriginalView, DownloadNotaFiscalOriginalView, DownloadTodosOriginaisView, DownloadNotasEmitidasView
 from .views_nfse import NfseWebhookView
@@ -45,6 +45,7 @@ urlpatterns = [
 
     path('importacao/<int:importacao_id>/download/', DownloadArquivoView.as_view(), name='download_importacao_arquivo'),
     path('importacao/<int:importacao_id>/select-data/', GetImportacaoSelectDataView.as_view(), name='importacao_select_data'),
+    path('boletos/', ListarTodosBoletosView.as_view(), name='listar_todos_boletos'),
 
     # NFSE ROUTES
     path('nfse/webhook/', NfseWebhookView.as_view(), name='nfse_webhook'),
