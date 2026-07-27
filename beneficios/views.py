@@ -882,26 +882,25 @@ class KanbanFaturasView(views.APIView):
         administradora_id = request.query_params.get('administradora_id')
         status_filter = request.query_params.get('status')
 
-        faturamentos = Faturamento.objects.select_related('importacao', 'administradora').all()
+        all_boletos = Boleto.objects.select_related('faturamento', 'faturamento__importacao', 'faturamento__administradora').all()
 
-        if administradora_id:
-            faturamentos = faturamentos.filter(administradora_id=administradora_id)
+        from collections import defaultdict
+        grupos = defaultdict(list)
+        for b in all_boletos:
+            if b.fatura:
+                grupos[b.fatura].append(b)
 
-        total = faturamentos.count()
+        faturas_ordenadas = sorted(grupos.keys(), reverse=True)
+        total = len(faturas_ordenadas)
         total_pages = max(1, (total + limit - 1) // limit)
-        faturamentos = faturamentos[(page - 1) * limit : page * limit]
+        faturas_page = faturas_ordenadas[(page - 1) * limit : page * limit]
 
         fedhub_status_map = {}
         try:
+            from core.fedhub.services.fedhub_service import FedhubService
             fedhub = FedhubService()
-            faturas_nums = list(set(
-                b.fatura for f in faturamentos
-                for b in f.boletos_rel.all() if b.fatura
-            ))
-            logger.info(f"[ListarBoletos] Buscando status FedHub para faturas: {faturas_nums}")
-            for fat_num in faturas_nums:
+            for fat_num in faturas_page:
                 fedhub_boletos = fedhub.buscar_todos_boletos_por_fatura(fat_num)
-                logger.info(f"[ListarBoletos] FedHub fatura {fat_num}: {len(fedhub_boletos) if isinstance(fedhub_boletos, list) else type(fedhub_boletos)} boletos")
                 if isinstance(fedhub_boletos, list):
                     for fb in fedhub_boletos:
                         doc = fb.get("documento")
@@ -911,7 +910,6 @@ class KanbanFaturasView(views.APIView):
                                 "baixa": bool(fb.get("baixa", False)),
                                 "dt_baixa": fb.get("dt_baixa"),
                             }
-            logger.info(f"[ListarBoletos] fedhub_status_map keys: {list(fedhub_status_map.keys())[:5]}")
         except Exception as e:
             logger.warning(f"Erro ao buscar status no FedHub: {e}", exc_info=True)
 
@@ -926,12 +924,14 @@ class KanbanFaturasView(views.APIView):
         }
 
         data = []
-        for f in faturamentos:
-            importacao = f.importacao
-            boletos_qs = f.boletos_rel.all()
+        for fat_num in faturas_page:
+            boletos_grupo = grupos[fat_num]
+            primeiro = boletos_grupo[0]
+            faturamento = primeiro.faturamento
+            importacao = faturamento.importacao if faturamento else None
 
             boletos_list = []
-            for b in boletos_qs:
+            for b in boletos_grupo:
                 doc_key = str(b.documento).strip() if b.documento else None
                 fh = fedhub_status_map.get(doc_key, {}) if doc_key else {}
 
@@ -949,14 +949,12 @@ class KanbanFaturasView(views.APIView):
                     "nosso_numero": b.nosso_numero,
                 })
 
-            total_boletos = len(boletos_list)
-            boletos_pago = sum(1 for bl in boletos_list if bl.get("baixa"))
             importacao_status = importacao.status if importacao else None
 
             data.append({
-                "id": f.id,
-                "administradora_nome": f.administradora.nome if f.administradora else '-',
-                "competencia": f.competencia.strftime('%Y-%m-%d') if f.competencia else None,
+                "id": faturamento.id if faturamento else fat_num,
+                "administradora_nome": faturamento.administradora.nome if faturamento and faturamento.administradora else '-',
+                "competencia": faturamento.competencia.strftime('%Y-%m-%d') if faturamento and faturamento.competencia else None,
                 "valor_total": sum(bl["valor"] for bl in boletos_list),
                 "status": importacao_status or 'PENDING',
                 "status_display": STATUS_DISPLAY.get(importacao_status, importacao_status or 'Pendente'),
