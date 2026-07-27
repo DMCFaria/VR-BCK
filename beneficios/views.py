@@ -177,7 +177,7 @@ class AlterarStatusImportacaoView(views.APIView):
                 # IMPORTANTE: Você precisa ter o e-mail do cliente final em algum lugar
                 # Pode ser no modelo Importacao ou no perfil do cliente
                 email_cliente = request.data.get('email_cliente')  # Pode vir no payload
-                nome_cliente = request.data.get('nome_cliente', administradora.nome if administradora else 'Cliente')
+                nome_cliente = request.data.get('nome_cliente', administradora.razao_social if administradora else 'Cliente')
                 
                 # Se não veio no payload, tenta buscar do relacionamento
                 if not email_cliente and administradora:
@@ -955,7 +955,7 @@ class ListarBoletosView(views.APIView):
 
             data.append({
                 "id": faturamento.id if faturamento else fat_num,
-                "administradora_nome": faturamento.administradora.nome if faturamento and faturamento.administradora else '-',
+                "administradora_nome": faturamento.administradora.razao_social if faturamento and faturamento.administradora else '-',
                 "competencia": faturamento.competencia.strftime('%Y-%m-%d') if faturamento and faturamento.competencia else None,
                 "valor_total": sum(bl["valor"] for bl in boletos_list),
                 "status": importacao_status or 'PENDING',
