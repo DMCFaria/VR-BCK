@@ -5,7 +5,8 @@ from .views import (
     FuncionarioViewSet,
     AdministradoraViewSet,
     VinculoCondominioViewSet,
-    GerenteViewSet
+    GerenteViewSet,
+    TaxaConfigViewSet
 )
 
 router = DefaultRouter()
@@ -14,6 +15,7 @@ router.register(r'funcionarios', FuncionarioViewSet)
 router.register(r'administradoras', AdministradoraViewSet)
 router.register(r'gerentes', GerenteViewSet)
 router.register(r'vinculos', VinculoCondominioViewSet)
+router.register(r'taxas-config', TaxaConfigViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),

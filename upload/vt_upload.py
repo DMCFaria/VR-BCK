@@ -8,7 +8,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from upload.vt_parser import parse_vt_excel
 from .serializers import FileUploadSerializer
-from .utils import convert_decimals_to_json_safe
+from .utils import convert_decimals_to_json_safe, validar_extensao_arquivo
 from datetime import datetime
 import boto3   
 from django.conf import settings
@@ -151,10 +151,10 @@ class UploadVTView(views.APIView):
                 user = request.user
                 admin_nome_completo = str(user.administradora_ativa)
                 duas_primeiras = " ".join(admin_nome_completo.split()[:2])
-                ext = file_obj.name.split('.')[1]
                 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
                 
-                new_file_name = f"{duas_primeiras}-VT-{original_name}-{timestamp}.{ext}"
+                base_name = f"{duas_primeiras}-VT-{original_name}-{timestamp}"
+                new_file_name = validar_extensao_arquivo(file_path, f"{base_name}{os.path.splitext(file_obj.name)[1]}")
                 s3_key = f"VR - DOCS/importacoes_vt/{new_file_name}"
                 
                 file_obj.seek(0)

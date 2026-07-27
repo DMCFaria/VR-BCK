@@ -22,7 +22,7 @@ FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173')
 
 EMAIL_FATURAMENTO= config('EMAIL_FATURAMENTO', default='faturamento@fedcorp.com')
 
-DEBUG = True
+DEBUG = config('DEBUG', default=False, cast=bool)
 
 ALLOWED_HOSTS = [
     "127.0.0.1",
@@ -96,7 +96,7 @@ DATABASES = {
         'PASSWORD':config('DB_PASSWORD'),  
         'HOST': config('DB_HOST'),                    
         'PORT': config('DB_PORT'),     
-        'CONN_MAX_AGE': 300,                   
+        'CONN_MAX_AGE': 600,                   
     }
     
 }
@@ -180,7 +180,12 @@ LOGGING = {
     'loggers': {
         'nfse': {
             'handlers': ['console'],
-            'level': 'INFO',
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'django.db.backends': {
+            'handlers': ['console'],
+            'level': 'WARNING',
             'propagate': False,
         },
     },
@@ -205,7 +210,15 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "https://vr-beneficios-backend-fedcorp-ju482.ondigitalocean.app", 
+    "https://vr-beneficios-backend-fedcorp-ju482.ondigitalocean.app",
+    "https://vr-fedcorp-portal-beneficios-2kxoa.ondigitalocean.app",
+    "https://beneficios.fedhub.com.br"
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://vr-beneficios-backend-fedcorp-ju482.ondigitalocean.app",
     "https://vr-fedcorp-portal-beneficios-2kxoa.ondigitalocean.app",
     "https://beneficios.fedhub.com.br"
 ]
@@ -250,3 +263,8 @@ NFSE_PRESTADOR_RAZAO_SOCIAL = config('NFSE_PRESTADOR_RAZAO_SOCIAL', default='FED
 NFSE_SERVICO_CODIGO = config('NFSE_SERVICO_CODIGO', default='100202')
 NFSE_TOMADOR_CODIGO_PADRAO = config('NFSE_TOMADOR_CODIGO_PADRAO', default='3550308')
 NFSE_X_API_KEY = config('NFSE_X_API_KEY', default='fedcorp_static_token_secure_xyz123')
+
+# BigDataCorp
+BIGDATA_ACCESS_TOKEN = config('BIGDATA_ACCESS_TOKEN', default='')
+BIGDATA_TOKEN_ID = config('BIGDATA_TOKEN_ID', default='')
+BIGDATA_URL = config('BIGDATA_URL', default='https://plataforma.bigdatacorp.com.br/empresas')

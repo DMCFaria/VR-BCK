@@ -116,21 +116,39 @@ class UploadFaturamentoView(views.APIView):
         except Exception as e:
             logger.warning(f"Falha na validação prévia do boleto: {e}")
 
+        mode = request.data.get('mode', 'substituir')
+
         try:
             with transaction.atomic():
                 existing_faturamento = Faturamento.objects.filter(importacao_id=importacao_id).first()
-                if existing_faturamento:
-                    existing_faturamento.documentos.all().delete()
-                    existing_faturamento.delete()
 
-                faturamento = Faturamento.objects.create(
-                    id=importacao_id,
-                    importacao=importacao,
-                    administradora=importacao.administradora,
-                    competencia=competencia,
-                    criado_por=request.user,
-                    status='PENDING'
-                )
+                if mode == 'adicionar':
+                    if existing_faturamento:
+                        faturamento = existing_faturamento
+                        faturamento.status = 'PENDING'
+                        faturamento.save(update_fields=['status'])
+                    else:
+                        faturamento = Faturamento.objects.create(
+                            id=importacao_id,
+                            importacao=importacao,
+                            administradora=importacao.administradora,
+                            competencia=competencia,
+                            criado_por=request.user,
+                            status='PENDING'
+                        )
+                else:
+                    if existing_faturamento:
+                        existing_faturamento.documentos.all().delete()
+                        existing_faturamento.delete()
+
+                    faturamento = Faturamento.objects.create(
+                        id=importacao_id,
+                        importacao=importacao,
+                        administradora=importacao.administradora,
+                        competencia=competencia,
+                        criado_por=request.user,
+                        status='PENDING'
+                    )
 
             arquivos_data = {
                 'boleto': {
@@ -153,7 +171,8 @@ class UploadFaturamentoView(views.APIView):
                 importacao_id=importacao_id,
                 competencia=competencia.isoformat(),
                 arquivos_data=arquivos_data,
-                usuario_id=request.user.id
+                usuario_id=request.user.id,
+                mode=mode
             )
 
             return Response({

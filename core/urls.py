@@ -25,7 +25,5 @@ urlpatterns = [
     path('api/upload/', include('upload.urls')),
     path('api/entidades/', include('entidades.urls')), 
     path('api/beneficios/', include('beneficios.urls')),
-    
-    
     path('api/consultas/', include('consultas.urls'))
 ]

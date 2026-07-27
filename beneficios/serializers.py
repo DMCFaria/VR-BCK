@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Produto, MovimentacaoBeneficio, Importacao
+from .models import Produto, MovimentacaoBeneficio, Importacao, PedidoCartao
 from entidades.models import Condominio, Funcionario
 
 
@@ -7,9 +7,18 @@ class ProdutoSerializer(serializers.ModelSerializer):
     """
     Serializer para operações CRUD no modelo Produto (Catálogo de Benefícios).
     """
+    tipo_display = serializers.CharField(source='get_tipo_display', read_only=True)
+
     class Meta:
         model = Produto
-        fields = '__all__'
+        fields = [
+            'codigo_produto',
+            'nome',
+            'tipo',
+            'tipo_display',
+            'fornecedora',
+            'cod_fornecedora',
+        ]
         read_only_fields = ('codigo_produto',)
 
 class MovimentacaoBeneficioSerializer(serializers.ModelSerializer):
@@ -23,7 +32,7 @@ class MovimentacaoBeneficioSerializer(serializers.ModelSerializer):
 class MovimentacaoSerializer(serializers.Serializer):
     produto = serializers.CharField(max_length=255)
     codigo_produto = serializers.CharField(max_length=50, required=False, allow_blank=True, allow_null=True)
-    valor = serializers.DecimalField(max_digits=12, decimal_places=2)
+    valor = serializers.DecimalField(max_digits=15, decimal_places=2)
 
 class FuncionarioSerializer(serializers.Serializer):
     nome = serializers.CharField(max_length=255)
@@ -37,7 +46,7 @@ class FuncionarioSerializer(serializers.Serializer):
     endereco_numero = serializers.CharField(max_length=20, required=False, allow_null=True, allow_blank=True)
     endereco_complemento = serializers.CharField(max_length=100, required=False, allow_null=True, allow_blank=True)
     endereco_bairro = serializers.CharField(max_length=100, required=False, allow_null=True, allow_blank=True)
-    valor_bene = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, allow_null=True)
+    valor_bene = serializers.DecimalField(max_digits=15, decimal_places=2, required=False, allow_null=True)
     
     movimentacoes = MovimentacaoSerializer(many=True, required=False)
     
@@ -60,7 +69,7 @@ class FuncionarioSerializer(serializers.Serializer):
 class CondominioSerializer(serializers.Serializer):
     nome = serializers.CharField(max_length=255)
     cnpj = serializers.CharField(max_length=20)
-    valor_condo = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, allow_null=True)
+    valor_condo = serializers.DecimalField(max_digits=15, decimal_places=2, required=False, allow_null=True)
     rua = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     numero = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     complemento = serializers.CharField(required=False, allow_blank=True, allow_null=True)
@@ -80,7 +89,7 @@ class ImportacaoListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Importacao
-        fields = ['id', 'data_importacao','nome_administradora', 'status', 'total_registros', 'registros_processados', 'nome_usuario', 'data_vencimento', 'vigencia_inicio', 'vigencia_fim']
+        fields = ['id', 'data_importacao','nome_administradora', 'status', 'total_registros', 'registros_processados', 'nome_usuario', 'data_vencimento', 'vigencia_inicio', 'vigencia_fim', 'arquivo_s3', 'arquivo_s3_editado']
 
 class ImportacaoDetailSerializer(serializers.ModelSerializer):
     """
@@ -91,12 +100,12 @@ class ImportacaoDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Importacao
-        fields = ['id', 'file_upload', 'nome_file', 'usuario', 'nome_usuario', 'data_importacao', 'status', 'total_registros', 'registros_processados', 'erros', 'arquivo_s3', 'data_vencimento', 'data_recebimento', 'vigencia_inicio', 'vigencia_fim']
+        fields = ['id', 'file_upload', 'nome_file', 'usuario', 'nome_usuario', 'data_importacao', 'status', 'total_registros', 'registros_processados', 'erros', 'arquivo_s3', 'arquivo_s3_editado', 'data_vencimento', 'data_recebimento', 'vigencia_inicio', 'vigencia_fim']
 
 class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
     nome_usuario = serializers.CharField(source='usuario.email', read_only=True)
 
-    valor_total = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
+    valor_total = serializers.DecimalField(max_digits=15, decimal_places=2, required=False)
     total_funcionarios = serializers.IntegerField(required=False)
     nome_administradora = serializers.CharField(source='administradora.razao_social', read_only=True)
     class Meta:
@@ -116,7 +125,8 @@ class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
             'valor_total',
             'total_funcionarios',
             'modelo_importacao',
-            'arquivo_s3'
+            'arquivo_s3',
+            'arquivo_s3_editado'
         ]
 
 class MovimentacaoReuseSerializer(serializers.Serializer):
@@ -124,3 +134,25 @@ class MovimentacaoReuseSerializer(serializers.Serializer):
     Serializer para formatar movimentações no formato esperado pelo confirmed.
     """
     condominios = CondominioSerializer(many=True)
+
+
+class PedidoCartaoSerializer(serializers.ModelSerializer):
+    administradora_nome = serializers.CharField(source='administradora.nome_fantasia', read_only=True)
+    criado_por_nome = serializers.CharField(source='criado_por.username', read_only=True)
+    tipo_pedido_display = serializers.CharField(source='get_tipo_pedido_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model = PedidoCartao
+        fields = [
+            'id', 'tipo_pedido', 'tipo_pedido_display',
+            'nome_completo', 'cpf', 'data_nascimento',
+            'produto', 'nome_condominio',
+            'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'estado',
+            'valor',
+            'status', 'status_display', 'observacao',
+            'administradora', 'administradora_nome',
+            'criado_por', 'criado_por_nome',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'status', 'administradora', 'criado_por', 'created_at', 'updated_at']

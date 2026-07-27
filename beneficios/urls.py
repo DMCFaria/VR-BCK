@@ -10,6 +10,16 @@ from .views import (
     UltimaMovimentacaoDashboard,
     BoletoBaixaView,
     ListarBoletosView
+    KanbanFaturasView,
+    KanbanBoletosView,
+    KanbanMoveFaturaView,
+    KanbanNotificarCompraView,
+    ImportarBaseCondominiosView,
+    ExcluirBaseCondominiosView,
+    ConsultarBoletosView,
+    PedidoCartaoView,
+    PedidoCartaoOperacionalView,
+    PedidoCartaoStatusView,
 )
 
 router = DefaultRouter()
@@ -27,4 +37,18 @@ urlpatterns = [
     path('boletos/', ListarBoletosView.as_view(), name='listar-boletos'),
     path('boletos/baixa/', BoletoBaixaView.as_view(), name='boleto-baixa-generica'),
     path('boletos/<int:pk>/baixa/', BoletoBaixaView.as_view(), name='boleto-baixa'),
+
+    path('kanban/faturas/', KanbanFaturasView.as_view(), name='kanban-faturas'),
+    path('kanban/boletos/', KanbanBoletosView.as_view(), name='kanban-boletos'),
+    path('kanban/<int:pk>/move/', KanbanMoveFaturaView.as_view(), name='kanban-move'),
+    path('kanban/notificar-compra/', KanbanNotificarCompraView.as_view(), name='kanban-notificar-compra'),
+
+    path('importar-base/', ImportarBaseCondominiosView.as_view(), name='importar-base-condominios'),
+    path('excluir-base/<int:administradora_id>/', ExcluirBaseCondominiosView.as_view(), name='excluir-base-condominios'),
+
+    path('boletos/', ConsultarBoletosView.as_view(), name='consultar-boletos'),
+
+    path('pedidos-cartao/', PedidoCartaoView.as_view(), name='pedidos-cartao'),
+    path('pedidos-cartao/operacional/', PedidoCartaoOperacionalView.as_view(), name='pedidos-cartao-operacional'),
+    path('pedidos-cartao/<int:pk>/status/', PedidoCartaoStatusView.as_view(), name='pedidos-cartao-status'),
 ]

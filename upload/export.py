@@ -1,9 +1,55 @@
 import io
 import re
+import unicodedata
 from datetime import date, timedelta, datetime
 from decimal import Decimal
 
 import pandas as pd
+
+
+# Mapeamento do tipo do produto para o código usado nos registros 50/60 do TXT de compra.
+TIPO_PARA_CODIGO = {
+    'Alimentação': '27',
+    'Auto': '28',
+    'Refeição': '207',
+    'Multi - Home Office': '207',
+    'Boas Festas': '202',
+    'Multi - Alimentação': '27',
+    'Multi - VR+VA': '207',
+    'Multi - Refeição': '207',
+    'Multi - Mobilidade': '28',
+}
+
+
+def _codigo_produto_por_tipo(produto):
+    """Retorna o código do produto baseado no tipo, ou o código salvo se não houver mapeamento."""
+    if produto.tipo:
+        tipo_display = produto.get_tipo_display()
+        if tipo_display in TIPO_PARA_CODIGO:
+            return TIPO_PARA_CODIGO[tipo_display]
+    return produto.codigo_produto
+
+
+def _consultar_endereco_condominio(cnpj):
+    """
+    Consulta o endereço real de um condomínio pelo CNPJ.
+    Usado no faturamento quando o endereço do condomínio está vazio
+    (caso comum no modo cartão admin, onde a planilha traz o endereço
+    da administradora como local de entrega).
+    """
+    from upload.services import CNPJConsultaService
+    try:
+        return CNPJConsultaService.consultar(cnpj, fonte="bigdatacorp_addresses")
+    except Exception:
+        return None
+
+
+def remover_acentos(texto):
+    """Remove acentos e caracteres especiais, convertendo para ASCII."""
+    if not texto:
+        return texto
+    nfkd = unicodedata.normalize('NFKD', texto)
+    return ''.join(c for c in nfkd if not unicodedata.combining(c))
 from django.db.models import Sum
 from django.http import HttpResponse
 from django.utils import timezone
@@ -12,39 +58,59 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from entidades.models import Condominio, Funcionario, Administradora, VinculoCondominio
+from entidades.models import Condominio, Funcionario, Administradora, VinculoCondominio, TaxaConfig
 from beneficios.models import MovimentacaoBeneficio, Produto, Importacao, Boleto
 
 
-def calcular_taxa(valor_beneficio, quantidade_dias, vinculo=None, administradora=None):
+def calcular_taxa(valor_beneficio, quantidade_dias, vinculo=None, produto=None):
     """
     Calcula a taxa de faturamento para um funcionário.
-    
+
     Regras:
-    - Se não houver vínculo, retorna 0 (não faturado)
-    - Se o vínculo usar_taxa_padrao=True, usa a taxa da administração
-    - Se usar_taxa_padrao=False, usa a taxa específica do vínculo
+    - Se não houver vínculo, retorna 0
+    - Busca TaxaConfig para o produto específico
+    - Se não encontrar para o produto, busca configuração pelo tipo do produto
+    - Se não encontrar por tipo, busca configuração genérica (produto=NULL, tipo=NULL)
+    - Se não encontrar nenhuma configuração, retorna 0
     - Tipo PERC: valor_beneficio * (taxa_valor / 100)
     - Tipo FIXO: taxa_valor * quantidade_dias
     """
     if not vinculo:
         return Decimal('0.00')
-    
-    # Define qual taxa usar
-    if vinculo.usar_taxa_padrao:
-        if not administradora:
-            administradora = vinculo.administradora
-        tipo = administradora.taxa_padrao_tipo
-        valor = administradora.taxa_padrao_valor
-    else:
-        tipo = vinculo.taxa_tipo
-        valor = vinculo.taxa_valor
-    
+
+    # Busca configuração para o produto específico
+    taxa_config = TaxaConfig.objects.filter(
+        vinculo=vinculo,
+        produto=produto,
+        ativo=True
+    ).first()
+
+    # Se não encontrar para o produto específico, busca pelo tipo do produto
+    if not taxa_config and produto and produto.tipo:
+        taxa_config = TaxaConfig.objects.filter(
+            vinculo=vinculo,
+            tipo=produto.tipo,
+            ativo=True
+        ).first()
+
+    # Se não encontrar por tipo, busca configuração genérica
+    if not taxa_config:
+        taxa_config = TaxaConfig.objects.filter(
+            vinculo=vinculo,
+            produto__isnull=True,
+            tipo__isnull=True,
+            ativo=True
+        ).first()
+
+    # Se não encontrar nenhuma configuração, retorna 0
+    if not taxa_config:
+        return Decimal('0.00')
+
     # Calcula a taxa
-    if tipo == 'PERC':
-        return round(valor_beneficio * (valor / Decimal('100')), 2)
+    if taxa_config.taxa_tipo == 'PERC':
+        return round(valor_beneficio * (taxa_config.taxa_valor / Decimal('100')), 2)
     else:  # FIXO
-        return round(valor * quantidade_dias, 2)
+        return round(taxa_config.taxa_valor * quantidade_dias, 2)
 
 
 def gerar_txt_compra(administradora_cnpj, data_competencia=None, movimentacao_ids=None):
@@ -64,7 +130,7 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None, movimentacao_id
         f"00"  # TipoRec (2)
         f"011"  # Versao (3)
         f"{administradora_cnpj.zfill(14)}"  # CNPJ/Código Cliente (14)
-        f"{admin.razao_social[:40]:<40}"  # Razão Social Cliente (40)
+        f"{remover_acentos(admin.razao_social)[:40]:<40}"  # Razão Social Cliente (40)
         f"{' ' * 282}"  # FILLER (282)
         f"{str(seq).zfill(9)}"  # Número da linha (9)
     )
@@ -87,24 +153,32 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None, movimentacao_id
     for vinculo in vinculos:
         condominio = vinculo.condominio
 
+        # Buscar gerentes do vínculo
+        gerentes = vinculo.gerentes.all()
+        nomes_gerentes = [remover_acentos(g.nome or '') for g in gerentes if g.nome][:3]
+        gerentes_str = '/'.join(nomes_gerentes)[:30] if nomes_gerentes else ''
+
         # Local Entrega (TipoRec 10)
-        numero_condo = str(condominio.numero or '').strip()
-        if not numero_condo:
-            numero_condo = ''
+        # Se cartao_admin=True, entrega na administradora; senão, no condomínio.
+        endereco_entrega = admin if admin.cartao_admin else condominio
+        nome_entrega = remover_acentos(endereco_entrega.razao_social if admin.cartao_admin else condominio.nome)
+        numero_entrega = str(endereco_entrega.numero or '').strip()
+        if not numero_entrega:
+            numero_entrega = ''
         linha_local = (
             f"10"
             f"{administradora_cnpj.zfill(14)}"
             f"{condominio.cnpj[:30]:<30}"
-            f"{condominio.nome[:80]:<80}"
-            f"{'AV'[:20]:<20}"
-            f"{(condominio.endereco or '')[:40]:<40}"
-            f"{numero_condo[:6]:<6}"
-            f"{(condominio.complemento or '')[:20]:<20}"
-            f"{(condominio.bairro or '')[:30]:<30}"
-            f"{(condominio.cidade or '')[:30]:<30}"
-            f"{(condominio.estado or '')[:2]:<2}"
-            f"{(condominio.cep or '').replace('-', '')[:8]:<8}"
-            f"{' ' * 30}"
+            f"{nome_entrega[:80]:<80}"
+            f"{'AVENIDA'[:20]:<20}"
+            f"{remover_acentos(endereco_entrega.endereco or '')[:40]:<40}"
+            f"{numero_entrega.zfill(6)[:6]:<6}"
+            f"{remover_acentos(endereco_entrega.complemento or '')[:20]:<20}"
+            f"{remover_acentos(endereco_entrega.bairro or '')[:30]:<30}"
+            f"{remover_acentos(endereco_entrega.cidade or '')[:30]:<30}"
+            f"{(endereco_entrega.estado or '')[:2]:<2}"
+            f"{(endereco_entrega.cep or '').replace('-', '')[:8]:<8}"
+            f"{gerentes_str[:30]:<30}"
             f"{' ' * 29}"
             f"{str(seq).zfill(9)}"
         )
@@ -112,13 +186,15 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None, movimentacao_id
         seq += 1
 
         # Associação CNPJ ao Local Entrega (TipoRec 11)
+        # Se cartao_admin=True, entrega na administradora; senão, no condomínio.
+        nome_entrega = remover_acentos(admin.razao_social if admin.cartao_admin else condominio.nome)
         linha_assoc = (
             f"11"
             f"{administradora_cnpj.zfill(14)}"
             f"{condominio.cnpj[:30]:<30}"
             f"{administradora_cnpj.zfill(14)}"
-            f"{admin.razao_social[:24]:<24}"
-            f"{'vr@grupofedcorp.com.br'[:70]:<70}"
+            f"{nome_entrega[:24]:<24}"
+            f"{'VR@GRUPOFEDCOPR.COM.BR'[:70]:<70}"
             f"{' ' * 187}"
             f"{str(seq).zfill(9)}"
         )
@@ -126,10 +202,9 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None, movimentacao_id
         seq += 1
 
         # Responsáveis pelo Local de Entrega (TipoRec 12)
-        gerentes = vinculo.gerentes.all()
-        emails_gerentes = [g.email for g in gerentes if g.email][:3]
+        emails_gerentes = [g.email.upper() for g in gerentes if g.email][:3]
         if not emails_gerentes:
-            emails_gerentes = ['vr@grupofedcorp.com.br']
+            emails_gerentes = ['VR@GRUPOFEDCOPR.COM.BR']
 
         email1 = emails_gerentes[0][:60] if len(emails_gerentes) > 0 else ' ' * 60
         email2 = emails_gerentes[1][:60] if len(emails_gerentes) > 1 else email1
@@ -188,7 +263,7 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None, movimentacao_id
             f"{cond.cnpj[:30]:<30}"
             f"{' ' * 12}"
             f"CONDOMINIO"
-            f"{func.nome[:40]:<40}"
+            f"{remover_acentos(func.nome)[:40]:<40}"
             f"{' '[:24]:<24}"
             f"{data_nasc}"
             f"{' ' * 187}"
@@ -198,14 +273,23 @@ def gerar_txt_compra(administradora_cnpj, data_competencia=None, movimentacao_id
         seq += 1
 
     # ⭐⭐⭐ APENAS UM BLOCO PARA REGISTROS 50 e 60 ⭐⭐⭐
+    # Agrupamos por TIPO do produto, usando o código mapeado para o TXT.
     from itertools import groupby
     from operator import attrgetter
 
-    movimentacoes_ordenadas = mov_query.order_by('produto_codigo__codigo_produto')
+    def _tipo_ordenacao(mov):
+        prod = mov.produto_codigo
+        return prod.get_tipo_display() if prod.tipo else (prod.nome or prod.codigo_produto)
 
-    for prod_codigo, movimentacoes_grupo in groupby(movimentacoes_ordenadas, key=attrgetter('produto_codigo.codigo_produto')):
-        prod_cod = prod_codigo[:3].upper()
+    movimentacoes_ordenadas = sorted(mov_query, key=_tipo_ordenacao)
+
+    for tipo_display, movimentacoes_grupo in groupby(movimentacoes_ordenadas, key=_tipo_ordenacao):
         mov_list = list(movimentacoes_grupo)
+        if not mov_list:
+            continue
+
+        # Pega o código do produto baseado no tipo (primeiro movimento do grupo).
+        prod_cod = _codigo_produto_por_tipo(mov_list[0].produto_codigo)[:3].upper()
 
         # Registro 50 - Produto Voucher
         data_agend = data_competencia if data_competencia else date.today()
@@ -277,36 +361,54 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
             query = query.filter(empresa_cnpj__cnpj=condominio_cnpj)
 
     movimentacoes = query.order_by('empresa_cnpj', 'funcionario_cpf', 'data_competencia')
-    
-    if importacao_id:
-        Importacao.objects.filter(id=importacao_id).update(status='EM_FATURAMENTO')
 
     dados = []
+    cache_enderecos = {}
     for mov in movimentacoes:
         func = mov.funcionario_cpf
         cond = mov.empresa_cnpj
         prod = mov.produto_codigo
-        
+
         valor_unitario = mov.valor_beneficio / mov.quantidade_dias if mov.quantidade_dias > 0 else mov.valor_beneficio
-        
+
         datos_periodo = mov.data_competencia.strftime('%d/%m/%Y')
         data_ini = mov.data_competencia.replace(day=1)
         data_fim = data_ini + timedelta(days=30)
         periodos = f"{data_ini.strftime('%d/%m/%Y')} - {data_fim.strftime('%d/%m/%Y')}"
-        
-        produto_display = prod.nome if prod.nome else prod.get_tipo_display_or_codigo()
+
+        # Sempre usa o tipo do produto nos documentos exportados.
+        produto_display = prod.get_tipo_display() if prod.tipo else (prod.nome or prod.codigo_produto)
 
         # Busca o vínculo entre o condomínio e a administradora
         vinculo = cond.vinculocondominio_set.first()
         administradora = vinculo.administradora if vinculo else None
-        
+
         # Calcula a taxa
         taxa = calcular_taxa(
             valor_beneficio=mov.valor_beneficio,
             quantidade_dias=mov.quantidade_dias,
             vinculo=vinculo,
-            administradora=administradora
+            produto=prod
         )
+
+        # Endereço do condomínio. Se estiver vazio (comum no modo cartão admin,
+        # pois a planilha traz o endereço da administradora), consulta o CNPJ.
+        endereco_cond = cond.endereco or ''
+        bairro_cond = cond.bairro or ''
+        cidade_cond = cond.cidade or ''
+        estado_cond = cond.estado or ''
+        cep_cond = cond.cep or ''
+
+        if cond.cnpj and not any([endereco_cond, bairro_cond, cidade_cond, estado_cond, cep_cond]):
+            if cond.cnpj not in cache_enderecos:
+                cache_enderecos[cond.cnpj] = _consultar_endereco_condominio(cond.cnpj)
+            dados_cnpj = cache_enderecos[cond.cnpj]
+            if dados_cnpj:
+                endereco_cond = dados_cnpj.get('rua', '')
+                bairro_cond = dados_cnpj.get('bairro', '')
+                cidade_cond = dados_cnpj.get('cidade', '')
+                estado_cond = dados_cnpj.get('estado', '')
+                cep_cond = dados_cnpj.get('cep', '')
 
         dados.append({
             'CPF': func.cpf,
@@ -324,11 +426,11 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
             'REPASSE_VT': None,
             'DEPARTAMENTO': cond.nome,
             'CNPJ': cond.cnpj,
-            'ENDERECO': cond.endereco or '',
-            'BAIRRO': cond.bairro or '',
-            'CIDADE': cond.cidade or '',
-            'UF': cond.estado or '',
-            'CEP': cond.cep or '',
+            'ENDERECO': endereco_cond,
+            'BAIRRO': bairro_cond,
+            'CIDADE': cidade_cond,
+            'UF': estado_cond,
+            'CEP': cep_cond,
             'TAXA': float(taxa),
             'vencimento': datos_periodo,
             'periodos': periodos.split('-')[0],
@@ -412,7 +514,7 @@ class GetImportacaoSelectDataView(views.APIView):
             condominios_dict[cond_cnpj]["funcionarios"][func_cpf]["movimentacoes"].append({
                 "id": m.id,
                 "produto_codigo": m.produto_codigo.codigo_produto,
-                "produto_nome": m.produto_codigo.nome,
+                "produto_nome": m.produto_codigo.get_tipo_display() if m.produto_codigo.tipo else m.produto_codigo.nome,
                 "valor_beneficio": float(m.valor_beneficio),
                 "quantidade_dias": m.quantidade_dias,
                 "data_competencia": m.data_competencia.strftime('%Y-%m-%d') if m.data_competencia else None,
@@ -486,7 +588,7 @@ class ExportTxtCompraView(views.APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        response = HttpResponse(txt_content, content_type='text/plain; charset=utf-8')
+        response = HttpResponse(txt_content.encode('latin-1', errors='replace'), content_type='text/plain; charset=iso-8859-1')
         response['Content-Disposition'] = f'attachment; filename="PEDIDO_VR_{date.today().strftime("%Y%m%d")}.txt"'
         return response
 
