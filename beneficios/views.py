@@ -881,7 +881,6 @@ class BoletoBaixaView(views.APIView):
 
 
 class ListarBoletosView(views.APIView):
-class KanbanFaturasView(views.APIView):
     """
     Retorna faturas no formato esperado pelo Kanban do Operacional.
     Agrupa Importacao + Faturamento + Boletos em estrutura coEstipulantes.
