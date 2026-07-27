@@ -538,6 +538,141 @@ class ImportacaoListView(views.APIView):
             'limit': limit,
         })
 
+
+class PedidoCartaoView(views.APIView):
+    """
+    Cria e lista pedidos de cartão do usuário da administradora.
+    POST: cria pedido (força administradora do user logado)
+    GET: lista pedidos da administradora do user logado
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def post(self, request):
+        from beneficios.serializers import PedidoCartaoSerializer
+
+        user = request.user
+        administradora = getattr(user, 'administradora_ativa', None)
+
+        if not administradora:
+            return Response(
+                {'detail': 'Usuário não possui administradora vinculada.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = PedidoCartaoSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(administradora=administradora, criado_por=user)
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def get(self, request):
+        from beneficios.models import PedidoCartao
+        from beneficios.serializers import PedidoCartaoSerializer
+
+        user = request.user
+        administradora = getattr(user, 'administradora_ativa', None)
+
+        if not administradora:
+            return Response(
+                {'detail': 'Usuário não possui administradora vinculada.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        pedidos = PedidoCartao.objects.filter(
+            administradora=administradora
+        ).order_by('-created_at')
+
+        serializer = PedidoCartaoSerializer(pedidos, many=True)
+        return Response(serializer.data)
+
+
+class PedidoCartaoOperacionalView(views.APIView):
+    """
+    Lista todos os pedidos de cartão para o time operacional.
+    Apenas dev/fat podem acessar.
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        from django.db.models import Q
+        from beneficios.models import PedidoCartao
+        from beneficios.serializers import PedidoCartaoSerializer
+
+        user = request.user
+        if user.tipo not in ('dev', 'fat'):
+            return Response(
+                {'detail': 'Acesso não autorizado.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        pedidos = PedidoCartao.objects.select_related(
+            'administradora', 'criado_por'
+        ).order_by('-created_at')
+
+        status_filtro = request.query_params.get('status')
+        tipo_filtro = request.query_params.get('tipo')
+        search = request.query_params.get('search', '').strip()
+
+        if status_filtro:
+            pedidos = pedidos.filter(status=status_filtro)
+        if tipo_filtro:
+            pedidos = pedidos.filter(tipo_pedido=tipo_filtro)
+        if search:
+            pedidos = pedidos.filter(
+                Q(nome_completo__icontains=search)
+                | Q(cpf__icontains=search)
+                | Q(nome_condominio__icontains=search)
+                | Q(administradora__razao_social__icontains=search)
+            )
+
+        serializer = PedidoCartaoSerializer(pedidos, many=True)
+        return Response(serializer.data)
+
+
+class PedidoCartaoStatusView(views.APIView):
+    """
+    Atualiza o status de um pedido de cartão.
+    Apenas dev/fat podem acessar.
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def patch(self, request, pk):
+        from beneficios.models import PedidoCartao
+        from beneficios.serializers import PedidoCartaoSerializer
+
+        user = request.user
+        if user.tipo not in ('dev', 'fat'):
+            return Response(
+                {'detail': 'Acesso não autorizado.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            pedido = PedidoCartao.objects.get(pk=pk)
+        except PedidoCartao.DoesNotExist:
+            return Response(
+                {'detail': 'Pedido não encontrado.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        novo_status = request.data.get('status')
+        valid_statuses = [choice[0] for choice in PedidoCartao.STATUS_CHOICES]
+        if novo_status not in valid_statuses:
+            return Response(
+                {'detail': f'Status inválido. Opções: {", ".join(valid_statuses)}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        pedido.status = novo_status
+        pedido.observacao = request.data.get('observacao', pedido.observacao)
+        pedido.save(update_fields=['status', 'observacao', 'updated_at'])
+
+        serializer = PedidoCartaoSerializer(pedido)
+        return Response(serializer.data)
+
 class ImportacaoDetailView(views.APIView):
     """
     Rota para ver os detalhes de uma importação específica,
@@ -753,7 +888,16 @@ class ListarBoletosView(views.APIView):
         administradora_id = request.query_params.get('administradora_id')
         status_filter = request.query_params.get('status')
 
-        all_boletos = Boleto.objects.select_related('faturamento', 'faturamento__importacao', 'faturamento__administradora').all()
+        all_boletos = Boleto.objects.select_related(
+            'faturamento',
+            'faturamento__importacao',
+            'faturamento__administradora',
+        ).all()
+
+        if administradora_id:
+            all_boletos = all_boletos.filter(
+                faturamento__administradora_id=administradora_id
+            )
 
         from collections import defaultdict
         grupos = defaultdict(list)
@@ -843,4 +987,780 @@ class ListarBoletosView(views.APIView):
             "data": data,
             "pages": total_pages,
             "total": total,
+        })
+
+class KanbanFaturasView(views.APIView):
+    """
+    Retorna faturas no formato esperado pelo Kanban do Operacional.
+    Agrupa Importacao + Faturamento + Boletos em estrutura coEstipulantes.
+    Exclui importações PAGO com mais de 30 dias para reduzir carga.
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        from datetime import date, timedelta
+        from django.db.models import Prefetch
+        from beneficios.models import Faturamento, Boleto
+
+        hoje = date.today()
+        corte_pago = hoje - timedelta(days=30)
+
+        boletos_prefetch = Prefetch(
+            'boletos_rel',
+            queryset=Boleto.objects.order_by('vencimento'),
+        )
+        faturamentos_prefetch = Prefetch(
+            'faturamentos',
+            queryset=Faturamento.objects.prefetch_related(boletos_prefetch),
+        )
+
+        importacoes = Importacao.objects.select_related(
+            'administradora', 'usuario', 'file_upload'
+        ).prefetch_related(faturamentos_prefetch).exclude(
+            status__in=['CANCELADO']
+        ).exclude(
+            status='PAGO', data_importacao__lt=corte_pago
+        ).order_by('-data_importacao')
+
+        faturas = []
+
+        for imp in importacoes:
+            faturamentos_rel = list(imp.faturamentos.all())
+            faturamento = faturamentos_rel[0] if faturamentos_rel else None
+            boletos = list(faturamento.boletos_rel.all()) if faturamento else []
+
+            admin = imp.administradora
+            estipulante_nome = admin.razao_social if admin else ''
+            estipulante_cnpj = admin.cnpj if admin else ''
+
+            co_estipulantes = []
+            for boleto in boletos:
+                vencimento = boleto.vencimento.isoformat() if boleto.vencimento else None
+                pago = boleto.baixa
+                data_pagamento = boleto.dt_baixa.isoformat() if boleto.dt_baixa else None
+                valor_cents = int(float(boleto.valor or 0) * 100)
+
+                co_estipulantes.append({
+                    'id': boleto.id,
+                    'idx': boleto.id,
+                    'name': boleto.nome_cobrado or '',
+                    'nome': boleto.nome_cobrado or '',
+                    'condominio': boleto.nome_cobrado or '',
+                    'condominio_nome': boleto.nome_cobrado or '',
+                    'cnpj': boleto.cnpj_cobrado or '',
+                    'documento': boleto.cnpj_cobrado or '',
+                    'cpf_cnpj': boleto.cnpj_cobrado or '',
+                    'cpfCnpj': boleto.cnpj_cobrado or '',
+                    'razao_social': boleto.nome_cobrado or '',
+                    'valorCents': valor_cents,
+                    'valor_cents': valor_cents,
+                    'valorCentavos': valor_cents,
+                    'valor_total': valor_cents,
+                    'valor': valor_cents,
+                    'total': valor_cents,
+                    'dueDate': vencimento,
+                    'due_date': vencimento,
+                    'vencimento': vencimento,
+                    'data_vencimento': vencimento,
+                    'dt_vencimento': vencimento,
+                    'dataCredito': None,
+                    'data_credito': None,
+                    'credito': None,
+                    'paidAt': data_pagamento if pago else None,
+                    'paid_at': data_pagamento if pago else None,
+                    'data_pagamento': data_pagamento if pago else None,
+                    'pago_em': data_pagamento if pago else None,
+                    'dt_pagamento': data_pagamento if pago else None,
+                    'sentToCP': False,
+                    'sent_to_cp': False,
+                    'enviado_cp': False,
+                    'enviado_contas_pagar': False,
+                    'enviadoContasPagar': False,
+                    'formaPagamento': None,
+                    'forma_pagamento': None,
+                    'formaPagemento': None,
+                })
+
+            total_cents = int(float(imp.valor_total or 0) * 100)
+            usuario = imp.usuario
+            uploader_name = usuario.email if usuario else ''
+
+            vencimento_imp = imp.data_vencimento.isoformat() if imp.data_vencimento else None
+            recebimento_imp = imp.data_recebimento.isoformat() if imp.data_recebimento else None
+
+            status_map = {
+                'FATURADO': 'faturado',
+                'CONFIRMAR_PAGAMENTO': 'atrasado',
+                'BOLETO_VR_ENVIADO': 'aprovado',
+                'PAGO': 'pago',
+                'COMPLETED': 'pago',
+            }
+            kanban = status_map.get(imp.status, 'faturado')
+
+            if boletos and all(boleto.baixa for boleto in boletos):
+                kanban = 'pago'
+
+            if imp.data_recebimento:
+                amanha = hoje + timedelta(days=1)
+                if imp.data_recebimento == amanha:
+                    kanban = 'enviar_compra'
+
+            faturas.append({
+                'id': imp.id,
+                'pk': imp.id,
+                'codigo': imp.id,
+                'numero': imp.id,
+                'faturaNum': f'IMP-{imp.id}',
+                'fatura_num': f'IMP-{imp.id}',
+                'numero_fatura': f'IMP-{imp.id}',
+                'emissao': imp.data_importacao.strftime('%Y-%m-%d') if imp.data_importacao else None,
+                'data_emissao': imp.data_importacao.strftime('%Y-%m-%d') if imp.data_importacao else None,
+                'createdAt': imp.data_importacao.isoformat() if imp.data_importacao else None,
+                'created_at': imp.data_importacao.isoformat() if imp.data_importacao else None,
+                'data_criacao': imp.data_importacao.isoformat() if imp.data_importacao else None,
+                'estipulante': {
+                    'name': estipulante_nome,
+                    'nome': estipulante_nome,
+                    'cnpj': estipulante_cnpj,
+                },
+                'estipulante_nome': estipulante_nome,
+                'estipulante_cnpj': estipulante_cnpj,
+                'administradora_nome': estipulante_nome,
+                'uploaderName': uploader_name,
+                'uploader_name': uploader_name,
+                'usuario_nome': uploader_name,
+                'responsavel_nome': uploader_name,
+                'created_by_name': uploader_name,
+                'uploaderId': usuario.id if usuario else None,
+                'uploader_id': usuario.id if usuario else None,
+                'usuario_id': usuario.id if usuario else None,
+                'responsavel_id': usuario.id if usuario else None,
+                'manualStatus': kanban,
+                'manual_status': kanban,
+                'status_manual': kanban,
+                'totalCents': total_cents,
+                'total_cents': total_cents,
+                'valor_total_cents': total_cents,
+                'valor_total': total_cents,
+                'vencimento': vencimento_imp,
+                'data_vencimento': vencimento_imp,
+                'dueDate': vencimento_imp,
+                'due_date': vencimento_imp,
+                'recebimento': recebimento_imp,
+                'data_recebimento': recebimento_imp,
+                'coEstipulantes': co_estipulantes,
+                'co_estipulantes': co_estipulantes,
+                'condominios': co_estipulantes,
+                'itens': co_estipulantes,
+                '_importacao_status': imp.status,
+                '_faturamento_status': faturamento.status if faturamento else None,
+            })
+
+        return Response({'data': faturas})
+
+
+class KanbanBoletosView(views.APIView):
+    """Retorna boletos no formato esperado pelo Kanban de Boletos VR."""
+
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        boletos = Boleto.objects.select_related('faturamento').order_by('-created_at')
+
+        result = []
+        for boleto in boletos:
+            result.append({
+                'id': boleto.id,
+                'name': boleto.nome_cobrado or boleto.fatura or f'Boleto {boleto.id}',
+                'file_name': boleto.fatura or '',
+                'due_date': boleto.vencimento.isoformat() if boleto.vencimento else None,
+                'value_cents': int(float(boleto.valor or 0) * 100),
+                'paid_at': boleto.dt_baixa.isoformat() if boleto.baixa and boleto.dt_baixa else None,
+                'uploaderName': '',
+                'uploader_name': '',
+            })
+
+        return Response({'data': result})
+
+
+class KanbanMoveFaturaView(views.APIView):
+    """
+    Move uma fatura para outra coluna do Kanban.
+    PATCH /api/beneficios/kanban/{id}/move/
+    Body: { "status": "faturado"|"atrasado"|"aprovado"|"pago" }
+    """
+
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def patch(self, request, pk):
+        try:
+            importacao = Importacao.objects.get(id=pk)
+        except Importacao.DoesNotExist:
+            return Response(
+                {'detail': 'Importação não encontrada.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        new_status = request.data.get('status')
+        kanban_to_importacao = {
+            'faturado': 'FATURADO',
+            'atrasado': 'CONFIRMAR_PAGAMENTO',
+            'aprovado': 'BOLETO_VR_ENVIADO',
+            'pago': 'PAGO',
+        }
+
+        importacao_status = kanban_to_importacao.get(new_status)
+        if not importacao_status:
+            return Response(
+                {'detail': f'Status inválido: {new_status}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        importacao.status = importacao_status
+        importacao.save(update_fields=['status'])
+
+        return Response({'success': True, 'status': new_status})
+
+
+class KanbanNotificarCompraView(views.APIView):
+    """
+    Verifica faturas com data de crédito para amanhã e envia e-mail de notificação.
+    GET /api/beneficios/kanban/notificar-compra/
+    """
+
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        from datetime import date, timedelta
+        from django.conf import settings
+
+        amanha = date.today() + timedelta(days=1)
+
+        importacoes = Importacao.objects.filter(
+            data_recebimento=amanha,
+            status__in=['FATURADO', 'CONFIRMAR_PAGAMENTO', 'BOLETO_VR_ENVIADO'],
+        ).select_related('administradora', 'usuario')
+
+        if not importacoes.exists():
+            return Response({
+                'detail': 'Nenhuma fatura pendente para amanhã.',
+                'count': 0,
+            })
+
+        fedhub_service = FedhubService()
+        email_faturamento = getattr(settings, 'EMAIL_FATURAMENTO', None)
+        enviados = 0
+
+        for importacao in importacoes:
+            admin = importacao.administradora
+            admin_nome = admin.razao_social if admin else 'N/A'
+            vencimento = (
+                importacao.data_vencimento.strftime('%d/%m/%Y')
+                if importacao.data_vencimento
+                else '-'
+            )
+            recebimento = (
+                importacao.data_recebimento.strftime('%d/%m/%Y')
+                if importacao.data_recebimento
+                else '-'
+            )
+
+            try:
+                if email_faturamento:
+                    fedhub_service.enviar_email_upload(
+                        email=email_faturamento,
+                        user=importacao.usuario,
+                        dados_processamento={
+                            'arquivo_nome': f'Compra VR - {admin_nome}',
+                            'data_envio': date.today().strftime('%d/%m/%Y'),
+                            'competencia': f'Recebimento: {recebimento}',
+                            'total_registros': importacao.total_registros or 0,
+                            'total_funcionarios': importacao.total_funcionarios or 0,
+                            'total_condominios': 0,
+                            'valor_total': float(importacao.valor_total or 0),
+                            'tipo_processamento': 'Enviar Compra VR - Amanhã',
+                            'faturamento_id': importacao.id,
+                            'vencimento': vencimento,
+                            'periodo_inicio': recebimento,
+                            'periodo_fim': recebimento,
+                        },
+                    )
+                    enviados += 1
+            except Exception as exc:
+                logger.error(
+                    'Erro ao enviar notificação para importação %s: %s',
+                    importacao.id,
+                    exc,
+                )
+
+        return Response({
+            'detail': f'{enviados} notificação(ões) enviada(s).',
+            'count': enviados,
+            'pendentes': importacoes.count(),
+        })
+
+
+class ImportarBaseCondominiosView(views.APIView):
+    """
+    Importa base de condomínios e funcionários via Excel.
+    Não gera faturamento: apenas cria ou atualiza registros.
+
+    POST /api/beneficios/importar-base/
+    Body: multipart/form-data com arquivo Excel.
+    """
+
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def post(self, request):
+        from entidades.models import Condominio, Funcionario
+
+        arquivo = request.FILES.get('file')
+        administradora_id = request.data.get('administradora_id')
+
+        if not arquivo:
+            return Response(
+                {'detail': 'Nenhum arquivo enviado.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not arquivo.name.lower().endswith(('.xlsx', '.xls')):
+            return Response(
+                {'detail': 'Formato inválido. Envie um arquivo .xlsx ou .xls.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            import openpyxl
+
+            workbook = openpyxl.load_workbook(arquivo, data_only=True)
+            worksheet = workbook.active
+            headers = [str(cell.value or '').strip().lower() for cell in worksheet[1]]
+
+            condominios_criados = 0
+            condominios_atualizados = 0
+            funcionarios_criados = 0
+            funcionarios_atualizados = 0
+            erros = []
+
+            for row_idx, row in enumerate(
+                worksheet.iter_rows(min_row=2, values_only=True),
+                start=2,
+            ):
+                try:
+                    data = dict(zip(headers, row))
+
+                    cnpj = ''.join(
+                        filter(str.isdigit, str(data.get('cnpj', '') or '').strip())
+                    )
+                    if not cnpj or len(cnpj) != 14:
+                        continue
+
+                    nome = str(
+                        data.get('nome', '')
+                        or data.get('razao_social', '')
+                        or ''
+                    ).strip()
+                    if not nome:
+                        continue
+
+                    condominio, created = Condominio.objects.update_or_create(
+                        cnpj=cnpj,
+                        defaults={
+                            'nome': nome,
+                            'tipo_local': str(
+                                data.get('tipo_local', '') or 'CONDOMINIO'
+                            ).strip(),
+                            'endereco': str(
+                                data.get('endereco', '')
+                                or data.get('rua', '')
+                                or ''
+                            ).strip(),
+                            'numero': str(data.get('numero', '') or '').strip(),
+                            'complemento': str(
+                                data.get('complemento', '') or ''
+                            ).strip(),
+                            'bairro': str(data.get('bairro', '') or '').strip(),
+                            'cidade': str(data.get('cidade', '') or '').strip(),
+                            'estado': str(
+                                data.get('estado', '')
+                                or data.get('uf', '')
+                                or ''
+                            ).strip(),
+                            'cep': str(data.get('cep', '') or '').strip(),
+                        },
+                    )
+
+                    if created:
+                        condominios_criados += 1
+                    else:
+                        condominios_atualizados += 1
+
+                    if administradora_id:
+                        from entidades.models import Administradora, VinculoCondominio
+
+                        try:
+                            administradora = Administradora.objects.get(
+                                id=administradora_id
+                            )
+                            VinculoCondominio.objects.get_or_create(
+                                administradora=administradora,
+                                condominio=condominio,
+                            )
+                        except Administradora.DoesNotExist:
+                            pass
+
+                    cpf = ''.join(
+                        filter(str.isdigit, str(data.get('cpf', '') or '').strip())
+                    )
+                    if cpf and len(cpf) == 11:
+                        funcionario_nome = str(
+                            data.get('funcionario_nome', '')
+                            or data.get('nome_funcionario', '')
+                            or ''
+                        ).strip()
+
+                        if funcionario_nome:
+                            _, funcionario_criado = Funcionario.objects.update_or_create(
+                                cpf=cpf,
+                                defaults={
+                                    'nome': funcionario_nome,
+                                    'matricula': str(
+                                        data.get('matricula', '') or ''
+                                    ).strip(),
+                                    'departamento': str(
+                                        data.get('departamento', '') or ''
+                                    ).strip(),
+                                    'funcao': str(
+                                        data.get('funcao', '')
+                                        or data.get('cargo', '')
+                                        or ''
+                                    ).strip(),
+                                    'sexo': str(
+                                        data.get('sexo', '') or ''
+                                    ).strip()[:1] or None,
+                                    'telefone': str(
+                                        data.get('telefone', '') or ''
+                                    ).strip(),
+                                    'email': str(
+                                        data.get('email', '') or ''
+                                    ).strip(),
+                                    'condominio': condominio,
+                                },
+                            )
+
+                            if funcionario_criado:
+                                funcionarios_criados += 1
+                            else:
+                                funcionarios_atualizados += 1
+
+                except Exception as exc:
+                    erros.append(f'Linha {row_idx}: {exc}')
+
+            return Response({
+                'detail': 'Importação concluída.',
+                'condominios_criados': condominios_criados,
+                'condominios_atualizados': condominios_atualizados,
+                'funcionarios_criados': funcionarios_criados,
+                'funcionarios_atualizados': funcionarios_atualizados,
+                'erros': erros[:20],
+                'total_erros': len(erros),
+            })
+
+        except ImportError:
+            return Response(
+                {'detail': 'Biblioteca openpyxl não instalada no servidor.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        except Exception as exc:
+            logger.error('Erro ao importar base: %s', exc)
+            return Response(
+                {'detail': f'Erro ao processar arquivo: {exc}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+
+class ExcluirBaseCondominiosView(views.APIView):
+    """
+    Exclui a base de condomínios e funcionários de uma administradora.
+    DELETE /api/beneficios/excluir-base/{administradora_id}/
+    """
+
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def delete(self, request, administradora_id):
+        from entidades.models import (
+            Administradora,
+            VinculoCondominio,
+            Condominio,
+            Funcionario,
+        )
+
+        try:
+            administradora = Administradora.objects.get(id=administradora_id)
+        except Administradora.DoesNotExist:
+            return Response(
+                {'detail': 'Administradora não encontrada.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        vinculos = VinculoCondominio.objects.filter(administradora=administradora)
+        condominio_ids = list(vinculos.values_list('condominio_id', flat=True))
+
+        funcionarios_removidos = Funcionario.objects.filter(
+            condominio_id__in=condominio_ids
+        ).delete()[0]
+        vinculos_removidos = vinculos.delete()[0]
+        condominios_removidos = Condominio.objects.filter(
+            cnpj__in=condominio_ids
+        ).delete()[0]
+
+        return Response({
+            'detail': 'Base excluída com sucesso.',
+            'condominios_removidos': condominios_removidos,
+            'vinculos_removidos': vinculos_removidos,
+            'funcionarios_removidos': funcionarios_removidos,
+        })
+
+
+class ConsultarBoletosView(views.APIView):
+    """
+    Lista faturas e boletos com filtros de status.
+    GET /api/beneficios/boletos/?administradora_id=1&status=pago
+
+    - dev/fat: visualiza todos os faturamentos;
+    - adm: visualiza apenas faturas da administradora ativa;
+    - importações pagas com mais de 30 dias são excluídas.
+    """
+
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        from datetime import date, timedelta
+        from django.db.models import Prefetch
+        from beneficios.models import Faturamento, FaturamentoDocumento, Boleto
+
+        user = request.user
+        administradora_id = request.query_params.get('administradora_id')
+        status_filtro = request.query_params.get('status')
+
+        try:
+            page = max(int(request.query_params.get('page', 1)), 1)
+        except (TypeError, ValueError):
+            page = 1
+
+        try:
+            limit = min(
+                max(int(request.query_params.get('limit', 50)), 1),
+                100,
+            )
+        except (TypeError, ValueError):
+            limit = 50
+
+        if user.tipo == 'adm':
+            administradora_ativa = getattr(user, 'administradora_ativa', None)
+            if not administradora_ativa:
+                return Response(
+                    {'detail': 'Usuário não possui administradora vinculada.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            administradora_id = administradora_ativa.id
+        elif user.tipo in ('dev', 'fat'):
+            administradora_id = None
+
+        hoje = date.today()
+        corte_pago = hoje - timedelta(days=30)
+
+        boletos_prefetch = Prefetch(
+            'boletos_rel',
+            queryset=Boleto.objects.order_by('vencimento'),
+        )
+        documentos_prefetch = Prefetch(
+            'documentos',
+            queryset=FaturamentoDocumento.objects.select_related('condominio'),
+        )
+        faturamentos_prefetch = Prefetch(
+            'faturamentos',
+            queryset=Faturamento.objects.prefetch_related(
+                boletos_prefetch,
+                documentos_prefetch,
+            ),
+        )
+
+        importacoes_qs = Importacao.objects.select_related(
+            'administradora', 'usuario'
+        ).prefetch_related(faturamentos_prefetch).exclude(
+            status__in=['CANCELADO']
+        ).exclude(
+            status='PAGO', data_importacao__lt=corte_pago
+        )
+
+        if administradora_id:
+            importacoes_qs = importacoes_qs.filter(
+                administradora_id=administradora_id
+            )
+
+        importacoes_qs = importacoes_qs.order_by('-data_importacao')
+
+        total_importacoes = importacoes_qs.count()
+        pages = max((total_importacoes + limit - 1) // limit, 1)
+        page = min(page, pages)
+        offset = (page - 1) * limit
+        paginated_importacoes = importacoes_qs[offset:offset + limit]
+
+        status_map = {
+            'PAGO': 'Pago',
+            'PENDENTE_PAGAMENTO': 'Pendente Pagamento',
+            'PENDING': 'Pendente',
+            'PROCESSING': 'Processando',
+            'AGUARDANDO_FATURAMENTO': 'Aguardando Faturamento',
+            'APROVADO': 'Aprovado',
+            'FATURADO': 'Faturado',
+            'CONFIRMAR_PAGAMENTO': 'Confirmar Pagamento',
+            'BOLETO_VR_ENVIADO': 'Boleto VR Enviado',
+            'COMPRADO': 'Comprado',
+            'CANCELADO': 'Cancelado',
+            'COMPLETED': 'Concluída',
+            'FAILED': 'Falhou',
+        }
+
+        result = []
+        for importacao in paginated_importacoes:
+            faturamentos_rel = list(importacao.faturamentos.all())
+            faturamento = faturamentos_rel[0] if faturamentos_rel else None
+            administradora = importacao.administradora
+            status_faturamento = faturamento.status if faturamento else 'PENDING'
+
+            documentos = []
+            boletos_data = []
+
+            if faturamento:
+                for documento in faturamento.documentos.all():
+                    documentos.append({
+                        'condominio_nome': (
+                            documento.condominio.nome if documento.condominio else ''
+                        ),
+                        'condominio_cnpj': (
+                            documento.condominio.cnpj if documento.condominio else ''
+                        ),
+                        'url_boleto': documento.url_boleto or '',
+                        'url_nota_debito': documento.url_nota_debito or '',
+                        'url_nota_fiscal': documento.url_nota_fiscal or '',
+                    })
+
+                for boleto in faturamento.boletos_rel.all():
+                    boletos_data.append({
+                        'id': boleto.id,
+                        'nome_cobrado': boleto.nome_cobrado or '',
+                        'cnpj_cobrado': boleto.cnpj_cobrado or '',
+                        'documento': boleto.documento or '',
+                        'fatura': boleto.fatura or '',
+                        'vencimento': (
+                            boleto.vencimento.isoformat()
+                            if boleto.vencimento
+                            else None
+                        ),
+                        'valor': float(boleto.valor) if boleto.valor else 0,
+                        'baixa': boleto.baixa,
+                        'dt_baixa': (
+                            boleto.dt_baixa.isoformat()
+                            if boleto.dt_baixa
+                            else None
+                        ),
+                        'status': boleto.status or '',
+                        'nosso_numero': boleto.nosso_numero or '',
+                    })
+
+                if boletos_data:
+                    total_boletos = len(boletos_data)
+                    boletos_pagos = sum(
+                        1 for boleto in boletos_data if boleto['baixa']
+                    )
+                    if boletos_pagos == total_boletos:
+                        status_faturamento = 'PAGO'
+                    else:
+                        status_faturamento = 'PENDENTE_PAGAMENTO'
+                else:
+                    status_faturamento = 'PENDENTE_PAGAMENTO'
+
+            if status_filtro == 'pago' and status_faturamento != 'PAGO':
+                continue
+            if status_filtro == 'pendente' and status_faturamento == 'PAGO':
+                continue
+
+            if status_faturamento == 'PAGO':
+                status_display = 'Pago'
+            else:
+                status_display = status_map.get(
+                    importacao.status,
+                    importacao.status,
+                )
+
+            result.append({
+                'id': faturamento.id if faturamento else importacao.id,
+                'faturamento_id': faturamento.id if faturamento else None,
+                'competencia': (
+                    faturamento.competencia.isoformat()
+                    if faturamento and faturamento.competencia
+                    else None
+                ),
+                'status': status_faturamento,
+                'status_display': status_display,
+                'progresso': faturamento.progresso if faturamento else 0,
+                'valor_total': (
+                    float(importacao.valor_total)
+                    if importacao.valor_total
+                    else 0
+                ),
+                'arquivo_unificado_url': (
+                    faturamento.arquivo_unificado_url if faturamento else ''
+                ),
+                'importacao_id': importacao.id,
+                'importacao_status': importacao.status,
+                'administradora_id': (
+                    administradora.id if administradora else None
+                ),
+                'administradora_nome': (
+                    administradora.nome_fantasia
+                    or administradora.razao_social
+                    if administradora
+                    else None
+                ),
+                'data_vencimento': (
+                    importacao.data_vencimento.isoformat()
+                    if importacao.data_vencimento
+                    else None
+                ),
+                'data_recebimento': (
+                    importacao.data_recebimento.isoformat()
+                    if importacao.data_recebimento
+                    else None
+                ),
+                'total_registros': importacao.total_registros or 0,
+                'registros_processados': importacao.registros_processados or 0,
+                'condominios': documentos,
+                'boletos': boletos_data,
+                'created_at': (
+                    faturamento.criado_em.isoformat()
+                    if faturamento and faturamento.criado_em
+                    else (
+                        importacao.data_importacao.isoformat()
+                        if importacao.data_importacao
+                        else None
+                    )
+                ),
+            })
+
+        return Response({
+            'data': result,
+            'total': total_importacoes,
+            'page': page,
+            'pages': pages,
+            'limit': limit,
         })
