@@ -769,8 +769,10 @@ class ListarBoletosView(views.APIView):
                 b.fatura for f in faturamentos
                 for b in f.boletos_rel.all() if b.fatura
             ))
+            logger.info(f"[ListarBoletos] Buscando status FedHub para faturas: {faturas_nums}")
             for fat_num in faturas_nums:
                 fedhub_boletos = fedhub.buscar_todos_boletos_por_fatura(fat_num)
+                logger.info(f"[ListarBoletos] FedHub fatura {fat_num}: {len(fedhub_boletos) if isinstance(fedhub_boletos, list) else type(fedhub_boletos)} boletos")
                 if isinstance(fedhub_boletos, list):
                     for fb in fedhub_boletos:
                         doc = fb.get("documento")
@@ -780,8 +782,9 @@ class ListarBoletosView(views.APIView):
                                 "baixa": bool(fb.get("baixa", False)),
                                 "dt_baixa": fb.get("dt_baixa"),
                             }
+            logger.info(f"[ListarBoletos] fedhub_status_map keys: {list(fedhub_status_map.keys())[:5]}")
         except Exception as e:
-            logger.warning(f"Erro ao buscar status no FedHub: {e}")
+            logger.warning(f"Erro ao buscar status no FedHub: {e}", exc_info=True)
 
         STATUS_DISPLAY = {
             'PAGO': 'Pago',
