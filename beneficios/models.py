@@ -290,12 +290,6 @@ class MovimentacaoBeneficio(models.Model):
 
 
 class Boleto(models.Model):
-    STATUS_CHOICES = [
-        ('A', 'Ativo'),
-        ('C', 'Cancelado'),
-        ('B', 'Baixado'),
-    ]
-
     faturamento = models.ForeignKey(
         Faturamento,
         on_delete=models.CASCADE,
@@ -317,7 +311,7 @@ class Boleto(models.Model):
     cnpj_cedente = models.CharField(max_length=50, verbose_name="CNPJ do Cedente", null=True, blank=True)
     valor = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="Valor", null=True, blank=True)
     deducoes = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="Deduções", null=True, blank=True)
-    status = models.CharField(max_length=1, choices=STATUS_CHOICES, verbose_name="Status", null=True, blank=True)
+    status = models.CharField(max_length=50, verbose_name="Status", null=True, blank=True)
     nosso_numero = models.CharField(max_length=100, verbose_name="Nosso Número", null=True, blank=True)
     identificador = models.CharField(max_length=100, verbose_name="Identificador", null=True, blank=True)
     baixa = models.BooleanField(default=False, verbose_name="Baixa")
