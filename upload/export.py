@@ -348,20 +348,44 @@ class GetImportacaoSelectDataView(views.APIView):
             return Response({'detail': 'Importação não encontrada.'}, status=404)
 
         boletos = Boleto.objects.filter(faturamento_id=importacao_id)
-        boletos_data = [
-            {
+
+        fedhub_status_map = {}
+        faturas_num = list(set(b.fatura for b in boletos if b.fatura))
+        if faturas_num:
+            try:
+                from core.fedhub.services.fedhub_service import FedhubService
+                fedhub = FedhubService()
+                for fat_num in faturas_num:
+                    fedhub_boletos = fedhub.buscar_todos_boletos_por_fatura(fat_num)
+                    if isinstance(fedhub_boletos, list):
+                        for fb in fedhub_boletos:
+                            doc = fb.get("documento")
+                            if doc:
+                                fedhub_status_map[str(doc).strip()] = {
+                                    "status": fb.get("status"),
+                                    "baixa": bool(fb.get("baixa", False)),
+                                    "dt_baixa": fb.get("dt_baixa"),
+                                }
+            except Exception as e:
+                import logging
+                logging.warning(f"Erro ao buscar status no FedHub para select-data: {e}")
+
+        boletos_data = []
+        for b in boletos:
+            doc_key = str(b.documento).strip() if b.documento else None
+            fh = fedhub_status_map.get(doc_key, {}) if doc_key else {}
+
+            boletos_data.append({
                 "id": b.id,
                 "documento": b.documento,
                 "cnpj_cobrado": b.cnpj_cobrado,
                 "nome_cobrado": b.nome_cobrado,
                 "valor": float(b.valor) if b.valor else 0.0,
                 "vencimento": b.vencimento.strftime('%Y-%m-%d') if b.vencimento else None,
-                "baixa": b.baixa,
-                "dt_baixa": b.dt_baixa.strftime('%Y-%m-%d') if b.dt_baixa else None,
-                "status": b.status,
-            }
-            for b in boletos
-        ]
+                "baixa": fh.get("baixa", b.baixa),
+                "dt_baixa": fh.get("dt_baixa", b.dt_baixa.strftime('%Y-%m-%d') if b.dt_baixa else None),
+                "status": fh.get("status", b.status),
+            })
 
         movs = MovimentacaoBeneficio.objects.filter(importacao=importacao).select_related(
             'empresa_cnpj', 'funcionario_cpf', 'produto_codigo'
