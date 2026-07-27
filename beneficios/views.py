@@ -69,6 +69,7 @@ class AlterarStatusImportacaoView(views.APIView):
             'em_faturamento': 'EM_FATURAMENTO',
             'faturado': 'FATURADO',
             'comprado': 'COMPRADO',
+            'pago_parcialmente': 'PAGO_PARCIALMENTE',
             'cancelado': 'CANCELADO',
         }
         
@@ -538,6 +539,127 @@ class ImportacaoListView(views.APIView):
             'pages': pages,
             'limit': limit,
         })
+
+
+class PedidoCartaoView(views.APIView):
+    """
+    Cria e lista pedidos de cartão do usuário da administradora.
+    POST: cria pedido (força administradora do user logado)
+    GET: lista pedidos da administradora do user logado
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def post(self, request):
+        from beneficios.models import PedidoCartao
+        from beneficios.serializers import PedidoCartaoSerializer
+
+        user = request.user
+        administradora = getattr(user, 'administradora_ativa', None)
+
+        if not administradora:
+            return Response({'detail': 'Usuário não possui administradora vinculada.'}, status=400)
+
+        serializer = PedidoCartaoSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(administradora=administradora, criado_por=user)
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def get(self, request):
+        from beneficios.models import PedidoCartao
+        from beneficios.serializers import PedidoCartaoSerializer
+
+        user = request.user
+        administradora = getattr(user, 'administradora_ativa', None)
+
+        if not administradora:
+            return Response({'detail': 'Usuário não possui administradora vinculada.'}, status=400)
+
+        pedidos = PedidoCartao.objects.filter(
+            administradora=administradora
+        ).order_by('-created_at')
+
+        serializer = PedidoCartaoSerializer(pedidos, many=True)
+        return Response(serializer.data)
+
+
+class PedidoCartaoOperacionalView(views.APIView):
+    """
+    Lista todos os pedidos de cartão (todas administradoras) para o time operacional.
+    Apenas dev/fat podem acessar.
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        from beneficios.models import PedidoCartao
+        from beneficios.serializers import PedidoCartaoSerializer
+
+        user = request.user
+        if user.tipo not in ('dev', 'fat'):
+            return Response({'detail': 'Acesso não autorizado.'}, status=403)
+
+        pedidos = PedidoCartao.objects.select_related(
+            'administradora', 'criado_por'
+        ).order_by('-created_at')
+
+        status_filtro = request.query_params.get('status')
+        tipo_filtro = request.query_params.get('tipo')
+        search = request.query_params.get('search', '').strip()
+
+        if status_filtro:
+            pedidos = pedidos.filter(status=status_filtro)
+        if tipo_filtro:
+            pedidos = pedidos.filter(tipo_pedido=tipo_filtro)
+        if search:
+            from django.db.models import Q
+            pedidos = pedidos.filter(
+                Q(nome_completo__icontains=search) |
+                Q(cpf__icontains=search) |
+                Q(nome_condominio__icontains=search) |
+                Q(administradora__razao_social__icontains=search)
+            )
+
+        serializer = PedidoCartaoSerializer(pedidos, many=True)
+        return Response(serializer.data)
+
+
+class PedidoCartaoStatusView(views.APIView):
+    """
+    Atualiza o status de um pedido de cartão.
+    Apenas dev/fat podem acessar.
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def patch(self, request, pk):
+        from beneficios.models import PedidoCartao
+        from beneficios.serializers import PedidoCartaoSerializer
+
+        user = request.user
+        if user.tipo not in ('dev', 'fat'):
+            return Response({'detail': 'Acesso não autorizado.'}, status=403)
+
+        try:
+            pedido = PedidoCartao.objects.get(pk=pk)
+        except PedidoCartao.DoesNotExist:
+            return Response({'detail': 'Pedido não encontrado.'}, status=404)
+
+        novo_status = request.data.get('status')
+        valid_statuses = [c[0] for c in PedidoCartao.STATUS_CHOICES]
+        if novo_status not in valid_statuses:
+            return Response(
+                {'detail': f'Status inválido. Opções: {", ".join(valid_statuses)}'},
+                status=400
+            )
+
+        pedido.status = novo_status
+        pedido.observacao = request.data.get('observacao', pedido.observacao)
+        pedido.save(update_fields=['status', 'observacao', 'updated_at'])
+
+        serializer = PedidoCartaoSerializer(pedido)
+        return Response(serializer.data)
 
 class ImportacaoDetailView(views.APIView):
     """
@@ -1278,6 +1400,7 @@ class ConsultarBoletosView(views.APIView):
             'PENDING': 'Pendente',
             'PROCESSING': 'Processando',
             'AGUARDANDO_FATURAMENTO': 'Aguardando Faturamento',
+            'APROVADO': 'Aprovado',
             'FATURADO': 'Faturado',
             'CONFIRMAR_PAGAMENTO': 'Confirmar Pagamento',
             'BOLETO_VR_ENVIADO': 'Boleto VR Enviado',

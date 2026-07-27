@@ -16,6 +16,7 @@ class Importacao(models.Model):
         ('BOLETO_VR_ENVIADO', 'Boleto VR Enviado'),
         ('PAGO', 'Pago'),
         ('COMPRADO', 'Comprado'),
+        ('PAGO_PARCIALMENTE', 'Pago Parcialmente'),
         ('CANCELADO', 'Cancelado'),
         ('COMPLETED', 'Concluída'),
         ('FAILED', 'Falhou'),
@@ -345,3 +346,66 @@ class Boleto(models.Model):
 
     def __str__(self):
         return f"Boleto #{self.id} - Fatura: {self.fatura} - Vencimento: {self.vencimento}"
+
+
+class PedidoCartao(models.Model):
+    TIPO_CHOICES = [
+        ('NOVO', 'Cartão Novo'),
+        ('SEGUNDA_VIA', 'Segunda Via'),
+    ]
+    STATUS_CHOICES = [
+        ('PENDENTE', 'Pendente'),
+        ('EM_ANALISE', 'Em Análise'),
+        ('APROVADO', 'Aprovado'),
+        ('ENVIADO', 'Enviado'),
+        ('RECUSADO', 'Recusado'),
+        ('CANCELADO', 'Cancelado'),
+    ]
+
+    id = models.AutoField(primary_key=True)
+    criado_por = models.ForeignKey(
+        'users.CustomUser',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Criado por"
+    )
+    administradora = models.ForeignKey(
+        'entidades.Administradora',
+        on_delete=models.CASCADE,
+        verbose_name="Administradora"
+    )
+
+    tipo_pedido = models.CharField(max_length=20, choices=TIPO_CHOICES, verbose_name="Tipo de Pedido")
+    nome_completo = models.CharField(max_length=255, verbose_name="Nome Completo")
+    cpf = models.CharField(max_length=14, verbose_name="CPF")
+    data_nascimento = models.DateField(verbose_name="Data de Nascimento")
+    produto = models.CharField(max_length=100, verbose_name="Produto")
+    nome_condominio = models.CharField(max_length=255, verbose_name="Nome do Condomínio")
+    cep = models.CharField(max_length=10, verbose_name="CEP", blank=True, null=True)
+    logradouro = models.CharField(max_length=255, verbose_name="Logradouro", blank=True, null=True)
+    numero = models.CharField(max_length=20, verbose_name="Número", blank=True, null=True)
+    complemento = models.CharField(max_length=100, verbose_name="Complemento", blank=True, null=True)
+    bairro = models.CharField(max_length=100, verbose_name="Bairro", blank=True, null=True)
+    cidade = models.CharField(max_length=100, verbose_name="Cidade", blank=True, null=True)
+    estado = models.CharField(max_length=2, verbose_name="UF", blank=True, null=True)
+    valor = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="Valor", blank=True, null=True)
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='PENDENTE',
+        verbose_name="Status"
+    )
+    observacao = models.TextField(blank=True, null=True, verbose_name="Observação")
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
+
+    class Meta:
+        verbose_name = "Pedido de Cartão"
+        verbose_name_plural = "Pedidos de Cartão"
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Pedido #{self.id} - {self.nome_completo} - {self.get_tipo_pedido_display()}"
