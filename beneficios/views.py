@@ -69,6 +69,7 @@ class AlterarStatusImportacaoView(views.APIView):
             'em_faturamento': 'EM_FATURAMENTO',
             'faturado': 'FATURADO',
             'cancelado': 'CANCELADO',
+            'pendente': 'PENDING',
         }
         
         status_backend = status_mapping.get(novo_status)
