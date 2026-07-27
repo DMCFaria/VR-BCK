@@ -9,6 +9,7 @@ from .views import (
     ImportacaoDetailView,
     UltimaMovimentacaoDashboard,
     BoletoBaixaView,
+    ListarBoletosView
     KanbanFaturasView,
     KanbanBoletosView,
     KanbanMoveFaturaView,
@@ -33,6 +34,7 @@ urlpatterns = [
     path('importacoes/<int:pk>/status/', AlterarStatusImportacaoView.as_view(), name='alterar-status-importacao'),
     
     path('importacoes/ultima-movimentacao/', UltimaMovimentacaoDashboard.as_view(), name='ultima-movimentacao'),
+    path('boletos/', ListarBoletosView.as_view(), name='listar-boletos'),
     path('boletos/baixa/', BoletoBaixaView.as_view(), name='boleto-baixa-generica'),
     path('boletos/<int:pk>/baixa/', BoletoBaixaView.as_view(), name='boleto-baixa'),
 
