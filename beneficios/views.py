@@ -897,7 +897,6 @@ class KanbanFaturasView(views.APIView):
 
         fedhub_status_map = {}
         try:
-            from core.fedhub.services.fedhub_service import FedhubService
             fedhub = FedhubService()
             for fat_num in faturas_page:
                 fedhub_boletos = fedhub.buscar_todos_boletos_por_fatura(fat_num)

@@ -533,6 +533,63 @@ class GetImportacaoSelectDataView(views.APIView):
         })
 
 
+class ListarTodosBoletosView(views.APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        from collections import defaultdict
+        import logging
+        log = logging.getLogger(__name__)
+
+        boletos = Boleto.objects.select_related('faturamento', 'faturamento__importacao', 'faturamento__administradora').all()
+
+        grupos = defaultdict(list)
+        for b in boletos:
+            if b.fatura:
+                grupos[b.fatura].append(b)
+
+        faturas_ordenadas = sorted(grupos.keys(), reverse=True)
+
+        fedhub_status_map = {}
+        try:
+            from core.fedhub.services.fedhub_service import FedhubService
+            fedhub = FedhubService()
+            for fat_num in faturas_ordenadas:
+                fedhub_boletos = fedhub.buscar_todos_boletos_por_fatura(fat_num)
+                if isinstance(fedhub_boletos, list):
+                    for fb in fedhub_boletos:
+                        doc = fb.get("documento")
+                        if doc:
+                            fedhub_status_map[str(doc).strip()] = {
+                                "status": fb.get("status"),
+                                "baixa": bool(fb.get("baixa", False)),
+                                "dt_baixa": fb.get("dt_baixa"),
+                            }
+        except Exception as e:
+            log.warning(f"Erro ao buscar status no FedHub: {e}")
+
+        boletos_data = []
+        for fat_num in faturas_ordenadas:
+            for b in grupos[fat_num]:
+                doc_key = str(b.documento).strip() if b.documento else None
+                fh = fedhub_status_map.get(doc_key, {}) if doc_key else {}
+                boletos_data.append({
+                    "fatura": b.fatura,
+                    "documento": b.documento,
+                    "cnpj_cobrado": b.cnpj_cobrado,
+                    "nome_cobrado": b.nome_cobrado,
+                    "valor": float(b.valor) if b.valor else 0.0,
+                    "vencimento": b.vencimento.strftime('%Y-%m-%d') if b.vencimento else None,
+                    "baixa": fh.get("baixa", b.baixa),
+                    "dt_baixa": fh.get("dt_baixa", b.dt_baixa.strftime('%Y-%m-%d') if b.dt_baixa else None),
+                    "status": fh.get("status", b.status),
+                    "nosso_numero": b.nosso_numero,
+                })
+
+        return Response(boletos_data)
+
+
 class ExportTxtCompraView(views.APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
