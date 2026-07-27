@@ -551,14 +551,16 @@ class PedidoCartaoView(views.APIView):
     authentication_classes = [JWTAuthentication]
 
     def post(self, request):
-        from beneficios.models import PedidoCartao
         from beneficios.serializers import PedidoCartaoSerializer
 
         user = request.user
         administradora = getattr(user, 'administradora_ativa', None)
 
         if not administradora:
-            return Response({'detail': 'Usuário não possui administradora vinculada.'}, status=400)
+            return Response(
+                {'detail': 'Usuário não possui administradora vinculada.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         serializer = PedidoCartaoSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -574,7 +576,10 @@ class PedidoCartaoView(views.APIView):
         administradora = getattr(user, 'administradora_ativa', None)
 
         if not administradora:
-            return Response({'detail': 'Usuário não possui administradora vinculada.'}, status=400)
+            return Response(
+                {'detail': 'Usuário não possui administradora vinculada.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         pedidos = PedidoCartao.objects.filter(
             administradora=administradora
@@ -586,19 +591,23 @@ class PedidoCartaoView(views.APIView):
 
 class PedidoCartaoOperacionalView(views.APIView):
     """
-    Lista todos os pedidos de cartão (todas administradoras) para o time operacional.
+    Lista todos os pedidos de cartão para o time operacional.
     Apenas dev/fat podem acessar.
     """
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
     def get(self, request):
+        from django.db.models import Q
         from beneficios.models import PedidoCartao
         from beneficios.serializers import PedidoCartaoSerializer
 
         user = request.user
         if user.tipo not in ('dev', 'fat'):
-            return Response({'detail': 'Acesso não autorizado.'}, status=403)
+            return Response(
+                {'detail': 'Acesso não autorizado.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         pedidos = PedidoCartao.objects.select_related(
             'administradora', 'criado_por'
@@ -613,12 +622,11 @@ class PedidoCartaoOperacionalView(views.APIView):
         if tipo_filtro:
             pedidos = pedidos.filter(tipo_pedido=tipo_filtro)
         if search:
-            from django.db.models import Q
             pedidos = pedidos.filter(
-                Q(nome_completo__icontains=search) |
-                Q(cpf__icontains=search) |
-                Q(nome_condominio__icontains=search) |
-                Q(administradora__razao_social__icontains=search)
+                Q(nome_completo__icontains=search)
+                | Q(cpf__icontains=search)
+                | Q(nome_condominio__icontains=search)
+                | Q(administradora__razao_social__icontains=search)
             )
 
         serializer = PedidoCartaoSerializer(pedidos, many=True)
@@ -639,19 +647,25 @@ class PedidoCartaoStatusView(views.APIView):
 
         user = request.user
         if user.tipo not in ('dev', 'fat'):
-            return Response({'detail': 'Acesso não autorizado.'}, status=403)
+            return Response(
+                {'detail': 'Acesso não autorizado.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         try:
             pedido = PedidoCartao.objects.get(pk=pk)
         except PedidoCartao.DoesNotExist:
-            return Response({'detail': 'Pedido não encontrado.'}, status=404)
+            return Response(
+                {'detail': 'Pedido não encontrado.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
         novo_status = request.data.get('status')
-        valid_statuses = [c[0] for c in PedidoCartao.STATUS_CHOICES]
+        valid_statuses = [choice[0] for choice in PedidoCartao.STATUS_CHOICES]
         if novo_status not in valid_statuses:
             return Response(
                 {'detail': f'Status inválido. Opções: {", ".join(valid_statuses)}'},
-                status=400
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         pedido.status = novo_status
@@ -882,7 +896,16 @@ class KanbanFaturasView(views.APIView):
         administradora_id = request.query_params.get('administradora_id')
         status_filter = request.query_params.get('status')
 
-        all_boletos = Boleto.objects.select_related('faturamento', 'faturamento__importacao', 'faturamento__administradora').all()
+        all_boletos = Boleto.objects.select_related(
+            'faturamento',
+            'faturamento__importacao',
+            'faturamento__administradora',
+        ).all()
+
+        if administradora_id:
+            all_boletos = all_boletos.filter(
+                faturamento__administradora_id=administradora_id
+            )
 
         from collections import defaultdict
         grupos = defaultdict(list)
@@ -972,6 +995,18 @@ class KanbanFaturasView(views.APIView):
             "data": data,
             "pages": total_pages,
             "total": total,
+        })
+
+class KanbanFaturasView(views.APIView):
+    """
+    Retorna faturas no formato esperado pelo Kanban do Operacional.
+    Agrupa Importacao + Faturamento + Boletos em estrutura coEstipulantes.
+    Exclui importações PAGO com mais de 30 dias para reduzir carga.
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
         from datetime import date, timedelta
         from django.db.models import Prefetch
         from beneficios.models import Faturamento, Boleto
@@ -1001,7 +1036,6 @@ class KanbanFaturasView(views.APIView):
         for imp in importacoes:
             faturamentos_rel = list(imp.faturamentos.all())
             faturamento = faturamentos_rel[0] if faturamentos_rel else None
-
             boletos = list(faturamento.boletos_rel.all()) if faturamento else []
 
             admin = imp.administradora
@@ -1009,24 +1043,24 @@ class KanbanFaturasView(views.APIView):
             estipulante_cnpj = admin.cnpj if admin else ''
 
             co_estipulantes = []
-            for b in boletos:
-                vencimento = b.vencimento.isoformat() if b.vencimento else None
-                pago = b.baixa
-                data_pagamento = b.dt_baixa.isoformat() if b.dt_baixa else None
-                valor_cents = int(float(b.valor or 0) * 100)
+            for boleto in boletos:
+                vencimento = boleto.vencimento.isoformat() if boleto.vencimento else None
+                pago = boleto.baixa
+                data_pagamento = boleto.dt_baixa.isoformat() if boleto.dt_baixa else None
+                valor_cents = int(float(boleto.valor or 0) * 100)
 
                 co_estipulantes.append({
-                    'id': b.id,
-                    'idx': b.id,
-                    'name': b.nome_cobrado or '',
-                    'nome': b.nome_cobrado or '',
-                    'condominio': b.nome_cobrado or '',
-                    'condominio_nome': b.nome_cobrado or '',
-                    'cnpj': b.cnpj_cobrado or '',
-                    'documento': b.cnpj_cobrado or '',
-                    'cpf_cnpj': b.cnpj_cobrado or '',
-                    'cpfCnpj': b.cnpj_cobrado or '',
-                    'razao_social': b.nome_cobrado or '',
+                    'id': boleto.id,
+                    'idx': boleto.id,
+                    'name': boleto.nome_cobrado or '',
+                    'nome': boleto.nome_cobrado or '',
+                    'condominio': boleto.nome_cobrado or '',
+                    'condominio_nome': boleto.nome_cobrado or '',
+                    'cnpj': boleto.cnpj_cobrado or '',
+                    'documento': boleto.cnpj_cobrado or '',
+                    'cpf_cnpj': boleto.cnpj_cobrado or '',
+                    'cpfCnpj': boleto.cnpj_cobrado or '',
+                    'razao_social': boleto.nome_cobrado or '',
                     'valorCents': valor_cents,
                     'valor_cents': valor_cents,
                     'valorCentavos': valor_cents,
@@ -1072,7 +1106,7 @@ class KanbanFaturasView(views.APIView):
             }
             kanban = status_map.get(imp.status, 'faturado')
 
-            if boletos and all(b.baixa for b in boletos):
+            if boletos and all(boleto.baixa for boleto in boletos):
                 kanban = 'pago'
 
             if imp.data_recebimento:
@@ -1135,26 +1169,23 @@ class KanbanFaturasView(views.APIView):
 
 
 class KanbanBoletosView(views.APIView):
-    """
-    Retorna boletos no formato esperado pelo Kanban de Boletos VR.
-    """
+    """Retorna boletos no formato esperado pelo Kanban de Boletos VR."""
+
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
     def get(self, request):
-        from beneficios.models import Boleto
-
         boletos = Boleto.objects.select_related('faturamento').order_by('-created_at')
 
         result = []
-        for b in boletos:
+        for boleto in boletos:
             result.append({
-                'id': b.id,
-                'name': b.nome_cobrado or b.fatura or f'Boleto {b.id}',
-                'file_name': b.fatura or '',
-                'due_date': b.vencimento.isoformat() if b.vencimento else None,
-                'value_cents': int(float(b.valor or 0) * 100),
-                'paid_at': b.dt_baixa.isoformat() if b.baixa and b.dt_baixa else None,
+                'id': boleto.id,
+                'name': boleto.nome_cobrado or boleto.fatura or f'Boleto {boleto.id}',
+                'file_name': boleto.fatura or '',
+                'due_date': boleto.vencimento.isoformat() if boleto.vencimento else None,
+                'value_cents': int(float(boleto.valor or 0) * 100),
+                'paid_at': boleto.dt_baixa.isoformat() if boleto.baixa and boleto.dt_baixa else None,
                 'uploaderName': '',
                 'uploader_name': '',
             })
@@ -1168,17 +1199,20 @@ class KanbanMoveFaturaView(views.APIView):
     PATCH /api/beneficios/kanban/{id}/move/
     Body: { "status": "faturado"|"atrasado"|"aprovado"|"pago" }
     """
+
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
     def patch(self, request, pk):
         try:
-            imp = Importacao.objects.get(id=pk)
+            importacao = Importacao.objects.get(id=pk)
         except Importacao.DoesNotExist:
-            return Response({'detail': 'Importação não encontrada.'}, status=404)
+            return Response(
+                {'detail': 'Importação não encontrada.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
         new_status = request.data.get('status')
-
         kanban_to_importacao = {
             'faturado': 'FATURADO',
             'atrasado': 'CONFIRMAR_PAGAMENTO',
@@ -1187,28 +1221,30 @@ class KanbanMoveFaturaView(views.APIView):
         }
 
         importacao_status = kanban_to_importacao.get(new_status)
-
         if not importacao_status:
-            return Response({'detail': f'Status inválido: {new_status}'}, status=400)
+            return Response(
+                {'detail': f'Status inválido: {new_status}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        imp.status = importacao_status
-        imp.save(update_fields=['status'])
+        importacao.status = importacao_status
+        importacao.save(update_fields=['status'])
 
         return Response({'success': True, 'status': new_status})
 
 
 class KanbanNotificarCompraView(views.APIView):
     """
-    Verifica faturas com data de crédito para amanhã e envia email de notificação.
+    Verifica faturas com data de crédito para amanhã e envia e-mail de notificação.
     GET /api/beneficios/kanban/notificar-compra/
     """
+
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
     def get(self, request):
         from datetime import date, timedelta
         from django.conf import settings
-        from core.fedhub.services.fedhub_service import FedhubService
 
         amanha = date.today() + timedelta(days=1)
 
@@ -1218,42 +1254,56 @@ class KanbanNotificarCompraView(views.APIView):
         ).select_related('administradora', 'usuario')
 
         if not importacoes.exists():
-            return Response({'detail': 'Nenhuma fatura pendente para amanhã.', 'count': 0})
+            return Response({
+                'detail': 'Nenhuma fatura pendente para amanhã.',
+                'count': 0,
+            })
 
         fedhub_service = FedhubService()
         email_faturamento = getattr(settings, 'EMAIL_FATURAMENTO', None)
         enviados = 0
 
-        for imp in importacoes:
-            admin = imp.administradora
+        for importacao in importacoes:
+            admin = importacao.administradora
             admin_nome = admin.razao_social if admin else 'N/A'
-            vencimento = imp.data_vencimento.strftime('%d/%m/%Y') if imp.data_vencimento else '-'
-            recebimento = imp.data_recebimento.strftime('%d/%m/%Y') if imp.data_recebimento else '-'
-            valor = f"R$ {imp.valor_total:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.') if imp.valor_total else 'R$ 0,00'
+            vencimento = (
+                importacao.data_vencimento.strftime('%d/%m/%Y')
+                if importacao.data_vencimento
+                else '-'
+            )
+            recebimento = (
+                importacao.data_recebimento.strftime('%d/%m/%Y')
+                if importacao.data_recebimento
+                else '-'
+            )
 
             try:
                 if email_faturamento:
                     fedhub_service.enviar_email_upload(
                         email=email_faturamento,
-                        user=imp.usuario,
+                        user=importacao.usuario,
                         dados_processamento={
-                            "arquivo_nome": f"Compra VR - {admin_nome}",
-                            "data_envio": date.today().strftime('%d/%m/%Y'),
-                            "competencia": f"Recebimento: {recebimento}",
-                            "total_registros": imp.total_registros or 0,
-                            "total_funcionarios": imp.total_funcionarios or 0,
-                            "total_condominios": 0,
-                            "valor_total": float(imp.valor_total or 0),
-                            "tipo_processamento": "⚠️ Enviar Compra VR - Amanhã",
-                            "faturamento_id": imp.id,
-                            "vencimento": vencimento,
-                            "periodo_inicio": recebimento,
-                            "periodo_fim": recebimento,
-                        }
+                            'arquivo_nome': f'Compra VR - {admin_nome}',
+                            'data_envio': date.today().strftime('%d/%m/%Y'),
+                            'competencia': f'Recebimento: {recebimento}',
+                            'total_registros': importacao.total_registros or 0,
+                            'total_funcionarios': importacao.total_funcionarios or 0,
+                            'total_condominios': 0,
+                            'valor_total': float(importacao.valor_total or 0),
+                            'tipo_processamento': 'Enviar Compra VR - Amanhã',
+                            'faturamento_id': importacao.id,
+                            'vencimento': vencimento,
+                            'periodo_inicio': recebimento,
+                            'periodo_fim': recebimento,
+                        },
                     )
                     enviados += 1
-            except Exception as e:
-                logger.error(f"Erro ao enviar notificação para importação {imp.id}: {str(e)}")
+            except Exception as exc:
+                logger.error(
+                    'Erro ao enviar notificação para importação %s: %s',
+                    importacao.id,
+                    exc,
+                )
 
         return Response({
             'detail': f'{enviados} notificação(ões) enviada(s).',
@@ -1265,33 +1315,39 @@ class KanbanNotificarCompraView(views.APIView):
 class ImportarBaseCondominiosView(views.APIView):
     """
     Importa base de condomínios e funcionários via Excel.
-    Não gera faturamento — apenas cria/atualiza registros de Condominio e Funcionario.
-    
+    Não gera faturamento: apenas cria ou atualiza registros.
+
     POST /api/beneficios/importar-base/
-    Body: multipart/form-data com arquivo Excel
+    Body: multipart/form-data com arquivo Excel.
     """
+
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
     def post(self, request):
         from entidades.models import Condominio, Funcionario
-        from datetime import datetime
 
         arquivo = request.FILES.get('file')
         administradora_id = request.data.get('administradora_id')
 
         if not arquivo:
-            return Response({'detail': 'Nenhum arquivo enviado.'}, status=400)
+            return Response(
+                {'detail': 'Nenhum arquivo enviado.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        if not arquivo.name.endswith(('.xlsx', '.xls')):
-            return Response({'detail': 'Formato inválido. Envie um arquivo .xlsx ou .xls.'}, status=400)
+        if not arquivo.name.lower().endswith(('.xlsx', '.xls')):
+            return Response(
+                {'detail': 'Formato inválido. Envie um arquivo .xlsx ou .xls.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         try:
             import openpyxl
-            wb = openpyxl.load_workbook(arquivo, data_only=True)
-            ws = wb.active
 
-            headers = [str(cell.value or '').strip().lower() for cell in ws[1]]
+            workbook = openpyxl.load_workbook(arquivo, data_only=True)
+            worksheet = workbook.active
+            headers = [str(cell.value or '').strip().lower() for cell in worksheet[1]]
 
             condominios_criados = 0
             condominios_atualizados = 0
@@ -1299,17 +1355,24 @@ class ImportarBaseCondominiosView(views.APIView):
             funcionarios_atualizados = 0
             erros = []
 
-            for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+            for row_idx, row in enumerate(
+                worksheet.iter_rows(min_row=2, values_only=True),
+                start=2,
+            ):
                 try:
                     data = dict(zip(headers, row))
 
-                    cnpj = str(data.get('cnpj', '') or '').strip()
-                    cnpj = ''.join(filter(str.isdigit, cnpj))
-
+                    cnpj = ''.join(
+                        filter(str.isdigit, str(data.get('cnpj', '') or '').strip())
+                    )
                     if not cnpj or len(cnpj) != 14:
                         continue
 
-                    nome = str(data.get('nome', '') or data.get('razao_social', '') or '').strip()
+                    nome = str(
+                        data.get('nome', '')
+                        or data.get('razao_social', '')
+                        or ''
+                    ).strip()
                     if not nome:
                         continue
 
@@ -1317,15 +1380,27 @@ class ImportarBaseCondominiosView(views.APIView):
                         cnpj=cnpj,
                         defaults={
                             'nome': nome,
-                            'tipo_local': str(data.get('tipo_local', '') or 'CONDOMINIO').strip(),
-                            'endereco': str(data.get('endereco', '') or data.get('rua', '') or '').strip(),
+                            'tipo_local': str(
+                                data.get('tipo_local', '') or 'CONDOMINIO'
+                            ).strip(),
+                            'endereco': str(
+                                data.get('endereco', '')
+                                or data.get('rua', '')
+                                or ''
+                            ).strip(),
                             'numero': str(data.get('numero', '') or '').strip(),
-                            'complemento': str(data.get('complemento', '') or '').strip(),
+                            'complemento': str(
+                                data.get('complemento', '') or ''
+                            ).strip(),
                             'bairro': str(data.get('bairro', '') or '').strip(),
                             'cidade': str(data.get('cidade', '') or '').strip(),
-                            'estado': str(data.get('estado', '') or data.get('uf', '') or '').strip(),
+                            'estado': str(
+                                data.get('estado', '')
+                                or data.get('uf', '')
+                                or ''
+                            ).strip(),
                             'cep': str(data.get('cep', '') or '').strip(),
-                        }
+                        },
                     )
 
                     if created:
@@ -1335,43 +1410,64 @@ class ImportarBaseCondominiosView(views.APIView):
 
                     if administradora_id:
                         from entidades.models import Administradora, VinculoCondominio
+
                         try:
-                            admin = Administradora.objects.get(id=administradora_id)
+                            administradora = Administradora.objects.get(
+                                id=administradora_id
+                            )
                             VinculoCondominio.objects.get_or_create(
-                                administradora=admin,
+                                administradora=administradora,
                                 condominio=condominio,
                             )
                         except Administradora.DoesNotExist:
                             pass
 
-                    cpf = str(data.get('cpf', '') or '').strip()
-                    cpf = ''.join(filter(str.isdigit, cpf))
-
+                    cpf = ''.join(
+                        filter(str.isdigit, str(data.get('cpf', '') or '').strip())
+                    )
                     if cpf and len(cpf) == 11:
-                        func_nome = str(data.get('funcionario_nome', '') or data.get('nome_funcionario', '') or '').strip()
+                        funcionario_nome = str(
+                            data.get('funcionario_nome', '')
+                            or data.get('nome_funcionario', '')
+                            or ''
+                        ).strip()
 
-                        if func_nome:
-                            func, func_created = Funcionario.objects.update_or_create(
+                        if funcionario_nome:
+                            _, funcionario_criado = Funcionario.objects.update_or_create(
                                 cpf=cpf,
                                 defaults={
-                                    'nome': func_nome,
-                                    'matricula': str(data.get('matricula', '') or '').strip(),
-                                    'departamento': str(data.get('departamento', '') or '').strip(),
-                                    'funcao': str(data.get('funcao', '') or data.get('cargo', '') or '').strip(),
-                                    'sexo': str(data.get('sexo', '') or '').strip()[:1] or None,
-                                    'telefone': str(data.get('telefone', '') or '').strip(),
-                                    'email': str(data.get('email', '') or '').strip(),
+                                    'nome': funcionario_nome,
+                                    'matricula': str(
+                                        data.get('matricula', '') or ''
+                                    ).strip(),
+                                    'departamento': str(
+                                        data.get('departamento', '') or ''
+                                    ).strip(),
+                                    'funcao': str(
+                                        data.get('funcao', '')
+                                        or data.get('cargo', '')
+                                        or ''
+                                    ).strip(),
+                                    'sexo': str(
+                                        data.get('sexo', '') or ''
+                                    ).strip()[:1] or None,
+                                    'telefone': str(
+                                        data.get('telefone', '') or ''
+                                    ).strip(),
+                                    'email': str(
+                                        data.get('email', '') or ''
+                                    ).strip(),
                                     'condominio': condominio,
-                                }
+                                },
                             )
 
-                            if func_created:
+                            if funcionario_criado:
                                 funcionarios_criados += 1
                             else:
                                 funcionarios_atualizados += 1
 
-                except Exception as e:
-                    erros.append(f'Linha {row_idx}: {str(e)}')
+                except Exception as exc:
+                    erros.append(f'Linha {row_idx}: {exc}')
 
             return Response({
                 'detail': 'Importação concluída.',
@@ -1384,10 +1480,16 @@ class ImportarBaseCondominiosView(views.APIView):
             })
 
         except ImportError:
-            return Response({'detail': 'Biblioteca openpyxl não instalada no servidor.'}, status=500)
-        except Exception as e:
-            logger.error(f"Erro ao importar base: {str(e)}")
-            return Response({'detail': f'Erro ao processar arquivo: {str(e)}'}, status=400)
+            return Response(
+                {'detail': 'Biblioteca openpyxl não instalada no servidor.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        except Exception as exc:
+            logger.error('Erro ao importar base: %s', exc)
+            return Response(
+                {'detail': f'Erro ao processar arquivo: {exc}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
 
 class ExcluirBaseCondominiosView(views.APIView):
@@ -1395,23 +1497,36 @@ class ExcluirBaseCondominiosView(views.APIView):
     Exclui a base de condomínios e funcionários de uma administradora.
     DELETE /api/beneficios/excluir-base/{administradora_id}/
     """
+
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
     def delete(self, request, administradora_id):
-        from entidades.models import Administradora, VinculoCondominio, Condominio, Funcionario
+        from entidades.models import (
+            Administradora,
+            VinculoCondominio,
+            Condominio,
+            Funcionario,
+        )
 
         try:
-            admin = Administradora.objects.get(id=administradora_id)
+            administradora = Administradora.objects.get(id=administradora_id)
         except Administradora.DoesNotExist:
-            return Response({'detail': 'Administradora não encontrada.'}, status=404)
+            return Response(
+                {'detail': 'Administradora não encontrada.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
-        vinculos = VinculoCondominio.objects.filter(administradora=admin)
-        condominio_ids = vinculos.values_list('condominio_id', flat=True)
+        vinculos = VinculoCondominio.objects.filter(administradora=administradora)
+        condominio_ids = list(vinculos.values_list('condominio_id', flat=True))
 
-        funcionarios_removidos = Funcionario.objects.filter(condominio_id__in=condominio_ids).delete()[0]
+        funcionarios_removidos = Funcionario.objects.filter(
+            condominio_id__in=condominio_ids
+        ).delete()[0]
         vinculos_removidos = vinculos.delete()[0]
-        condominios_removidos = Condominio.objects.filter(cnpj__in=condominio_ids).delete()[0]
+        condominios_removidos = Condominio.objects.filter(
+            cnpj__in=condominio_ids
+        ).delete()[0]
 
         return Response({
             'detail': 'Base excluída com sucesso.',
@@ -1423,13 +1538,14 @@ class ExcluirBaseCondominiosView(views.APIView):
 
 class ConsultarBoletosView(views.APIView):
     """
-    Lista faturas/boletos com filtros de status.
+    Lista faturas e boletos com filtros de status.
     GET /api/beneficios/boletos/?administradora_id=1&status=pago
 
-    - dev/fat: vê TODOS os faturamentos.
-    - adm: vê apenas faturas da sua administradora_ativa.
-    Exclui importacoes PAGO com mais de 30 dias.
+    - dev/fat: visualiza todos os faturamentos;
+    - adm: visualiza apenas faturas da administradora ativa;
+    - importações pagas com mais de 30 dias são excluídas.
     """
+
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
@@ -1437,21 +1553,32 @@ class ConsultarBoletosView(views.APIView):
         from datetime import date, timedelta
         from django.db.models import Prefetch
         from beneficios.models import Faturamento, FaturamentoDocumento, Boleto
-        from entidades.models import Administradora
 
         user = request.user
         administradora_id = request.query_params.get('administradora_id')
         status_filtro = request.query_params.get('status')
-        page = int(request.query_params.get('page', 1))
-        limit = int(request.query_params.get('limit', 50))
 
-        # adm: força filtro pela sua administradora_ativa
+        try:
+            page = max(int(request.query_params.get('page', 1)), 1)
+        except (TypeError, ValueError):
+            page = 1
+
+        try:
+            limit = min(
+                max(int(request.query_params.get('limit', 50)), 1),
+                100,
+            )
+        except (TypeError, ValueError):
+            limit = 50
+
         if user.tipo == 'adm':
             administradora_ativa = getattr(user, 'administradora_ativa', None)
             if not administradora_ativa:
-                return Response({'detail': 'Usuário não possui administradora vinculada.'}, status=400)
+                return Response(
+                    {'detail': 'Usuário não possui administradora vinculada.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             administradora_id = administradora_ativa.id
-        # dev/fat: ignora administradora_id, vê tudo
         elif user.tipo in ('dev', 'fat'):
             administradora_id = None
 
@@ -1462,16 +1589,18 @@ class ConsultarBoletosView(views.APIView):
             'boletos_rel',
             queryset=Boleto.objects.order_by('vencimento'),
         )
-        docs_prefetch = Prefetch(
+        documentos_prefetch = Prefetch(
             'documentos',
             queryset=FaturamentoDocumento.objects.select_related('condominio'),
         )
         faturamentos_prefetch = Prefetch(
             'faturamentos',
-            queryset=Faturamento.objects.prefetch_related(boletos_prefetch, docs_prefetch),
+            queryset=Faturamento.objects.prefetch_related(
+                boletos_prefetch,
+                documentos_prefetch,
+            ),
         )
 
-        # Partir de Importacao
         importacoes_qs = Importacao.objects.select_related(
             'administradora', 'usuario'
         ).prefetch_related(faturamentos_prefetch).exclude(
@@ -1481,14 +1610,17 @@ class ConsultarBoletosView(views.APIView):
         )
 
         if administradora_id:
-            importacoes_qs = importacoes_qs.filter(administradora_id=administradora_id)
+            importacoes_qs = importacoes_qs.filter(
+                administradora_id=administradora_id
+            )
 
         importacoes_qs = importacoes_qs.order_by('-data_importacao')
 
-        # Paginar importações
         total_importacoes = importacoes_qs.count()
+        pages = max((total_importacoes + limit - 1) // limit, 1)
+        page = min(page, pages)
         offset = (page - 1) * limit
-        paginated_imps = importacoes_qs[offset:offset + limit]
+        paginated_importacoes = importacoes_qs[offset:offset + limit]
 
         status_map = {
             'PAGO': 'Pago',
@@ -1507,23 +1639,27 @@ class ConsultarBoletosView(views.APIView):
         }
 
         result = []
-        for imp in paginated_imps:
-            faturamentos_rel = list(imp.faturamentos.all())
+        for importacao in paginated_importacoes:
+            faturamentos_rel = list(importacao.faturamentos.all())
             faturamento = faturamentos_rel[0] if faturamentos_rel else None
-            admin = imp.administradora
+            administradora = importacao.administradora
+            status_faturamento = faturamento.status if faturamento else 'PENDING'
 
-            status_fat = faturamento.status if faturamento else 'PENDING'
-
-            docs = []
+            documentos = []
             boletos_data = []
+
             if faturamento:
-                for doc in faturamento.documentos.all():
-                    docs.append({
-                        'condominio_nome': doc.condominio.nome if doc.condominio else '',
-                        'condominio_cnpj': doc.condominio.cnpj if doc.condominio else '',
-                        'url_boleto': doc.url_boleto or '',
-                        'url_nota_debito': doc.url_nota_debito or '',
-                        'url_nota_fiscal': doc.url_nota_fiscal or '',
+                for documento in faturamento.documentos.all():
+                    documentos.append({
+                        'condominio_nome': (
+                            documento.condominio.nome if documento.condominio else ''
+                        ),
+                        'condominio_cnpj': (
+                            documento.condominio.cnpj if documento.condominio else ''
+                        ),
+                        'url_boleto': documento.url_boleto or '',
+                        'url_nota_debito': documento.url_nota_debito or '',
+                        'url_nota_fiscal': documento.url_nota_fiscal or '',
                     })
 
                 for boleto in faturamento.boletos_rel.all():
@@ -1533,58 +1669,101 @@ class ConsultarBoletosView(views.APIView):
                         'cnpj_cobrado': boleto.cnpj_cobrado or '',
                         'documento': boleto.documento or '',
                         'fatura': boleto.fatura or '',
-                        'vencimento': boleto.vencimento.isoformat() if boleto.vencimento else None,
+                        'vencimento': (
+                            boleto.vencimento.isoformat()
+                            if boleto.vencimento
+                            else None
+                        ),
                         'valor': float(boleto.valor) if boleto.valor else 0,
                         'baixa': boleto.baixa,
-                        'dt_baixa': boleto.dt_baixa.isoformat() if boleto.dt_baixa else None,
+                        'dt_baixa': (
+                            boleto.dt_baixa.isoformat()
+                            if boleto.dt_baixa
+                            else None
+                        ),
                         'status': boleto.status or '',
                         'nosso_numero': boleto.nosso_numero or '',
                     })
 
-                # Status real baseado nos boletos
                 if boletos_data:
                     total_boletos = len(boletos_data)
-                    boletos_pagos = sum(1 for bl in boletos_data if bl['baixa'])
+                    boletos_pagos = sum(
+                        1 for boleto in boletos_data if boleto['baixa']
+                    )
                     if boletos_pagos == total_boletos:
-                        status_fat = 'PAGO'
+                        status_faturamento = 'PAGO'
                     else:
-                        status_fat = 'PENDENTE_PAGAMENTO'
+                        status_faturamento = 'PENDENTE_PAGAMENTO'
                 else:
-                    status_fat = 'PENDENTE_PAGAMENTO'
+                    status_faturamento = 'PENDENTE_PAGAMENTO'
 
-            if status_filtro == 'pago' and status_fat != 'PAGO':
+            if status_filtro == 'pago' and status_faturamento != 'PAGO':
                 continue
-            elif status_filtro == 'pendente' and status_fat == 'PAGO':
+            if status_filtro == 'pendente' and status_faturamento == 'PAGO':
                 continue
 
-            if status_fat == 'PAGO':
+            if status_faturamento == 'PAGO':
                 status_display = 'Pago'
             else:
-                status_display = status_map.get(imp.status, imp.status)
+                status_display = status_map.get(
+                    importacao.status,
+                    importacao.status,
+                )
 
             result.append({
-                'id': faturamento.id if faturamento else imp.id,
+                'id': faturamento.id if faturamento else importacao.id,
                 'faturamento_id': faturamento.id if faturamento else None,
-                'competencia': faturamento.competencia.isoformat() if faturamento and faturamento.competencia else None,
-                'status': status_fat,
+                'competencia': (
+                    faturamento.competencia.isoformat()
+                    if faturamento and faturamento.competencia
+                    else None
+                ),
+                'status': status_faturamento,
                 'status_display': status_display,
                 'progresso': faturamento.progresso if faturamento else 0,
-                'valor_total': float(imp.valor_total) if imp.valor_total else 0,
-                'arquivo_unificado_url': faturamento.arquivo_unificado_url if faturamento else '',
-                'importacao_id': imp.id,
-                'importacao_status': imp.status,
-                'administradora_id': admin.id if admin else None,
-                'administradora_nome': admin.nome_fantasia or admin.razao_social if admin else None,
-                'data_vencimento': imp.data_vencimento.isoformat() if imp.data_vencimento else None,
-                'data_recebimento': imp.data_recebimento.isoformat() if imp.data_recebimento else None,
-                'total_registros': imp.total_registros or 0,
-                'registros_processados': imp.registros_processados or 0,
-                'condominios': docs,
+                'valor_total': (
+                    float(importacao.valor_total)
+                    if importacao.valor_total
+                    else 0
+                ),
+                'arquivo_unificado_url': (
+                    faturamento.arquivo_unificado_url if faturamento else ''
+                ),
+                'importacao_id': importacao.id,
+                'importacao_status': importacao.status,
+                'administradora_id': (
+                    administradora.id if administradora else None
+                ),
+                'administradora_nome': (
+                    administradora.nome_fantasia
+                    or administradora.razao_social
+                    if administradora
+                    else None
+                ),
+                'data_vencimento': (
+                    importacao.data_vencimento.isoformat()
+                    if importacao.data_vencimento
+                    else None
+                ),
+                'data_recebimento': (
+                    importacao.data_recebimento.isoformat()
+                    if importacao.data_recebimento
+                    else None
+                ),
+                'total_registros': importacao.total_registros or 0,
+                'registros_processados': importacao.registros_processados or 0,
+                'condominios': documentos,
                 'boletos': boletos_data,
-                'created_at': faturamento.criado_em.isoformat() if faturamento and faturamento.criado_em else (imp.data_importacao.isoformat() if imp.data_importacao else None),
+                'created_at': (
+                    faturamento.criado_em.isoformat()
+                    if faturamento and faturamento.criado_em
+                    else (
+                        importacao.data_importacao.isoformat()
+                        if importacao.data_importacao
+                        else None
+                    )
+                ),
             })
-
-        pages = max((total_importacoes + limit - 1) // limit, 1)
 
         return Response({
             'data': result,
