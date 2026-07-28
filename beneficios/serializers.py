@@ -104,6 +104,12 @@ class ImportacaoDetailSerializer(serializers.ModelSerializer):
 
 class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
     nome_usuario = serializers.CharField(source='usuario.email', read_only=True)
+    responsavel_nome = serializers.SerializerMethodField(read_only=True)
+
+    def get_responsavel_nome(self, obj):
+        if obj.responsavel:
+            return obj.responsavel.nome or obj.responsavel.email
+        return None
 
     valor_total = serializers.DecimalField(max_digits=15, decimal_places=2, required=False)
     total_funcionarios = serializers.IntegerField(required=False)
@@ -118,6 +124,8 @@ class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
             'nome_administradora',
             'registros_processados',
             'nome_usuario',
+            'responsavel',
+            'responsavel_nome',
             'data_vencimento',
             'data_recebimento',
             'vigencia_inicio',

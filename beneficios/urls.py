@@ -14,6 +14,7 @@ from .views import (
     KanbanMoveFaturaView,
     KanbanNotificarCompraView,
     ListarBoletosView,
+    MarcarResponsavelView,
     MovimentacaoBeneficioViewSet,
     PedidoCartaoOperacionalView,
     PedidoCartaoStatusView,
@@ -61,6 +62,11 @@ urlpatterns = [
         'importacoes/<int:pk>/status/',
         AlterarStatusImportacaoView.as_view(),
         name='alterar-status-importacao',
+    ),
+    path(
+        'importacoes/<int:pk>/responsavel/',
+        MarcarResponsavelView.as_view(),
+        name='marcar-responsavel',
     ),
     path(
         'importacoes/ultima-movimentacao/',

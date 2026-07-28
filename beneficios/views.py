@@ -248,6 +248,61 @@ class AlterarStatusImportacaoView(views.APIView):
         }, status=status.HTTP_200_OK)
 
 
+class MarcarResponsavelView(views.APIView):
+    """
+    Marca ou desmarca o responsável por uma importação.
+    Usado para evitar que duas faturistas trabalhem na mesma importação.
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def patch(self, request, pk):
+        try:
+            importacao = Importacao.objects.get(id=pk)
+        except Importacao.DoesNotExist:
+            return Response(
+                {"detail": "Importação não encontrada."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        user = request.user
+        acao = request.data.get('acao', 'marcar')
+
+        if acao == 'marcar':
+            if importacao.responsavel and importacao.responsavel != user:
+                return Response(
+                    {"detail": f"Importação já está sendo processada por {importacao.responsavel.nome or importacao.responsavel.email}.",
+                     "responsavel": importacao.responsavel.id,
+                     "responsavel_nome": importacao.responsavel.nome or importacao.responsavel.email},
+                    status=status.HTTP_409_CONFLICT
+                )
+            importacao.responsavel = user
+            importacao.save(update_fields=['responsavel'])
+            return Response({
+                "message": "Importação marcada como sua.",
+                "responsavel": user.id,
+                "responsavel_nome": user.nome or user.email
+            }, status=status.HTTP_200_OK)
+
+        elif acao == 'desmarcar':
+            if importacao.responsavel and importacao.responsavel != user:
+                return Response(
+                    {"detail": "Apenas o responsável pode desmarcar."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            importacao.responsavel = None
+            importacao.save(update_fields=['responsavel'])
+            return Response({
+                "message": "Importação desmarcada.",
+                "responsavel": None
+            }, status=status.HTTP_200_OK)
+
+        return Response(
+            {"detail": "Ação inválida. Use 'marcar' ou 'desmarcar'."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
 class UltimaImportacaoMovimentacoesView(views.APIView):
     """
     Rota para buscar as movimentações da última importação da administradora do usuário.

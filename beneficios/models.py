@@ -43,6 +43,15 @@ class Importacao(models.Model):
         null=True,
         blank=True
     )
+    responsavel = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        verbose_name="Responsável",
+        null=True,
+        blank=True,
+        related_name='importacoes_responsavel',
+        help_text="Usuário que está processando esta importação"
+    )
     administradora = models.ForeignKey(
         'entidades.Administradora',
         on_delete=models.SET_NULL,
