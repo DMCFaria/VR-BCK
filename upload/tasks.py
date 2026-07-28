@@ -398,10 +398,22 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
                     logger.info(f"NFSe: Condomínio {cnpj} já possui NFSe, pulando reemissão")
                     continue
 
-                total_valor = MovimentacaoBeneficio.objects.filter(
-                    importacao=importacao,
-                    empresa_cnpj=condominio,
-                ).aggregate(total=models.Sum('valor_beneficio'))['total'] or 0
+                # PRIORIDADE 1: Buscar valor do boleto (Fedhub)
+                boleto_valor = Boleto.objects.filter(
+                    faturamento=faturamento,
+                    cnpj_cobrado=cnpj,
+                ).values_list('valor', flat=True).first()
+
+                if boleto_valor:
+                    total_valor = boleto_valor
+                    logger.info(f"NFSe: Valor do boleto para {cnpj}: R$ {total_valor}")
+                else:
+                    # FALLBACK: Somar de MovimentacaoBeneficio
+                    total_valor = MovimentacaoBeneficio.objects.filter(
+                        importacao=importacao,
+                        empresa_cnpj=condominio,
+                    ).aggregate(total=models.Sum('valor_beneficio'))['total'] or 0
+                    logger.info(f"NFSe: Valor calculado (fallback) para {cnpj}: R$ {total_valor}")
 
                 servico_discriminacao = (
                     f"Serviços de administração de benefícios - "
