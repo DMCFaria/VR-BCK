@@ -2,7 +2,12 @@ import os
 import unittest
 from decimal import Decimal
 
-from upload.EXCEL.reader2 import parse_fut_template
+from upload.EXCEL.reader2 import (
+    parse_fut_template,
+    COLUNAS_POSICAO,
+    COLUNAS_PRODUTO,
+    MAPEAMENTO_PRODUTO_TIPO,
+)
 
 
 class Reader2HomeOfficeTest(unittest.TestCase):
@@ -91,6 +96,167 @@ class Reader2HomeOfficeTest(unittest.TestCase):
             self.assertTrue(
                 any('Premiação' in err for err in erros_por_linha[8]),
                 f'Esperado erro de Premiação na linha 8: {erros_por_linha[8]}'
+            )
+
+
+class TestColunasPosicao(unittest.TestCase):
+    """Testes para o mapeamento posicional de colunas."""
+
+    def test_colunas_posicao_cobre_colunas_j_a_z(self):
+        """COLUNAS_POSICAO deve mapear colunas 10 (J) a 26 (Z)."""
+        for col_idx in range(10, 27):
+            self.assertIn(col_idx, COLUNAS_POSICAO,
+                          f'Coluna {col_idx} não está em COLUNAS_POSICAO')
+
+    def test_colunas_posicao_tipos_validos(self):
+        """Todos os tipos em COLUNAS_POSICAO devem ser válidos no Produto."""
+        tipos_validos = {display for _, display in [
+            ('ALIMENTACAO', 'Alimentação'),
+            ('AUTO', 'Auto'),
+            ('REFEICAO', 'Refeição'),
+            ('MULTI_HOME_OFFICE', 'Multi - Home Office'),
+            ('BOAS_FESTAS', 'Boas Festas'),
+            ('MULTI_ALIMENTACAO', 'Multi - Alimentação'),
+            ('MULTI_VR_VA', 'Multi - VR+VA'),
+            ('MULTI_REFEICAO', 'Multi - Refeição'),
+            ('MULTI_MOBILIDADE', 'Multi - Mobilidade'),
+        ]}
+        for col_idx, info in COLUNAS_POSICAO.items():
+            if info.get('rejeitado'):
+                continue
+            self.assertIn(info['tipo'], tipos_validos,
+                          f'Coluna {col_idx}: tipo "{info["tipo"]}" inválido')
+
+    def test_colunas_posicao_codigos_validos(self):
+        """Todos os códigos em COLUNAS_POSICAO devem existir no COLUNAS_PRODUTO."""
+        codigos_validos = set(COLUNAS_PRODUTO.values())
+        for col_idx, info in COLUNAS_POSICAO.items():
+            if info.get('rejeitado'):
+                continue
+            self.assertIn(info['codigo'], codigos_validos,
+                          f'Coluna {col_idx}: código "{info["codigo"]}" não encontrado em COLUNAS_PRODUTO')
+
+    def test_cultura_marcada_como_rejeitado(self):
+        """A coluna 13 (VR Cultura) deve estar marcada como rejeitada."""
+        self.assertTrue(COLUNAS_POSICAO[13].get('rejeitado'))
+        self.assertIsNone(COLUNAS_POSICAO[13]['codigo'])
+        self.assertIsNone(COLUNAS_POSICAO[13]['tipo'])
+
+
+class TestDeduplicacao(unittest.TestCase):
+    """Testes para a soma de benefícios duplicados (mesmo CNPJ + CPF + produto)."""
+
+    def test_mesmo_funcionario_mesmo_produto_soma_valores(self):
+        """
+        Se o mesmo CPF aparece em 2 linhas com o mesmo CNPJ e mesmo produto,
+        os valores devem ser somados em uma única movimentação.
+        """
+        import openpyxl
+        import shutil
+        import tempfile
+
+        src = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            'VR - ADM E CONDS.xlsm'
+        )
+        if not os.path.exists(src):
+            self.skipTest(f'Arquivo de exemplo não encontrado: {src}')
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_file = os.path.join(tmpdir, 'test_dedup.xlsm')
+            shutil.copy(src, test_file)
+
+            wb = openpyxl.load_workbook(test_file, data_only=False, keep_vba=True)
+            ws = wb['Beneficiario']
+
+            # Pegar um funcionário existente (linha 7) e duplicar com valor
+            cpf_original = ws.cell(7, 1).value
+            cnpj_original = ws.cell(7, 2).value
+
+            # Adicionar uma nova linha com mesmo CPF e CNPJ, mesmo produto (col 10 = VR Refeição)
+            nova_row = ws.max_row + 1
+            ws.cell(nova_row, 1).value = cpf_original
+            ws.cell(nova_row, 2).value = cnpj_original
+            ws.cell(nova_row, 4).value = ws.cell(7, 4).value  # matrícula
+            ws.cell(nova_row, 5).value = ws.cell(7, 5).value  # nome
+            ws.cell(nova_row, 7).value = ws.cell(7, 7).value  # data nascimento
+
+            # Colocar valor na coluna 10 (VR Refeição) tanto na linha original quanto na nova
+            ws.cell(7, 10).value = 100.0
+            ws.cell(nova_row, 10).value = 50.0
+
+            wb.save(test_file)
+
+            data = parse_fut_template(
+                test_file,
+                file_upload_id=1493,
+                valor_max_beneficio=Decimal('9999.99'),
+                administradora_cnpj='35315360000167',
+            )
+
+            # Encontrar o funcionário com o CPF duplicado
+            for c in data.get('condominios', []):
+                if c['cnpj'] != cnpj_original:
+                    continue
+                for f in c.get('funcionarios', []):
+                    if f['cpf'] != cpf_original:
+                        continue
+                    # Deve ter apenas 1 movimentação de VR Refeição (soma de 100 + 50)
+                    refeicao_movs = [
+                        m for m in f['movimentacoes']
+                        if m['produto'] == 'VR Refeição'
+                    ]
+                    self.assertEqual(len(refeicao_movs), 1,
+                                     f'Esperado 1 movimentação de VR Refeição, encontrado {len(refeicao_movs)}')
+                    self.assertEqual(refeicao_movs[0]['valor'], Decimal('150.00'),
+                                     f'Esperado valor R$ 150.00 (100+50), encontrado {refeicao_movs[0]["valor"]}')
+                    return
+
+            self.fail(f'Funcionário CPF {cpf_original} não encontrado nos dados processados')
+
+
+class TestColunasNaoMapeadas(unittest.TestCase):
+    """Testes para validação de colunas sem mapeamento."""
+
+    def test_coluna_com_valor_nao_mapeada_gera_erro(self):
+        """
+        Se há uma coluna fora do range 10-26 e sem header reconhecido,
+        mas com valor > 0, deve gerar erro.
+        """
+        import openpyxl
+        import shutil
+        import tempfile
+
+        src = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            'VR - ADM E CONDS.xlsm'
+        )
+        if not os.path.exists(src):
+            self.skipTest(f'Arquivo de exemplo não encontrado: {src}')
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_file = os.path.join(tmpdir, 'test_nao_mapeado.xlsm')
+            shutil.copy(src, test_file)
+
+            wb = openpyxl.load_workbook(test_file, data_only=False, keep_vba=True)
+            ws = wb['Beneficiario']
+
+            # Coluna 27 (fora do range 10-26) com valor > 0 e header não reconhecido
+            ws.cell(2, 27).value = 'Produto Fantasma'
+            ws.cell(7, 27).value = 999.0
+            wb.save(test_file)
+
+            data = parse_fut_template(
+                test_file,
+                file_upload_id=1494,
+                valor_max_beneficio=Decimal('9999.99'),
+                administradora_cnpj='35315360000167',
+            )
+
+            errors = data.get('errors', [])
+            self.assertTrue(
+                any('Coluna 27' in e and 'não está mapeada' in e for e in errors),
+                f'Esperado erro de coluna não mapeada na coluna 27. Erros: {errors}'
             )
 
 

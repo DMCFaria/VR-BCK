@@ -104,6 +104,30 @@ PRODUTOS_REJEITADOS = {
     'VR Multi Premiação': 'Produto "Multi Premiação" não é permitido. Use "VR Multi - Home Office" ou remova a coluna.',
 }
 
+# Mapeamento POSICIONAL de colunas (PRIORITÁRIO).
+# Coluna J=10 até Z=26, na ordem exata do template VR padrão.
+# Se a coluna estiver neste dict, o produto é determinado pela posição,
+# INDEPENDENTE do header da coluna.
+COLUNAS_POSICAO = {
+    10: {'nome': 'VR Refeição',               'codigo': '207', 'tipo': 'Refeição'},
+    11: {'nome': 'VR Alimentação',             'codigo': '27',  'tipo': 'Alimentação'},
+    12: {'nome': 'VR Auto',                    'codigo': '28',  'tipo': 'Auto'},
+    13: {'nome': 'VR Cultura',                 'codigo': None,  'tipo': None, 'rejeitado': True},
+    14: {'nome': 'VR Alimentação Cesta',       'codigo': '201', 'tipo': 'Boas Festas'},
+    15: {'nome': 'VR Boas Festas',             'codigo': '202', 'tipo': 'Boas Festas'},
+    16: {'nome': 'VR Auxílio Alimentação',     'codigo': '204', 'tipo': 'Alimentação'},
+    17: {'nome': 'VR Auxílio Refeição',        'codigo': '207', 'tipo': 'Refeição'},
+    18: {'nome': 'VR Multibenefícios',         'codigo': '207', 'tipo': 'Multi - VR+VA'},
+    19: {'nome': 'VR+VA',                      'codigo': '207', 'tipo': 'Multi - VR+VA'},
+    20: {'nome': 'VR Multi Refeição',          'codigo': '207', 'tipo': 'Multi - Refeição'},
+    21: {'nome': 'VR Multi Alimentação',       'codigo': '27',  'tipo': 'Multi - Alimentação'},
+    22: {'nome': 'VR Multi Refeição Auxílio',  'codigo': '207', 'tipo': 'Multi - Refeição'},
+    23: {'nome': 'VR Multi Alimentação Auxílio','codigo': '204', 'tipo': 'Multi - Alimentação'},
+    24: {'nome': 'VR Multi VR+VA',             'codigo': '207', 'tipo': 'Multi - VR+VA'},
+    25: {'nome': 'VR Multi Home office',       'codigo': '207', 'tipo': 'Multi - Home Office'},
+    26: {'nome': 'VR Multi Mobilidade',        'codigo': '28',  'tipo': 'Multi - Mobilidade'},
+}
+
 # Sheets 60/99/etc são para geração do TXT via VBA - não precisam ser lidas
 # Focus: Local de Entrega, Beneficiario, Sumario
 
@@ -136,6 +160,23 @@ def _normalizar_cnpj(val):
     if val is None:
         return ''
     return re.sub(r'\D', '', str(val)).zfill(14)[:14]
+
+
+def _remover_acentos(texto):
+    """Remove acentos e caracteres especiais, convertendo para ASCII."""
+    if not texto:
+        return texto
+    import unicodedata
+    nfkd = unicodedata.normalize('NFKD', texto)
+    return ''.join(c for c in nfkd if not unicodedata.combining(c))
+
+
+def _normalizar_header(val):
+    """Extrai e normaliza o texto do header para comparação (primeira linha, sem espaços extras)."""
+    if val is None:
+        return ''
+    h = _safe_str(val).strip().split('\n')[0].strip()
+    return h
 
 
 def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, administradora_cnpj=None):
@@ -266,26 +307,34 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
         'faixa_salarial': 8,
     }
 
-    # Encontrar colunas de produto
-    # Headers podem estar na linha 1, 2 ou 3 dependendo do template
-    # Headers podem ter newlines ou estarem colados com "Valor do crédito"
-    col_produtos = {}
+    # ============================
+    # 3.1. MAPEAMENTO DE COLUNAS DE PRODUTO
+    # ============================
+    # PRIORIDADE 1: Mapeamento posicional (COLUNAS_POSICAO, colunas J=10 a Z=26)
+    # PRIORIDADE 2: Reconhecimento por header (fallback para templates não padrão)
+    col_produtos = {}   # col_idx -> nome_produto (string)
+    col_rejeitados = {} # col_idx -> nome_produto rejeitado
+
     ben_rows = list(ws_ben.iter_rows(min_row=1, max_row=5, values_only=True))
 
     def _match_produto_header(val):
-        """Retorna o nome do produto se o valor for um header conhecido."""
+        """Fallback: retorna o nome do produto se o header for reconhecido."""
         if val is None:
             return None
-        h = _safe_str(val).strip().split('\n')[0].strip()
+        h = _normalizar_header(val)
         if not h:
             return None
+        # Match exato
         if h in COLUNAS_PRODUTO:
             return h
-        # Match parcial: o header deve conter o nome do produto como palavra/frase
-        # (evita que "VR Multi" casse com "VR Multi Mobilidade").
-        h_lower = h.lower()
+        # Match por normalização (acentos + case)
+        h_norm = _remover_acentos(h).lower()
         for nome in COLUNAS_PRODUTO:
-            if nome.lower() in h_lower:
+            if _remover_acentos(nome).lower() == h_norm:
+                return nome
+        # Match parcial (substring) - último recurso
+        for nome in COLUNAS_PRODUTO:
+            if _remover_acentos(nome).lower() in h_norm:
                 return nome
         return None
 
@@ -293,36 +342,42 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
         """Retorna o nome do produto se for um header de produto rejeitado."""
         if val is None:
             return None
-        h = _safe_str(val).strip().split('\n')[0].strip()
+        h = _normalizar_header(val)
         if not h:
             return None
         if h in PRODUTOS_REJEITADOS:
             return h
-        h_lower = h.lower()
+        h_norm = _remover_acentos(h).lower()
         for nome in PRODUTOS_REJEITADOS:
-            if nome.lower() in h_lower:
+            if _remover_acentos(nome).lower() in h_norm:
                 return nome
         return None
 
-    # Escolhe a linha com maior número de headers de produto reconhecidos.
+    # Detectar linha de header (necessária para fallback por header)
     best_row = None
     best_row_num = 2
     best_count = 0
     for try_idx, try_row in enumerate(ben_rows):
         if not try_row:
             continue
-        matches = [_match_produto_header(v) for v in try_row]
-        count = sum(1 for m in matches if m)
-        # Só considera se tiver pelo menos 2 produtos (evita falsos positivos)
+        count = 0
+        for col_idx, val in enumerate(try_row, start=1):
+            if col_idx in COLUNAS_POSICAO:
+                count += 1
+            elif _match_produto_header(val):
+                count += 1
         if count >= 2 and count > best_count:
             best_row = try_row
             best_row_num = try_idx + 1
             best_count = count
 
     if not best_row and ben_rows:
-        # Fallback: usa a primeira linha que tiver algum match
         for try_idx, try_row in enumerate(ben_rows):
-            if any(_match_produto_header(v) for v in try_row):
+            has_match = any(
+                col_idx in COLUNAS_POSICAO or _match_produto_header(val)
+                for col_idx, val in enumerate(try_row, start=1)
+            )
+            if has_match:
                 best_row = try_row
                 best_row_num = try_idx + 1
                 break
@@ -333,20 +388,61 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
     header_row = best_row
     header_row_num = best_row_num
 
-    col_rejeitados = {}
+    # Mapear colunas: POSIÇÃO (prioritário) > HEADER (fallback)
     if header_row:
         for col_idx, val in enumerate(header_row, start=1):
-            produto = _match_produto_header(val)
-            if produto:
-                col_produtos[col_idx] = produto
+            # PRIORIDADE 1: Mapeamento posicional
+            if col_idx in COLUNAS_POSICAO:
+                info = COLUNAS_POSICAO[col_idx]
+                if info.get('rejeitado'):
+                    col_rejeitados[col_idx] = info['nome']
+                else:
+                    col_produtos[col_idx] = info['nome']
             else:
-                rejeitado = _match_produto_rejeitado(val)
-                if rejeitado:
-                    col_rejeitados[col_idx] = rejeitado
+                # PRIORIDADE 2: Fallback por header
+                produto = _match_produto_header(val)
+                if produto:
+                    col_produtos[col_idx] = produto
+                else:
+                    rejeitado = _match_produto_rejeitado(val)
+                    if rejeitado:
+                        col_rejeitados[col_idx] = rejeitado
 
     data_start_row = header_row_num + 1
 
+    # ============================
+    # 3.2. VALIDAÇÃO PRÉVIA: COLUNAS SEM MAPEAMENTO
+    # ============================
+    # Verificar se há colunas entre 10-26 que não foram mapeadas
+    # (nem por posição, nem por header) e que possuem valores > 0 nos dados.
+    colunas_nao_mapeadas = set()
     data_rows = list(ws_ben.iter_rows(min_row=data_start_row, values_only=True))
+    for row in data_rows:
+        if not row:
+            continue
+        for col_idx in range(10, min(27, len(row) + 1)):
+            if col_idx in col_produtos or col_idx in col_rejeitados:
+                continue
+            raw_val = row[col_idx - 1] if len(row) > col_idx - 1 else None
+            if raw_val is None:
+                continue
+            try:
+                valor = Decimal(str(raw_val).replace(',', '.'))
+                if valor > 0:
+                    colunas_nao_mapeadas.add(col_idx)
+            except:
+                pass
+
+    if colunas_nao_mapeadas:
+        for col_idx in sorted(colunas_nao_mapeadas):
+            header_text = _normalizar_header(
+                header_row[col_idx - 1] if header_row and len(header_row) > col_idx - 1 else None
+            )
+            result['errors'].append(
+                f"Coluna {col_idx} (\"{header_text or 'sem header'}\") contém valores "
+                f"mas não está mapeada nem como produto nem como rejeitado. "
+                f"Verifique o template ou adicione o mapeamento."
+            )
     for row_num, row in enumerate(data_rows, start=data_start_row):
         if not row:
             continue
@@ -479,12 +575,30 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
                 if valor == 0:
                     continue
 
-                func["movimentacoes"].append({
-                    "produto": nome_produto,
-                    "tipo": MAPEAMENTO_PRODUTO_TIPO.get(nome_produto, nome_produto),
-                    "codigo_produto": COLUNAS_PRODUTO.get(nome_produto, ''),
-                    "valor": valor,
-                })
+                # Obter código/tipo: prioriza COLUNAS_POSICAO, fallback para dicts
+                if col_idx in COLUNAS_POSICAO:
+                    info = COLUNAS_POSICAO[col_idx]
+                    codigo_produto = info['codigo']
+                    tipo_produto = info['tipo']
+                else:
+                    codigo_produto = COLUNAS_PRODUTO.get(nome_produto, '')
+                    tipo_produto = MAPEAMENTO_PRODUTO_TIPO.get(nome_produto, nome_produto)
+
+                # DEDUPLICAÇÃO: se já existe movimentação para este mesmo produto,
+                # somar o valor ao invés de criar uma nova entrada.
+                existing_mov = next(
+                    (m for m in func["movimentacoes"] if m["produto"] == nome_produto),
+                    None,
+                )
+                if existing_mov:
+                    existing_mov["valor"] += valor
+                else:
+                    func["movimentacoes"].append({
+                        "produto": nome_produto,
+                        "tipo": tipo_produto,
+                        "codigo_produto": codigo_produto,
+                        "valor": valor,
+                    })
                 func["valor_bene"] += valor
                 locais[codigo_local]["valor_condo"] += valor
                 result['summary']['valor_total_beneficios'] += valor

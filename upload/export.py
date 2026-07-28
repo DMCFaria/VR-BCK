@@ -66,12 +66,13 @@ def calcular_taxa(valor_beneficio, quantidade_dias, vinculo=None, produto=None):
     """
     Calcula a taxa de faturamento para um funcionário.
 
-    Regras:
-    - Se não houver vínculo, retorna 0
-    - Busca TaxaConfig para o produto específico
-    - Se não encontrar para o produto, busca configuração pelo tipo do produto
-    - Se não encontrar por tipo, busca configuração genérica (produto=NULL, tipo=NULL)
-    - Se não encontrar nenhuma configuração, retorna 0
+    Regras (em ordem de prioridade):
+    1. Se não houver vínculo, retorna 0
+    2. Busca TaxaConfig para o produto específico
+    3. Se não encontrar, busca configuração pelo tipo do produto
+    4. Se não encontrar por tipo, busca configuração genérica (produto=NULL, tipo=NULL)
+    5. Se não encontrar nenhuma TaxaConfig, usa a taxa padrão da administradora
+    6. Se não encontrar nenhuma configuração, retorna 0
     - Tipo PERC: valor_beneficio * (taxa_valor / 100)
     - Tipo FIXO: taxa_valor * quantidade_dias
     """
@@ -102,15 +103,16 @@ def calcular_taxa(valor_beneficio, quantidade_dias, vinculo=None, produto=None):
             ativo=True
         ).first()
 
-    # Se não encontrar nenhuma configuração, retorna 0
-    if not taxa_config:
-        return Decimal('0.00')
+    # Se encontrou TaxaConfig, retorna o percentual/valor direto
+    if taxa_config:
+        return taxa_config.taxa_valor
 
-    # Calcula a taxa
-    if taxa_config.taxa_tipo == 'PERC':
-        return round(valor_beneficio * (taxa_config.taxa_valor / Decimal('100')), 2)
-    else:  # FIXO
-        return round(taxa_config.taxa_valor * quantidade_dias, 2)
+    # Fallback: usa a taxa padrão da administradora
+    administradora = vinculo.administradora
+    if administradora and administradora.taxa_padrao_valor > 0:
+        return administradora.taxa_padrao_valor
+
+    return Decimal('0.00')
 
 
 def gerar_txt_compra(administradora_cnpj, data_competencia=None, movimentacao_ids=None):
@@ -340,6 +342,16 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
     Gera dados para planilha de faturamento.
     Se importacao_id for passado, filtra apenas pelas movimentações dessa importação.
     """
+    # Buscar a administradora da importação (se houver) para filtrar o vínculo correto
+    admin_importacao = None
+    if importacao_id:
+        from beneficios.models import Importacao
+        try:
+            imp = Importacao.objects.select_related('administradora').get(id=importacao_id)
+            admin_importacao = imp.administradora
+        except Importacao.DoesNotExist:
+            pass
+
     query = MovimentacaoBeneficio.objects.select_related(
         'empresa_cnpj', 'funcionario_cpf', 'produto_codigo'
     ).prefetch_related(
@@ -380,7 +392,11 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
         produto_display = prod.get_tipo_display() if prod.tipo else (prod.nome or prod.codigo_produto)
 
         # Busca o vínculo entre o condomínio e a administradora
-        vinculo = cond.vinculocondominio_set.first()
+        # Prioriza o vínculo da mesma administradora da importação
+        if admin_importacao:
+            vinculo = cond.vinculocondominio_set.filter(administradora=admin_importacao).first()
+        else:
+            vinculo = cond.vinculocondominio_set.first()
         administradora = vinculo.administradora if vinculo else None
 
         # Calcula a taxa

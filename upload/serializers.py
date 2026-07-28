@@ -485,6 +485,30 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         # Mapeamento de tipo (string) para o valor interno do choices do Produto.
         TIPO_PARA_VALUE = {v: k for k, v in Produto.TIPO_CHOICES}
 
+        # Códigos canônicos do template VR padrão.
+        CODIGOS_CANONICOS = {'27', '28', '201', '202', '204', '207'}
+
+        # Mapeamento tipo antigo → código canônico (para códigos não canônicos).
+        MAPEAMENTO_TIPO_PARA_CODIGO = {
+            'ALIMENTACAO':        '27',
+            'AUTO':               '28',
+            'REFEICAO':           '207',
+            'MULTI_HOME_OFFICE':  '207',
+            'BOAS_FESTAS':        '202',
+            'MULTI_ALIMENTACAO':  '27',
+            'MULTI_VR_VA':        '207',
+            'MULTI_REFEICAO':     '207',
+            'MULTI_MOBILIDADE':   '28',
+        }
+        CODIGO_CANONICO_PADRAO = '207'
+
+        def _mapear_codigo_canonico(codigo, tipo_str):
+            """Mapeia código não canônico para o canônico baseado no tipo."""
+            if codigo in CODIGOS_CANONICOS:
+                return codigo
+            tipo_upper = (tipo_str or '').strip().upper()
+            return MAPEAMENTO_TIPO_PARA_CODIGO.get(tipo_upper, CODIGO_CANONICO_PADRAO)
+
         prod_map = {}
         for key, nome, tipo in produtos_raw:
             if key not in prod_map:
@@ -555,10 +579,13 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                     
                     if valor_beneficio == 0:
                         continue
+
+                    # Mapear código não canônico para o canônico
+                    tipo_str = mov_data.get('tipo') or mov_data.get('produto', '')
+                    codigo_produto = _mapear_codigo_canonico(codigo_produto, tipo_str)
                     
                     prod_obj = existing_prods.get(codigo_produto)
                     if not prod_obj and codigo_produto:
-                        tipo_str = mov_data.get('tipo') or mov_data.get('produto', '')
                         tipo_value = TIPO_PARA_VALUE.get(tipo_str)
                         prod_obj, created = Produto.objects.get_or_create(
                             codigo_produto=codigo_produto,
