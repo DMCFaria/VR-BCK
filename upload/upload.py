@@ -91,7 +91,7 @@ class UploadView(views.APIView):
                 return self._handle_error(upload_instance, parsed_data["error"])
 
             # 4. Processamento de Sumários (Reutilizando sua lógica original)
-            beneficiary_summary = get_beneficiary_summary(parsed_data)
+            beneficiary_summary = get_beneficiary_summary(parsed_data, administradora_cnpj=administradora_cnpj)
             
             # logger.info(f"Beneficiary summary: {beneficiary_summary}")
              

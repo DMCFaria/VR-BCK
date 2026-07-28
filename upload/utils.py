@@ -82,10 +82,13 @@ def get_movimentacoes_detalhada(parsed_data):
     
     return movimentacoes
 
-def get_beneficiary_summary(parsed_data):
+def get_beneficiary_summary(parsed_data, administradora_cnpj=None):
+    from entidades.models import VinculoCondominio, TaxaConfig, Administradora
+
     total_por_cpf = defaultdict(decimal.Decimal)
     nomes_por_cpf = {}
     condominios_por_cpf = {}
+    cnpjs_por_cpf = {}
 
     condominios = parsed_data.get('condominios', [])
     for condo in condominios:
@@ -103,15 +106,45 @@ def get_beneficiary_summary(parsed_data):
                 total_por_cpf[cpf] += valor_bene
                 nomes_por_cpf[cpf] = nome
                 condominios_por_cpf[cpf] = condo.get('nome', '')
+                cnpjs_por_cpf[cpf] = condo.get('cnpj', '')
+
+    taxas_por_cnpj = {}
+    if administradora_cnpj:
+        admin = Administradora.objects.filter(cnpj=administradora_cnpj).first()
+        if admin:
+            cnpjs_unicos = set(cnpjs_por_cpf.values())
+            for cnpj in cnpjs_unicos:
+                if not cnpj:
+                    continue
+                vinculo = VinculoCondominio.objects.filter(
+                    condominio__cnpj=cnpj,
+                    administradora=admin
+                ).first()
+                taxa = decimal.Decimal('0.00')
+                if vinculo:
+                    taxa_config = TaxaConfig.objects.filter(
+                        vinculo=vinculo, ativo=True,
+                        produto__isnull=True, tipo__isnull=True
+                    ).first()
+                    if taxa_config:
+                        taxa = taxa_config.taxa_valor
+                    elif admin.taxa_padrao_valor > 0:
+                        taxa = admin.taxa_padrao_valor
+                elif admin.taxa_padrao_valor > 0:
+                    taxa = admin.taxa_padrao_valor
+                taxas_por_cnpj[cnpj] = float(taxa)
 
     summary_list = []
     for cpf, total in total_por_cpf.items():
+        cnpj = cnpjs_por_cpf.get(cpf, '')
         summary_list.append({
             "nome_funcionario": nomes_por_cpf.get(cpf, "Nome não encontrado"),
             "cpf": cpf,
             "valor_total": str(total),
             "condominio": condominios_por_cpf.get(cpf),
-            "cep": condo.get("cep")
+            "cnpj": cnpj,
+            "taxa": taxas_por_cnpj.get(cnpj, 0),
+            "cep": condominios[-1].get("cep") if condominios else None,
         })
     return summary_list
 

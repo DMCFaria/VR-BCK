@@ -353,31 +353,26 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
                 return nome
         return None
 
-    # Detectar linha de header (necessária para fallback por header)
+    # Detectar linha de header (usa apenas reconhecimento por header, NÃO posicional)
+    # O mapeamento posicional é usado DEPOIS para atribuir produtos às colunas.
     best_row = None
     best_row_num = 2
     best_count = 0
     for try_idx, try_row in enumerate(ben_rows):
         if not try_row:
             continue
-        count = 0
-        for col_idx, val in enumerate(try_row, start=1):
-            if col_idx in COLUNAS_POSICAO:
-                count += 1
-            elif _match_produto_header(val):
-                count += 1
+        matches = [_match_produto_header(v) for v in try_row]
+        count = sum(1 for m in matches if m)
+        # Só considera se tiver pelo menos 2 produtos (evita falsos positivos)
         if count >= 2 and count > best_count:
             best_row = try_row
             best_row_num = try_idx + 1
             best_count = count
 
     if not best_row and ben_rows:
+        # Fallback: usa a primeira linha que tiver algum match
         for try_idx, try_row in enumerate(ben_rows):
-            has_match = any(
-                col_idx in COLUNAS_POSICAO or _match_produto_header(val)
-                for col_idx, val in enumerate(try_row, start=1)
-            )
-            if has_match:
+            if any(_match_produto_header(v) for v in try_row):
                 best_row = try_row
                 best_row_num = try_idx + 1
                 break
@@ -409,6 +404,24 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
                         col_rejeitados[col_idx] = rejeitado
 
     data_start_row = header_row_num + 1
+
+    # Se a primeira linha de dados não tem CPF/nome/CNPJ, pular para a próxima
+    # (_templates com linha de descrição entre header e dados)
+    probe_rows = list(ws_ben.iter_rows(min_row=data_start_row, max_row=data_start_row + 2, values_only=True))
+    for probe_idx, probe_row in enumerate(probe_rows):
+        if not probe_row:
+            continue
+        cpf_probe = _safe_str(probe_row[0] if len(probe_row) > 0 else '')
+        nome_probe = _safe_str(probe_row[4] if len(probe_row) > 4 else '')
+        cnpj_probe = _safe_str(probe_row[1] if len(probe_row) > 1 else '')
+        cpf_digits = re.sub(r'\D', '', cpf_probe)
+        if cpf_digits and len(cpf_digits) == 11 and nome_probe and cnpj_probe:
+            data_start_row = header_row_num + 1 + probe_idx
+            break
+    else:
+        # Se nenhuma linha de dados válida foi encontrada nas 3 tentativas,
+        # manter data_start_row original (será tratado como erro abaixo)
+        pass
 
     # ============================
     # 3.2. VALIDAÇÃO PRÉVIA: COLUNAS SEM MAPEAMENTO
