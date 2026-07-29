@@ -503,6 +503,7 @@ class GetImportacaoSelectDataView(views.APIView):
                 "baixa": fh.get("baixa", b.baixa),
                 "dt_baixa": fh.get("dt_baixa", b.dt_baixa.strftime('%Y-%m-%d') if b.dt_baixa else None),
                 "status": fh.get("status", b.status),
+                "fatura": b.fatura or '',
             })
 
         movs = MovimentacaoBeneficio.objects.filter(importacao=importacao).select_related(
