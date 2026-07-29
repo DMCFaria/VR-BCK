@@ -105,11 +105,23 @@ class ImportacaoDetailSerializer(serializers.ModelSerializer):
 class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
     nome_usuario = serializers.CharField(source='usuario.email', read_only=True)
     responsavel_nome = serializers.SerializerMethodField(read_only=True)
+    numero_fatura = serializers.SerializerMethodField(read_only=True)
 
     def get_responsavel_nome(self, obj):
         if obj.responsavel:
             return obj.responsavel.nome or obj.responsavel.email
         return None
+
+    def get_numero_fatura(self, obj):
+        try:
+            boleto = obj.faturamentos.values_list('boletos_rel__fatura', flat=True).exclude(
+                boletos_rel__fatura__isnull=True
+            ).exclude(
+                boletos_rel__fatura=''
+            ).first()
+            return boleto or ''
+        except Exception:
+            return ''
 
     valor_total = serializers.DecimalField(max_digits=15, decimal_places=2, required=False)
     total_funcionarios = serializers.IntegerField(required=False)
@@ -134,7 +146,8 @@ class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
             'total_funcionarios',
             'modelo_importacao',
             'arquivo_s3',
-            'arquivo_s3_editado'
+            'arquivo_s3_editado',
+            'numero_fatura',
         ]
 
 class MovimentacaoReuseSerializer(serializers.Serializer):
