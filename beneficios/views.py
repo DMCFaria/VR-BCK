@@ -546,6 +546,9 @@ class ImportacaoListView(views.APIView):
     authentication_classes = [JWTAuthentication]
 
     def get(self, request):
+        from datetime import timedelta
+        from django.utils import timezone
+
         user = request.user
         administradora = getattr(user, 'administradora_ativa', None)
 
@@ -555,12 +558,20 @@ class ImportacaoListView(views.APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        # Filtro: últimos 30 dias
+        data_limite = timezone.now() - timedelta(days=30)
+
         if user.tipo == "dev" or user.tipo == "fat":
-            importacoes = Importacao.objects.select_related(
+            importacoes = Importacao.objects.filter(
+                data_importacao__gte=data_limite
+            ).select_related(
                 'file_upload', 'usuario', 'administradora'
             ).order_by('-data_importacao')
         else:
-            queryset = Importacao.objects.filter(administradora=administradora).select_related(
+            queryset = Importacao.objects.filter(
+                administradora=administradora,
+                data_importacao__gte=data_limite,
+            ).select_related(
                 'file_upload', 'usuario', 'administradora'
             )
             if user.tipo == "adm":
@@ -574,7 +585,7 @@ class ImportacaoListView(views.APIView):
         except (TypeError, ValueError):
             page = 1
         try:
-            limit = min(max(int(request.query_params.get('limit', 20)), 1), 100)
+            limit = max(int(request.query_params.get('limit', 20)), 1)
         except (TypeError, ValueError):
             limit = 20
 
@@ -1592,10 +1603,7 @@ class ConsultarBoletosView(views.APIView):
             page = 1
 
         try:
-            limit = min(
-                max(int(request.query_params.get('limit', 50)), 1),
-                100,
-            )
+            limit = max(int(request.query_params.get('limit', 50)), 1)
         except (TypeError, ValueError):
             limit = 50
 
