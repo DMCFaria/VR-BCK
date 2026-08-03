@@ -62,6 +62,13 @@ from entidades.models import Condominio, Funcionario, Administradora, VinculoCon
 from beneficios.models import MovimentacaoBeneficio, Produto, Importacao, Boleto
 
 
+def _aplicar_calculo_taxa(taxa_tipo, taxa_valor, valor_beneficio, quantidade_dias):
+    """Aplica o cálculo da taxa conforme o tipo (PERC ou FIXO)."""
+    if taxa_tipo == 'FIXO':
+        return Decimal(str(taxa_valor)) * Decimal(str(quantidade_dias))
+    return valor_beneficio * (Decimal(str(taxa_valor)) / Decimal('100'))
+
+
 def calcular_taxa(valor_beneficio, quantidade_dias, vinculo=None, produto=None):
     """
     Calcula a taxa de faturamento para um funcionário.
@@ -103,14 +110,14 @@ def calcular_taxa(valor_beneficio, quantidade_dias, vinculo=None, produto=None):
             ativo=True
         ).first()
 
-    # Se encontrou TaxaConfig, retorna o percentual/valor direto
+    # Se encontrou TaxaConfig, aplica o cálculo conforme o tipo
     if taxa_config:
-        return taxa_config.taxa_valor
+        return _aplicar_calculo_taxa(taxa_config.taxa_tipo, taxa_config.taxa_valor, valor_beneficio, quantidade_dias)
 
     # Fallback: usa a taxa padrão da administradora
     administradora = vinculo.administradora
     if administradora and administradora.taxa_padrao_valor > 0:
-        return administradora.taxa_padrao_valor
+        return _aplicar_calculo_taxa(administradora.taxa_padrao_tipo, administradora.taxa_padrao_valor, valor_beneficio, quantidade_dias)
 
     return Decimal('0.00')
 

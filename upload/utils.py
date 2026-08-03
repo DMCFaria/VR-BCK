@@ -122,12 +122,16 @@ def get_beneficiary_summary(parsed_data, administradora_cnpj=None):
                 ).first()
                 taxa = decimal.Decimal('0.00')
                 if vinculo:
+                    # Busca configuração genérica (sem produto, sem tipo)
                     taxa_config = TaxaConfig.objects.filter(
                         vinculo=vinculo, ativo=True,
                         produto__isnull=True, tipo__isnull=True
                     ).first()
                     if taxa_config:
-                        taxa = taxa_config.taxa_valor
+                        if taxa_config.taxa_tipo == 'FIXO':
+                            taxa = taxa_config.taxa_valor
+                        else:
+                            taxa = taxa_config.taxa_valor
                     elif admin.taxa_padrao_valor > 0:
                         taxa = admin.taxa_padrao_valor
                 elif admin.taxa_padrao_valor > 0:
@@ -137,13 +141,18 @@ def get_beneficiary_summary(parsed_data, administradora_cnpj=None):
     summary_list = []
     for cpf, total in total_por_cpf.items():
         cnpj = cnpjs_por_cpf.get(cpf, '')
+        taxa_raw = taxas_por_cnpj.get(cnpj, 0)
+        taxa_calculada = decimal.Decimal(str(taxa_raw))
+        if taxa_calculada > 0:
+            total_beneficio = total_por_cpf.get(cpf, decimal.Decimal('0'))
+            taxa_calculada = total_beneficio * (taxa_calculada / decimal.Decimal('100'))
         summary_list.append({
             "nome_funcionario": nomes_por_cpf.get(cpf, "Nome não encontrado"),
             "cpf": cpf,
             "valor_total": str(total),
             "condominio": condominios_por_cpf.get(cpf),
             "cnpj": cnpj,
-            "taxa": taxas_por_cnpj.get(cnpj, 0),
+            "taxa": float(taxa_calculada),
             "cep": condominios[-1].get("cep") if condominios else None,
         })
     return summary_list
