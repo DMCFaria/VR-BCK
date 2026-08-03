@@ -13,7 +13,7 @@ from django.conf import settings
 # Aqui você importará os parsers conforme sua estrutura de pastas
 from decimal import Decimal
 from .RB.parsers import parse_rb_layout
-from .EXCEL.reader2 import parse_fut_template
+from .EXCEL.reader2 import parse_fut_template, validar_dimensoes_planilha
 from .AHREAS.parsers import parse_ahreas_layout
 from .layout_detector import detect_txt_layout
 from entidades.models import Administradora
@@ -75,6 +75,9 @@ class UploadView(views.APIView):
                 logger.info(f"Parsed data: {parsed_data}")
             elif extension in ['.xlsx', '.xlsm']:
                 import_mode = None
+                validacao = validar_dimensoes_planilha(file_path)
+                if not validacao['ok']:
+                    return self._handle_error(upload_instance, validacao['erro'])
                 parsed_data = parse_fut_template(
                     file_path,
                     upload_instance.id,

@@ -1,8 +1,11 @@
 import os
 import re
+import logging
 from decimal import Decimal, InvalidOperation
 from datetime import datetime
 import openpyxl
+
+logger = logging.getLogger(__name__)
 
 
 CODIGO_PRODUTO_PADRAO = '207'
@@ -177,6 +180,78 @@ def _normalizar_header(val):
         return ''
     h = _safe_str(val).strip().split('\n')[0].strip()
     return h
+
+
+def validar_dimensoes_planilha(file_path, max_abas=50, max_linhas_beneficiario=10000, max_colunas=100):
+    """
+    Valida dimensões da planilha em modo read_only (baixo consumo de memória)
+    antes de processar. Evita SIGKILL por excesso de RAM.
+
+    Retorna dict com 'ok' (bool) e 'erro' (str, se aplicável).
+    """
+    try:
+        wb = openpyxl.load_workbook(file_path, read_only=True)
+    except Exception as e:
+        return {"ok": False, "erro": f"Não foi possível abrir a planilha: {str(e)}"}
+
+    try:
+        num_abas = len(wb.sheetnames)
+        if num_abas > max_abas:
+            return {
+                "ok": False,
+                "erro": (
+                    f"Planilha contém {num_abas} abas. "
+                    f"Limite máximo: {max_abas}. "
+                    f"Remova abas desnecessárias (só são necessárias: Sumario, Local de Entrega, Beneficiario)."
+                ),
+            }
+
+        nome_beneficiario = None
+        for nome in wb.sheetnames:
+            if nome.lower().replace('í', 'i').replace('é', 'e') in ('beneficiario', 'beneficiários'):
+                nome_beneficiario = nome
+                break
+
+        if nome_beneficiario:
+            ws = wb[nome_beneficiario]
+            ultima_linha_com_dados = 0
+            ultima_coluna = 0
+            for row_idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
+                has_data = any(v is not None and str(v).strip() != '' for v in row)
+                if has_data:
+                    ultima_linha_com_dados = row_idx
+                    if row_idx > max_linhas_beneficiario:
+                        return {
+                            "ok": False,
+                            "erro": (
+                                f"Aba '{nome_beneficiario}' tem mais de {max_linhas_beneficiario} linhas "
+                                f"com dados. Reduza a planilha ou entre em contato com o suporte."
+                            ),
+                        }
+                    for col_idx, val in enumerate(row, start=1):
+                        if val is not None and str(val).strip() != '':
+                            if col_idx > max_colunas:
+                                return {
+                                    "ok": False,
+                                    "erro": (
+                                        f"Aba '{nome_beneficiario}' contém dados na coluna {col_idx} "
+                                        f"(limite: {max_colunas}). Verifique se há colunas formatadas "
+                                        f"além do necessário ou entre em contato com o suporte."
+                                    ),
+                                }
+                            ultima_coluna = col_idx
+
+            logger.info(
+                f"[VALIDACAO] Planilha OK: {num_abas} abas, "
+                f"'{nome_beneficiario}'={ultima_linha_com_dados} linhas x {ultima_coluna} colunas"
+            )
+        else:
+            logger.warning("[VALIDACAO] Aba 'Beneficiario' não encontrada, pulando validação de dimensões")
+
+        return {"ok": True}
+
+    finally:
+        wb.close()
 
 
 def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, administradora_cnpj=None):
