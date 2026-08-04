@@ -370,6 +370,7 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
             arquivos_data,
             faturamento.id,
             FaturamentoArquivo,
+            fatura_num,
         )
 
         atualizar_progresso(faturamento.id, 90)
@@ -603,6 +604,7 @@ def _upload_arquivos_originais(
     arquivos_data,
     faturamento_id,
     arquivo_model,
+    fatura_num='',
 ):
     for tipo, dados in arquivos_data.items():
         if not dados:
@@ -631,6 +633,7 @@ def _upload_arquivos_originais(
                 defaults={
                     'faturamento_id': faturamento_id,
                     'tipo': tipo,
+                    'fatura_num': fatura_num,
                     'nome_arquivo': nome_original,
                     'url': f"https://{bucket_name}.s3.amazonaws.com/{s3_key}",
                 },

@@ -149,7 +149,7 @@ class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
                         'nome_arquivo': arquivo.nome_arquivo,
                         'url': arquivo.url,
                         'fatura_id': fat.id,
-                        'numero_fatura': fatura_num,
+                        'numero_fatura': arquivo.fatura_num or fatura_num,
                         'criado_em': arquivo.criado_em,
                     }
                     for arquivo in arquivos

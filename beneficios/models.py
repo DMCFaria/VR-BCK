@@ -221,6 +221,7 @@ class FaturamentoArquivo(models.Model):
         verbose_name="Faturamento",
     )
     tipo = models.CharField(max_length=30, choices=TIPO_CHOICES)
+    fatura_num = models.CharField(max_length=100, blank=True, default='', db_index=True)
     nome_arquivo = models.CharField(max_length=255)
     s3_key = models.CharField(max_length=1000, unique=True)
     url = models.URLField(max_length=1000)
