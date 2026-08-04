@@ -496,6 +496,12 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
         except Exception:
             logger.exception("Erro ao atualizar status da importação para COMPLETED")
 
+        try:
+            _disparar_email_boleto_cliente.delay(importacao_id)
+            logger.info(f"[BOLETO_EMAIL] Task de envio de boleto agendada para importacao_id={importacao_id}")
+        except Exception:
+            logger.warning(f"[BOLETO_EMAIL] Falha ao agendar task de envio de boleto: {e}")
+
         logger.info(f"Faturamento {faturamento.id} concluído com {total_condominios} condomínios")
        
         return {
@@ -640,3 +646,107 @@ def _upload_arquivos_originais(
             )
 
             logger.debug(f"Upload arquivo original {tipo}: {nome_arquivo}")
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def _disparar_email_boleto_cliente(self, importacao_id):
+    """
+    Após processar_faturamento, envia e-mail com boletos em anexo para o cliente.
+    """
+    import io
+    import base64
+    from beneficios.models import Faturamento, FaturamentoArquivo, Importacao
+    from django.contrib.auth import get_user_model
+    from core.fedhub.services.fedhub_service import FedhubService
+
+    User = get_user_model()
+    bucket_name = getattr(settings, 'BUCKET_S3', 'fedcorp-prod')
+
+    try:
+        importacao = Importacao.objects.get(id=importacao_id)
+        faturamento = Faturamento.objects.get(id=importacao_id)
+
+        if not importacao.usuario or not importacao.usuario.email:
+            logger.warning(f"[BOLETO_EMAIL] Importacao {importacao_id} não tem usuario ou email. Pulando envio.")
+            return {"status": "skipped", "reason": "no_email"}
+
+        email_destino = importacao.usuario.email
+        logger.info(f"[BOLETO_EMAIL] Enviando boletos para: {email_destino} (importacao_id={importacao_id})")
+
+        boletos = list(faturamento.arquivos_originais.filter(tipo='boleto'))
+        if not boletos:
+            logger.warning(f"[BOLETO_EMAIL] Nenhum boleto encontrado para importacao_id={importacao_id}")
+            return {"status": "skipped", "reason": "no_boletos"}
+
+        s3_client = boto3.client(
+            's3',
+            aws_access_key_id=getattr(settings, 'ACCESS_KEY_S3', ''),
+            aws_secret_access_key=getattr(settings, 'SECRET_KEY_S3', ''),
+            region_name='us-east-2'
+        )
+
+        attachments = []
+        for arquivo in boletos:
+            try:
+                from urllib.parse import urlparse, unquote
+                parsed_url = urlparse(arquivo.s3_key)
+                s3_key = unquote(parsed_url.path.lstrip('/'))
+                bucket = parsed_url.netloc.split('.')[0] or bucket_name
+
+                pdf_buffer = io.BytesIO()
+                s3_client.download_fileobj(bucket, s3_key, pdf_buffer)
+                pdf_buffer.seek(0)
+                pdf_base64 = base64.b64encode(pdf_buffer.read()).decode('utf-8')
+
+                attachments.append({
+                    'filename': arquivo.nome_arquivo or f'boleto_{arquivo.id}.pdf',
+                    'content': pdf_base64
+                })
+                logger.info(f"[BOLETO_EMAIL] Anexo adicionado: {arquivo.nome_arquivo}")
+            except Exception as e:
+                logger.warning(f"[BOLETO_EMAIL] Erro ao baixar boleto {arquivo.s3_key}: {e}")
+                continue
+
+        if not attachments:
+            logger.warning(f"[BOLETO_EMAIL] Nenhum anexo disponível para importacao_id={importacao_id}")
+            return {"status": "skipped", "reason": "no_attachments"}
+
+        competencia_str = ''
+        if faturamento.competencia:
+            competencia_str = faturamento.competencia.strftime('%m/%Y')
+
+        context = {
+            'cliente_nome': importacao.usuario.nome or importacao.usuario.email.split('@')[0],
+            'competencia': competencia_str,
+            'vencimento': importacao.data_vencimento.strftime('%d/%m/%Y') if importacao.data_vencimento else None,
+            'valor_total': f"R$ {float(importacao.valor_total or 0):,.2f}".replace(',', 'v').replace('.', ',').replace('v', '.'),
+            'boletos': [{'nome': a.nome_arquivo, 'fatura': a.fatura_num} for a in boletos],
+            'prazo_pagamento': 'O pagamento deverá ser realizado até a data de vencimento informada no boleto.'
+        }
+
+        fedhub_service = FedhubService()
+        enviado = fedhub_service.enviar_email_boleto(
+            email=email_destino,
+            context=context,
+            attachments=attachments
+        )
+
+        if enviado:
+            importacao.status = 'BOLETO_VR_ENVIADO'
+            importacao.save(update_fields=['status'])
+            logger.info(f"[BOLETO_EMAIL] E-mail enviado e status atualizado para importacao_id={importacao_id}")
+            return {"status": "sent", "to": email_destino, "attachments": len(attachments)}
+        else:
+            logger.error(f"[BOLETO_EMAIL] Falha ao enviar e-mail para importacao_id={importacao_id}")
+            return {"status": "failed"}
+
+    except Importacao.DoesNotExist:
+        logger.error(f"[BOLETO_EMAIL] Importacao {importacao_id} não encontrada")
+        return {"status": "error", "reason": "importacao_not_found"}
+    except Faturamento.DoesNotExist:
+        logger.error(f"[BOLETO_EMAIL] Faturamento {importacao_id} não encontrado")
+        return {"status": "error", "reason": "faturamento_not_found"}
+    except Exception as e:
+        logger.exception(f"[BOLETO_EMAIL] Erro ao enviar boleto: {e}")
+        raise self.retry(exc=e)
+
