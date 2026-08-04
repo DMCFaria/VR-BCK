@@ -2,7 +2,7 @@ import io
 import re
 import unicodedata
 from datetime import date, timedelta, datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 import pandas as pd
 
@@ -120,6 +120,38 @@ def calcular_taxa(valor_beneficio, quantidade_dias, vinculo=None, produto=None):
         return _aplicar_calculo_taxa(administradora.taxa_padrao_tipo, administradora.taxa_padrao_valor, valor_beneficio, quantidade_dias)
 
     return Decimal('0.00')
+
+
+def get_taxa_cadastrada(vinculo=None, produto=None):
+    """
+    Retorna a taxa cadastrada na administradora (taxa_valor e taxa_tipo).
+    Segue a mesma prioridade de busca do calcular_taxa.
+    """
+    if not vinculo:
+        return None, None
+
+    taxa_config = TaxaConfig.objects.filter(
+        vinculo=vinculo, produto=produto, ativo=True
+    ).first()
+
+    if not taxa_config and produto and produto.tipo:
+        taxa_config = TaxaConfig.objects.filter(
+            vinculo=vinculo, tipo=produto.tipo, ativo=True
+        ).first()
+
+    if not taxa_config:
+        taxa_config = TaxaConfig.objects.filter(
+            vinculo=vinculo, produto__isnull=True, tipo__isnull=True, ativo=True
+        ).first()
+
+    if taxa_config:
+        return taxa_config.taxa_tipo, taxa_config.taxa_valor
+
+    administradora = vinculo.administradora
+    if administradora and administradora.taxa_padrao_valor:
+        return administradora.taxa_padrao_tipo, administradora.taxa_padrao_valor
+
+    return None, None
 
 
 def gerar_txt_compra(administradora_cnpj, data_competencia=None, movimentacao_ids=None):
@@ -390,13 +422,20 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
 
         valor_unitario = mov.valor_beneficio / mov.quantidade_dias if mov.quantidade_dias > 0 else mov.valor_beneficio
 
-        datos_periodo = mov.data_competencia.strftime('%d/%m/%Y')
-        data_ini = mov.data_competencia.replace(day=1)
-        data_fim = data_ini + timedelta(days=30)
-        periodos = f"{data_ini.strftime('%d/%m/%Y')} - {data_fim.strftime('%d/%m/%Y')}"
+        if imp and imp.vigencia_inicio:
+            datos_periodo = imp.vigencia_inicio.strftime('%d/%m/%Y')
+            data_ini = imp.vigencia_inicio
+            data_fim = imp.vigencia_fim if imp.vigencia_fim else data_ini + timedelta(days=30)
+            periodos = f"{data_ini.strftime('%d/%m/%Y')} - {data_fim.strftime('%d/%m/%Y')}"
+        else:
+            datos_periodo = mov.data_competencia.strftime('%d/%m/%Y')
+            data_ini = mov.data_competencia.replace(day=1)
+            data_fim = data_ini + timedelta(days=30)
+            periodos = f"{data_ini.strftime('%d/%m/%Y')} - {data_fim.strftime('%d/%m/%Y')}"
 
-        # Sempre usa o tipo do produto nos documentos exportados.
-        produto_display = prod.get_tipo_display() if prod.tipo else (prod.nome or prod.codigo_produto)
+        # Sempre usa o nome original do produto da planilha (prod.nome).
+        # O tipo normalizado (get_tipo_display) so deve ser usado em casos de fallback.
+        produto_display = prod.nome if prod.nome else (prod.get_tipo_display() if prod.tipo else prod.codigo_produto)
 
         # Busca o vínculo entre o condomínio e a administradora
         # Prioriza o vínculo da mesma administradora da importação
@@ -406,13 +445,8 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
             vinculo = cond.vinculocondominio_set.first()
         administradora = vinculo.administradora if vinculo else None
 
-        # Calcula a taxa
-        taxa = calcular_taxa(
-            valor_beneficio=mov.valor_beneficio,
-            quantidade_dias=mov.quantidade_dias,
-            vinculo=vinculo,
-            produto=prod
-        )
+        # Busca a taxa cadastrada na administradora (valor registrado, nao calculado)
+        taxa_tipo, taxa_valor = get_taxa_cadastrada(vinculo=vinculo, produto=prod)
 
         # Endereço do condomínio. Se estiver vazio (comum no modo cartão admin,
         # pois a planilha traz o endereço da administradora), consulta o CNPJ.
@@ -454,7 +488,7 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
             'CIDADE': cidade_cond,
             'UF': estado_cond,
             'CEP': cep_cond,
-            'TAXA': float(taxa),
+            'TAXA': float(taxa_valor.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)) if taxa_valor else 0,
             'vencimento': datos_periodo,
             'periodos': periodos.split('-')[0],
             'periodo2': periodos.split('-')[1]
