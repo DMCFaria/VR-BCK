@@ -185,8 +185,6 @@ def _gerar_e_upload_planilha_editada(file_upload, dados_modificados, data_compet
         candidate_name = f"{base_name}{original_ext}"
         logger.debug(f"[PLANILHA_EDITADA] Nome candidato gerado: {candidate_name}")
 
-        # Valida extensão do arquivo editado antes do upload para S3,
-        # garantindo que nunca seja salvo sem extensão ou com extensão não permitida.
         with tempfile.NamedTemporaryFile(suffix=original_ext, delete=False) as tmp_edit:
             tmp_edit_path = tmp_edit.name
             planilha_bytes.seek(0)
@@ -335,16 +333,8 @@ class ConfirmationView(views.APIView):
                     arquivo_nome = "Faturamento_Repetido.xlsx" if importacao_id else "arquivo.xlsx"
                 logger.debug(f"[CONFIRMACAO] Nome do arquivo para email: {arquivo_nome}")
 
-                # Gerar planilha editada se dados_modificados foram enviados.
-                # Essa etapa roda de forma SÍNCRONA no confirmed para garantir
-                # que planilhas corrompidas/inválidas sejam detectadas antes de
-                # finalizar o processamento.
                 arquivo_s3_editado_url = None
                 logger.info(f"[CONFIRMACAO] Verificando geração de planilha editada - dados_modificados: {bool(dados_modificados)}, file_upload: {bool(file_upload)}")
-
-                if not dados_modificados and condominios_data:
-                    dados_modificados = {"condominios": condominios_data}
-                    logger.info("[CONFIRMACAO] dados_modificados não enviado, usando condominios como fallback")
 
                 if dados_modificados and file_upload:
                     logger.info(f"[CONFIRMACAO] Iniciando geração de planilha editada")
