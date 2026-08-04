@@ -2,6 +2,7 @@ import io
 import re
 import base64
 import logging
+import hashlib
 from celery import shared_task
 import boto3
 from django.db import models
@@ -174,7 +175,7 @@ def pesquisar_enderecos_condominios(self, cnpjs, importacao_id=None):
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuario_id, mode='substituir'):
-    from beneficios.models import Faturamento, FaturamentoDocumento, Importacao
+    from beneficios.models import Faturamento, FaturamentoArquivo, FaturamentoDocumento, Importacao
     from entidades.models import Condominio
     from upload.pdf_reader import ler_boleto, ler_nota_debito, ler_nota_fiscal
     from django.contrib.auth import get_user_model
@@ -208,29 +209,46 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
             region_name='us-east-2'
         )
 
-        arquivo_boleto = io.BytesIO(base64.b64decode(arquivos_data['boleto']['content']))
-        arquivo_nota_debito = io.BytesIO(base64.b64decode(arquivos_data['nota_debito']['content']))
-        arquivo_nota_fiscal = None
-        if arquivos_data.get('nota_fiscal'):
-            arquivo_nota_fiscal = io.BytesIO(base64.b64decode(arquivos_data['nota_fiscal']['content']))
+        def normalizar_arquivos(arquivos):
+            if not arquivos:
+                return []
+            if isinstance(arquivos, dict):
+                arquivos = [arquivos]
+            return [
+                io.BytesIO(base64.b64decode(arquivo['content']))
+                for arquivo in arquivos
+            ]
+
+        arquivos_boleto = normalizar_arquivos(arquivos_data.get('boleto'))
+        arquivos_nota_debito = normalizar_arquivos(arquivos_data.get('nota_debito'))
+        arquivos_nota_fiscal = normalizar_arquivos(arquivos_data.get('nota_fiscal'))
 
         logger.info(f"Processando faturamento para importação ID: {importacao_id}")
 
-        resultado_boleto = ler_boleto(arquivo_boleto)
-        resultado_nota_debito = ler_nota_debito(arquivo_nota_debito)
-        
-        resultado_nota_fiscal = None
-        if arquivo_nota_fiscal:
-            resultado_nota_fiscal = ler_nota_fiscal(arquivo_nota_fiscal)
+        resultados_boleto = []
+        for arquivo in arquivos_boleto:
+            arquivo.seek(0)
+            resultados_boleto.append(ler_boleto(arquivo))
+
+        resultados_nota_debito = []
+        for arquivo in arquivos_nota_debito:
+            arquivo.seek(0)
+            resultados_nota_debito.append(ler_nota_debito(arquivo))
+
+        resultados_nota_fiscal = []
+        for arquivo in arquivos_nota_fiscal:
+            arquivo.seek(0)
+            resultados_nota_fiscal.append(ler_nota_fiscal(arquivo))
         
         faturamento = Faturamento.objects.get(id=importacao_id)
         faturamento.status = 'PROCESSING'
         faturamento.save(update_fields=['status'])
 
-        total_paginas = (
-            len(resultado_boleto['paginas']) + 
-            len(resultado_nota_debito['paginas']) + 
-            (len(resultado_nota_fiscal['paginas']) if resultado_nota_fiscal else 0)
+        total_paginas = sum(
+            len(resultado['paginas'])
+            for resultado in (
+                resultados_boleto + resultados_nota_debito + resultados_nota_fiscal
+            )
         )
         
         paginas_processadas = [0]
@@ -251,9 +269,12 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
 
         # --- VALIDAÇÃO E CRIAÇÃO DE BOLETOS (antes de qualquer upload) ---
         fatura_num = None
-        for pagina in resultado_boleto['paginas']:
-            if pagina.get('fatura'):
-                fatura_num = pagina.get('fatura')
+        for resultado in resultados_boleto:
+            for pagina in resultado['paginas']:
+                if pagina.get('fatura'):
+                    fatura_num = pagina.get('fatura')
+                    break
+            if fatura_num:
                 break
 
         if not fatura_num:
@@ -268,6 +289,9 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
 
         if not boletos_data:
             raise ValueError(f"Nenhum boleto encontrado no sistema para a fatura {fatura_num}. Processamento bloqueado.")
+
+        if mode != 'adicionar':
+            _limpar_prefixo_s3(s3_client, bucket_name, s3_base_key)
 
         def parse_date_safe(date_str):
             if not date_str:
@@ -318,23 +342,35 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
         logger.info(f"Boletos para a fatura {fatura_num} validados e criados com sucesso antes do upload.")
 
         # --- UPLOADS S3 (só executa se a validação dos boletos passou) ---
-        _processar_e_upload_paginas(
-            s3_client, bucket_name, s3_base_key, arquivo_boleto, 
-            resultado_boleto, 'boleto', condominios_encontrados, paginas_processadas, verificar_progresso
-        )
-
-        _processar_e_upload_paginas(
-            s3_client, bucket_name, s3_base_key, arquivo_nota_debito, 
-            resultado_nota_debito, 'nota_debito', condominios_encontrados, paginas_processadas, verificar_progresso
-        )
-
-        if arquivo_nota_fiscal:
+        for arquivo_indice, (arquivo, resultado) in enumerate(zip(arquivos_boleto, resultados_boleto), start=1):
             _processar_e_upload_paginas(
-                s3_client, bucket_name, s3_base_key, arquivo_nota_fiscal, 
-                resultado_nota_fiscal, 'nota_fiscal', condominios_encontrados, paginas_processadas, verificar_progresso
+                s3_client, bucket_name, s3_base_key, arquivo,
+                resultado, 'boleto', condominios_encontrados, paginas_processadas, verificar_progresso,
+                arquivo_indice
             )
 
-        _upload_arquivos_originais(s3_client, bucket_name, s3_base_key, arquivos_data, admin_nome, faturamento.id)
+        for arquivo_indice, (arquivo, resultado) in enumerate(zip(arquivos_nota_debito, resultados_nota_debito), start=1):
+            _processar_e_upload_paginas(
+                s3_client, bucket_name, s3_base_key, arquivo,
+                resultado, 'nota_debito', condominios_encontrados, paginas_processadas, verificar_progresso,
+                arquivo_indice
+            )
+
+        for arquivo_indice, (arquivo, resultado) in enumerate(zip(arquivos_nota_fiscal, resultados_nota_fiscal), start=1):
+            _processar_e_upload_paginas(
+                s3_client, bucket_name, s3_base_key, arquivo,
+                resultado, 'nota_fiscal', condominios_encontrados, paginas_processadas, verificar_progresso,
+                arquivo_indice
+            )
+
+        _upload_arquivos_originais(
+            s3_client,
+            bucket_name,
+            s3_base_key,
+            arquivos_data,
+            faturamento.id,
+            FaturamentoArquivo,
+        )
 
         atualizar_progresso(faturamento.id, 90)
 
@@ -349,15 +385,32 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
                 continue
 
             if mode == 'adicionar':
-                FaturamentoDocumento.objects.update_or_create(
+                documento_existente = FaturamentoDocumento.objects.filter(
                     faturamento=faturamento,
                     condominio=condominio,
-                    defaults={
+                ).first()
+                defaults = {
+                    campo: valor
+                    for campo, valor in {
                         'url_boleto': docs.get('boleto', ''),
                         'url_nota_debito': docs.get('nota_debito', ''),
-                        'url_nota_fiscal': docs.get('nota_fiscal', '')
-                    }
-                )
+                        'url_nota_fiscal': docs.get('nota_fiscal', ''),
+                    }.items()
+                    if valor
+                }
+                if documento_existente:
+                    for campo, valor in defaults.items():
+                        setattr(documento_existente, campo, valor)
+                    if defaults:
+                        documento_existente.save(update_fields=list(defaults))
+                else:
+                    FaturamentoDocumento.objects.create(
+                        faturamento=faturamento,
+                        condominio=condominio,
+                        url_boleto=defaults.get('url_boleto', ''),
+                        url_nota_debito=defaults.get('url_nota_debito', ''),
+                        url_nota_fiscal=defaults.get('url_nota_fiscal', ''),
+                    )
             else:
                 FaturamentoDocumento.objects.create(
                     faturamento=faturamento,
@@ -461,7 +514,18 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
         raise self.retry(exc=e)
 
 
-def _processar_e_upload_paginas(s3_client, bucket_name, s3_base_key, pdf_file, resultado, tipo, condominios, paginas_processadas, on_progress=None):
+def _processar_e_upload_paginas(
+    s3_client,
+    bucket_name,
+    s3_base_key,
+    pdf_file,
+    resultado,
+    tipo,
+    condominios,
+    paginas_processadas,
+    on_progress=None,
+    arquivo_indice=1,
+):
     from entidades.models import Condominio
 
     s3_base_key = f"VR - DOCS/faturamentos/{s3_base_key}" if '/' not in str(s3_base_key) else s3_base_key
@@ -485,7 +549,7 @@ def _processar_e_upload_paginas(s3_client, bucket_name, s3_base_key, pdf_file, r
 
         condo_nome = condominio.nome if condominio else cnpj_limpo
         seq = str(numero_pagina).zfill(3)
-        nome_arquivo = f"{seq} - {condo_nome} - {cnpj_limpo} - {tipo_display}.pdf"
+        nome_arquivo = f"{seq}-{arquivo_indice:03d} - {condo_nome} - {cnpj_limpo} - {tipo_display}.pdf"
 
         page = reader.pages[numero_pagina - 1]
         writer = PdfWriter()
@@ -519,25 +583,57 @@ def _processar_e_upload_paginas(s3_client, bucket_name, s3_base_key, pdf_file, r
             on_progress()
 
 
-def _upload_arquivos_originais(s3_client, bucket_name, s3_base_key, arquivos_data, admin_nome, faturamento_id):
-    import io
-    from pypdf import PdfReader, PdfWriter
+def _limpar_prefixo_s3(s3_client, bucket_name, prefix):
+    """Remove arquivos da geração anterior quando o upload substitui documentos."""
+    objetos = []
+    paginator = s3_client.get_paginator('list_objects_v2')
+    for pagina in paginator.paginate(Bucket=bucket_name, Prefix=prefix):
+        objetos.extend({'Key': item['Key']} for item in pagina.get('Contents', []))
 
+    for inicio in range(0, len(objetos), 1000):
+        lote = objetos[inicio:inicio + 1000]
+        if lote:
+            s3_client.delete_objects(Bucket=bucket_name, Delete={'Objects': lote})
+
+
+def _upload_arquivos_originais(
+    s3_client,
+    bucket_name,
+    s3_base_key,
+    arquivos_data,
+    faturamento_id,
+    arquivo_model,
+):
     for tipo, dados in arquivos_data.items():
         if not dados:
             continue
 
-        tipo_display = {'boleto': 'Boleto', 'nota_debito': 'Nota de débito', 'nota_fiscal': 'Nota Fiscal'}.get(tipo, tipo)
-        nome_arquivo = f"MERGED - {admin_nome} - {faturamento_id} - {tipo_display}.pdf"
+        if isinstance(dados, dict):
+            dados = [dados]
 
-        pdf_bytes = io.BytesIO(base64.b64decode(dados['content']))
-        s3_key = f"{s3_base_key}/{tipo}/{nome_arquivo}"
+        for indice, arquivo in enumerate(dados, start=1):
+            nome_original = str(arquivo.get('nome') or f'{tipo}.pdf').replace('/', '_').replace('\\', '_')
+            conteudo = base64.b64decode(arquivo['content'])
+            identificador = hashlib.sha256(conteudo).hexdigest()[:12]
+            nome_arquivo = f"{indice:03d} - {identificador} - {nome_original}"
+            pdf_bytes = io.BytesIO(conteudo)
+            s3_key = f"{s3_base_key}/{tipo}/originais/{nome_arquivo}"
 
-        s3_client.upload_fileobj(
-            pdf_bytes,
-            bucket_name,
-            s3_key,
-            ExtraArgs={'ContentType': 'application/pdf'}
-        )
+            s3_client.upload_fileobj(
+                pdf_bytes,
+                bucket_name,
+                s3_key,
+                ExtraArgs={'ContentType': 'application/pdf'}
+            )
 
-        logger.debug(f"Upload arquivo original {tipo}: {nome_arquivo}")
+            arquivo_model.objects.update_or_create(
+                s3_key=s3_key,
+                defaults={
+                    'faturamento_id': faturamento_id,
+                    'tipo': tipo,
+                    'nome_arquivo': nome_original,
+                    'url': f"https://{bucket_name}.s3.amazonaws.com/{s3_key}",
+                },
+            )
+
+            logger.debug(f"Upload arquivo original {tipo}: {nome_arquivo}")

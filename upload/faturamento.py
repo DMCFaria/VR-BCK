@@ -60,24 +60,37 @@ class UploadFaturamentoView(views.APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        arquivo_boleto = None
-        arquivo_nota_debito = None
-        arquivo_nota_fiscal = None
+        arquivos_boleto = []
+        arquivos_nota_debito = []
+        arquivos_nota_fiscal = []
 
-        for nome_arquivo, arquivo in arquivos.items():
-            nome_lower = nome_arquivo.lower()
-            real_name_lower = getattr(arquivo, 'name', '').lower()
-            if 'reciboq' in nome_lower or 'boleto' in nome_lower or 'reciboq' in real_name_lower or 'boleto' in real_name_lower:
-                arquivo_boleto = arquivo
-            elif 'debito' in nome_lower or 'dédito' in nome_lower or 'debito' in real_name_lower or 'dédito' in real_name_lower:
-                arquivo_nota_debito = arquivo
-            elif 'nf' in nome_lower or 'nf' in real_name_lower:
-                arquivo_nota_fiscal = arquivo
+        # MultiValueDict.items() retorna apenas o último arquivo de cada campo.
+        # Use lists() para não descartar arquivos quando o usuário envia vários PDFs.
+        for nome_campo, arquivos_campo in arquivos.lists():
+            for arquivo in arquivos_campo:
+                nome_lower = nome_campo.lower()
+                real_name_lower = getattr(arquivo, 'name', '').lower()
+                if (
+                    'reciboq' in nome_lower
+                    or 'boleto' in nome_lower
+                    or 'reciboq' in real_name_lower
+                    or 'boleto' in real_name_lower
+                ):
+                    arquivos_boleto.append(arquivo)
+                elif (
+                    'debito' in nome_lower
+                    or 'dédito' in nome_lower
+                    or 'debito' in real_name_lower
+                    or 'dédito' in real_name_lower
+                ):
+                    arquivos_nota_debito.append(arquivo)
+                elif 'nf' in nome_lower or 'nf' in real_name_lower:
+                    arquivos_nota_fiscal.append(arquivo)
 
         erros = []
-        if not arquivo_boleto:
+        if not arquivos_boleto:
             erros.append("Arquivo de BOLETO não encontrado. O nome deve conter 'RECIBOQ' ou 'BOLETO'.")
-        if not arquivo_nota_debito:
+        if not arquivos_nota_debito:
             erros.append("Arquivo de NOTA DE DÉBITO não encontrado. O nome deve conter 'DEBITO'.")
 
         if erros:
@@ -88,8 +101,8 @@ class UploadFaturamentoView(views.APIView):
 
         # Validação síncrona do boleto: extrai fatura e verifica se existe no Fedhub
         try:
-            boleto_bytes = arquivo_boleto.read()
-            arquivo_boleto.seek(0)
+            boleto_bytes = arquivos_boleto[0].read()
+            arquivos_boleto[0].seek(0)
             boleto_io = io.BytesIO(boleto_bytes)
             resultado_boleto = ler_boleto(boleto_io)
 
@@ -151,21 +164,30 @@ class UploadFaturamentoView(views.APIView):
                     )
 
             arquivos_data = {
-                'boleto': {
-                    'nome': arquivo_boleto.name,
-                    'content': base64.b64encode(arquivo_boleto.read()).decode('utf-8')
-                },
-                'nota_debito': {
-                    'nome': arquivo_nota_debito.name,
-                    'content': base64.b64encode(arquivo_nota_debito.read()).decode('utf-8')
-                }
+                'boleto': [
+                    {
+                        'nome': arquivo.name,
+                        'content': base64.b64encode(arquivo.read()).decode('utf-8'),
+                    }
+                    for arquivo in arquivos_boleto
+                ],
+                'nota_debito': [
+                    {
+                        'nome': arquivo.name,
+                        'content': base64.b64encode(arquivo.read()).decode('utf-8'),
+                    }
+                    for arquivo in arquivos_nota_debito
+                ],
             }
 
-            if arquivo_nota_fiscal:
-                arquivos_data['nota_fiscal'] = {
-                    'nome': arquivo_nota_fiscal.name,
-                    'content': base64.b64encode(arquivo_nota_fiscal.read()).decode('utf-8')
-                }
+            if arquivos_nota_fiscal:
+                arquivos_data['nota_fiscal'] = [
+                    {
+                        'nome': arquivo.name,
+                        'content': base64.b64encode(arquivo.read()).decode('utf-8'),
+                    }
+                    for arquivo in arquivos_nota_fiscal
+                ]
 
             processar_faturamento.delay(
                 importacao_id=importacao_id,

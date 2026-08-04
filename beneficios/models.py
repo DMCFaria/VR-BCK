@@ -206,6 +206,36 @@ class Faturamento(models.Model):
     def __str__(self):
         return f"Faturamento #{self.id} - {self.competencia}"
 
+
+class FaturamentoArquivo(models.Model):
+    TIPO_CHOICES = [
+        ('boleto', 'Boleto'),
+        ('nota_debito', 'Nota de débito'),
+        ('nota_fiscal', 'Nota fiscal'),
+    ]
+
+    faturamento = models.ForeignKey(
+        Faturamento,
+        on_delete=models.CASCADE,
+        related_name='arquivos_originais',
+        verbose_name="Faturamento",
+    )
+    tipo = models.CharField(max_length=30, choices=TIPO_CHOICES)
+    nome_arquivo = models.CharField(max_length=255)
+    s3_key = models.CharField(max_length=1000, unique=True)
+    url = models.URLField(max_length=1000)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['criado_em', 'id']
+        indexes = [
+            models.Index(fields=['faturamento', 'tipo'], name='idx_fat_arq_tipo'),
+        ]
+
+    def __str__(self):
+        return f"{self.faturamento_id} - {self.nome_arquivo}"
+
+
 # Modelo FATURAMENTO_DOCUMENTO (Documentos Gerados no Faturamento)
 class FaturamentoDocumento(models.Model):
     faturamento = models.ForeignKey(
