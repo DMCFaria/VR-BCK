@@ -106,6 +106,7 @@ class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
     nome_usuario = serializers.CharField(source='usuario.email', read_only=True)
     responsavel_nome = serializers.SerializerMethodField(read_only=True)
     numero_fatura = serializers.SerializerMethodField(read_only=True)
+    documentos = serializers.SerializerMethodField(read_only=True)
 
     def get_responsavel_nome(self, obj):
         if obj.responsavel:
@@ -122,6 +123,48 @@ class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
             return boleto or ''
         except Exception:
             return ''
+
+    def get_documentos(self, obj):
+        faturamentos = list(obj.faturamentos.all())
+        if not faturamentos:
+            return []
+
+        faturamento = faturamentos[0]
+        arquivos = list(faturamento.arquivos_originais.all())
+        if arquivos:
+            return [
+                {
+                    'id': arquivo.id,
+                    'tipo': arquivo.tipo,
+                    'tipo_display': arquivo.get_tipo_display(),
+                    'nome_arquivo': arquivo.nome_arquivo,
+                    'url': arquivo.url,
+                    'criado_em': arquivo.criado_em,
+                }
+                for arquivo in arquivos
+            ]
+
+        # Fallback para documentos criados antes do histórico de arquivos.
+        documentos = []
+        for documento in faturamento.documentos.all():
+            dados_condominio = {
+                'condominio_nome': documento.condominio.nome if documento.condominio else '',
+                'condominio_cnpj': documento.condominio.cnpj if documento.condominio else '',
+            }
+            for tipo, url, label in (
+                ('boleto', documento.url_boleto, 'Boleto'),
+                ('nota_debito', documento.url_nota_debito, 'Nota de débito'),
+                ('nota_fiscal', documento.url_nota_fiscal, 'Nota fiscal'),
+            ):
+                if url:
+                    documentos.append({
+                        **dados_condominio,
+                        'tipo': tipo,
+                        'tipo_display': label,
+                        'nome_arquivo': label,
+                        'url': url,
+                    })
+        return documentos
 
     valor_total = serializers.DecimalField(max_digits=15, decimal_places=2, required=False)
     total_funcionarios = serializers.IntegerField(required=False)
@@ -148,6 +191,7 @@ class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
             'arquivo_s3',
             'arquivo_s3_editado',
             'numero_fatura',
+            'documentos',
         ]
 
 class MovimentacaoReuseSerializer(serializers.Serializer):

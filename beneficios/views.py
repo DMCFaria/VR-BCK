@@ -547,7 +547,9 @@ class ImportacaoListView(views.APIView):
 
     def get(self, request):
         from datetime import timedelta
+        from django.db.models import Prefetch
         from django.utils import timezone
+        from beneficios.models import Faturamento, FaturamentoDocumento
 
         user = request.user
         administradora = getattr(user, 'administradora_ativa', None)
@@ -579,6 +581,19 @@ class ImportacaoListView(views.APIView):
             if user.tipo == "dep":
                 queryset = queryset.exclude(usuario__tipo__in=["adm", "dev"])
             importacoes = queryset.order_by('-data_importacao')
+
+        documentos_prefetch = Prefetch(
+            'documentos',
+            queryset=FaturamentoDocumento.objects.select_related('condominio'),
+        )
+        faturamentos_prefetch = Prefetch(
+            'faturamentos',
+            queryset=Faturamento.objects.prefetch_related(
+                'arquivos_originais',
+                documentos_prefetch,
+            ),
+        )
+        importacoes = importacoes.prefetch_related(faturamentos_prefetch)
 
         try:
             page = max(int(request.query_params.get('page', 1)), 1)
