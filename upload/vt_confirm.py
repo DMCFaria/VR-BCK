@@ -194,7 +194,6 @@ class ConfirmVTView(views.APIView):
             tipo_processamento = payload.get('tipo_processamento', 'compra')
             tipo_display = "Compra de Benefícios" if tipo_processamento == "compra" else "Faturamento"
 
-            # Gerar planilha VT editada
             arquivo_s3_editado_url = None
             if file_upload and file_upload.arquivo_s3:
                 logger.info("[CONFIRMACAO_VT] Iniciando geração de planilha VT editada")
