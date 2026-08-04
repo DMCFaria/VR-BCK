@@ -489,7 +489,7 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
             'UF': estado_cond,
             'CEP': cep_cond,
             'TAXA': float(taxa_valor.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)) if taxa_valor else 0,
-            'vencimento': datos_periodo,
+            'vencimento': imp.data_vencimento.strftime('%d/%m/%Y') if imp and imp.data_vencimento else datos_periodo,
             'periodos': periodos.split('-')[0],
             'periodo2': periodos.split('-')[1]
         })
