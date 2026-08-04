@@ -124,47 +124,58 @@ class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
         except Exception:
             return ''
 
+    def _get_fatura_number(self, fat):
+        try:
+            boleto = fat.boletos_rel.exclude(fatura__isnull=True).exclude(fatura='').first()
+            return boleto.fatura if boleto else ''
+        except Exception:
+            return ''
+
     def get_documentos(self, obj):
         faturamentos = list(obj.faturamentos.all())
         if not faturamentos:
             return []
 
-        faturamento = faturamentos[0]
-        arquivos = list(faturamento.arquivos_originais.all())
-        if arquivos:
-            return [
-                {
-                    'id': arquivo.id,
-                    'tipo': arquivo.tipo,
-                    'tipo_display': arquivo.get_tipo_display(),
-                    'nome_arquivo': arquivo.nome_arquivo,
-                    'url': arquivo.url,
-                    'criado_em': arquivo.criado_em,
-                }
-                for arquivo in arquivos
-            ]
-
-        # Fallback para documentos criados antes do histórico de arquivos.
-        documentos = []
-        for documento in faturamento.documentos.all():
-            dados_condominio = {
-                'condominio_nome': documento.condominio.nome if documento.condominio else '',
-                'condominio_cnpj': documento.condominio.cnpj if documento.condominio else '',
-            }
-            for tipo, url, label in (
-                ('boleto', documento.url_boleto, 'Boleto'),
-                ('nota_debito', documento.url_nota_debito, 'Nota de débito'),
-                ('nota_fiscal', documento.url_nota_fiscal, 'Nota fiscal'),
-            ):
-                if url:
-                    documentos.append({
-                        **dados_condominio,
-                        'tipo': tipo,
-                        'tipo_display': label,
-                        'nome_arquivo': label,
-                        'url': url,
-                    })
-        return documentos
+        todos_arquivos = []
+        for fat in faturamentos:
+            arquivos = list(fat.arquivos_originais.all())
+            fatura_num = self._get_fatura_number(fat)
+            if arquivos:
+                todos_arquivos.extend([
+                    {
+                        'id': arquivo.id,
+                        'tipo': arquivo.tipo,
+                        'tipo_display': arquivo.get_tipo_display(),
+                        'nome_arquivo': arquivo.nome_arquivo,
+                        'url': arquivo.url,
+                        'fatura_id': fat.id,
+                        'numero_fatura': fatura_num,
+                        'criado_em': arquivo.criado_em,
+                    }
+                    for arquivo in arquivos
+                ])
+            else:
+                for documento in fat.documentos.select_related('condominio').all():
+                    dados_condominio = {
+                        'condominio_nome': documento.condominio.nome if documento.condominio else '',
+                        'condominio_cnpj': documento.condominio.cnpj if documento.condominio else '',
+                    }
+                    for tipo, url, label in (
+                        ('boleto', documento.url_boleto, 'Boleto'),
+                        ('nota_debito', documento.url_nota_debito, 'Nota de débito'),
+                        ('nota_fiscal', documento.url_nota_fiscal, 'Nota fiscal'),
+                    ):
+                        if url:
+                            todos_arquivos.append({
+                                **dados_condominio,
+                                'tipo': tipo,
+                                'tipo_display': label,
+                                'nome_arquivo': label,
+                                'url': url,
+                                'fatura_id': fat.id,
+                                'numero_fatura': fatura_num,
+                            })
+        return todos_arquivos
 
     valor_total = serializers.DecimalField(max_digits=15, decimal_places=2, required=False)
     total_funcionarios = serializers.IntegerField(required=False)
