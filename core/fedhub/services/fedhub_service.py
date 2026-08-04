@@ -497,4 +497,52 @@ class FedhubService:
             logger.error(f"Erro inesperado ao enviar e-mail de erro de nota: {e}")
             return False
 
-    
+    def enviar_email_boleto(self, email: str, context: Dict = None, attachments: list = None) -> bool:
+        """
+        Envia e-mail com boletos em anexo para o cliente.
+
+        Args:
+            email: E-mail do destinatário
+            context: Contexto para renderização do template (cliente_nome, competencia, etc.)
+            attachments: Lista de dicts com {filename: str, content: base64_bytes}
+        """
+        try:
+            if context is None:
+                context = {}
+
+            context.setdefault('cliente_nome', context.get('cliente_nome', 'Cliente'))
+            context.setdefault('competencia', context.get('competencia', '—'))
+            context.setdefault('FRONTEND_URL', settings.FRONTEND_URL)
+
+            html_body = render_to_string('email/boleto_cliente.html', context)
+
+            payload = {
+                "to_email": email,
+                "subject": f"Boletos de Faturamento - Competência {context.get('competencia', '—')} - FedHub",
+                "body": html_body,
+                "is_html": True
+            }
+
+            if attachments:
+                payload["attachments"] = attachments
+
+            with httpx.Client() as client:
+                response = client.post(
+                    f"{self.base_url}/api/email/send/gmail",
+                    json=payload,
+                    timeout=60.0
+                )
+
+                if response.status_code == 200:
+                    logger.info(f"E-mail de boleto enviado com sucesso para: {email} ({len(attachments or [])} anexos)")
+                    return True
+                else:
+                    logger.error(f"Gateway retornou erro {response.status_code}: {response.text}")
+                    return False
+
+        except httpx.RequestError as e:
+            logger.error(f"Erro ao chamar serviço de e-mail de boleto: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Erro inesperado ao enviar e-mail de boleto: {e}")
+            return False
