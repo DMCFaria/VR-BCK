@@ -628,6 +628,10 @@ class ImportacaoListView(views.APIView):
             queryset=Faturamento.objects.prefetch_related(
                 'arquivos_originais',
                 documentos_prefetch,
+                # boletos_rel alimenta get_data_credito() e _get_fatura_number()
+                # no serializer; sem o prefetch cada importação dispara queries
+                # próprias por faturamento.
+                'boletos_rel',
             ),
         )
         importacoes = importacoes.prefetch_related(faturamentos_prefetch)

@@ -107,6 +107,9 @@ class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
     responsavel_nome = serializers.SerializerMethodField(read_only=True)
     numero_fatura = serializers.SerializerMethodField(read_only=True)
     documentos = serializers.SerializerMethodField(read_only=True)
+    competencia = serializers.SerializerMethodField(read_only=True)
+    data_credito = serializers.SerializerMethodField(read_only=True)
+    boletos_pagamento = serializers.SerializerMethodField(read_only=True)
 
     def get_responsavel_nome(self, obj):
         if obj.responsavel:
@@ -130,6 +133,76 @@ class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
             return boleto.fatura if boleto else ''
         except Exception:
             return ''
+
+    def get_competencia(self, obj):
+        """
+        Competência (mês/ano de referência) vinda do Faturamento.
+
+        Antes esse campo não era exposto, e o frontend caía no fallback
+        `vigencia_inicio` — exibindo a vigência sob o rótulo "Competência".
+        """
+        try:
+            for faturamento in obj.faturamentos.all():
+                if faturamento.competencia:
+                    return faturamento.competencia
+            return None
+        except Exception:
+            return None
+
+    def get_data_credito(self, obj):
+        """
+        Data de crédito = data de recebimento do benefício (`Importacao.data_recebimento`),
+        escolhida pelo cliente no momento da importação da planilha
+        (ver `upload/serializers.py`, campo `data_recebimento` / alias
+        `recebimento_beneficio`).
+
+        Alias explícito de `data_recebimento`: o rótulo de negócio é
+        "Data de Crédito" e o `ColaboradorDashboard` já exibia esse campo com
+        esse nome. Mantido como `data_credito` porque `KanbanFaturasView` e
+        `FaturasTable.jsx` também consomem esse nome.
+
+        NÃO é derivado de `Boleto.dt_baixa` — a baixa é o pagamento do boleto
+        pela administradora, evento distinto do crédito do benefício. O status
+        de pagamento por boleto está em `get_boletos_pagamento()`.
+        """
+        return obj.data_recebimento
+
+    def get_boletos_pagamento(self, obj):
+        """
+        Situação de pagamento dos boletos da importação, para detalhar quem já
+        teve o crédito liberado e quem está pendente.
+
+        Retorna contagens agregadas + a lista por boleto. Depende do prefetch
+        de `faturamentos__boletos_rel` em `ImportacaoListView`.
+        """
+        try:
+            itens = []
+            for faturamento in obj.faturamentos.all():
+                for boleto in faturamento.boletos_rel.all():
+                    pago = bool(boleto.baixa)
+                    itens.append({
+                        'id': boleto.id,
+                        'condominio': boleto.nome_cobrado or '',
+                        'cnpj': boleto.cnpj_cobrado or '',
+                        'fatura': boleto.fatura or '',
+                        'valor': float(boleto.valor) if boleto.valor is not None else None,
+                        'vencimento': boleto.vencimento,
+                        'pago': pago,
+                        'data_pagamento': boleto.dt_baixa if pago else None,
+                    })
+
+            # Pendentes primeiro (é o que exige ação), depois por condomínio.
+            itens.sort(key=lambda item: (item['pago'], item['condominio']))
+
+            pagos = sum(1 for item in itens if item['pago'])
+            return {
+                'total': len(itens),
+                'pagos': pagos,
+                'pendentes': len(itens) - pagos,
+                'itens': itens,
+            }
+        except Exception:
+            return {'total': 0, 'pagos': 0, 'pendentes': 0, 'itens': []}
 
     def get_documentos(self, obj):
         faturamentos = list(obj.faturamentos.all())
@@ -194,6 +267,9 @@ class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
             'responsavel_nome',
             'data_vencimento',
             'data_recebimento',
+            'competencia',
+            'data_credito',
+            'boletos_pagamento',
             'vigencia_inicio',
             'vigencia_fim',
             'valor_total',
