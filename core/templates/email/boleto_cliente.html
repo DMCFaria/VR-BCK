@@ -23,12 +23,16 @@
     .info-detail { font-size: 13px; color: #2d3748; line-height: 1.6; margin-bottom: 8px; }
     .divider { height: 1px; background: #e2e8f0; margin: 0 0 24px; }
     .attachment-list { margin: 20px 0; }
-    .attachment-item { background: #f7fafc; border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; display: flex; align-items: center; gap: 12px; border: 1px solid #e2e8f0; }
+    .attachment-item { background: #f7fafc; border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; border: 1px solid #e2e8f0; }
+    .attachment-row { display: flex; align-items: center; gap: 12px; }
     .attachment-item i { font-size: 28px; color: #0F3D5D; }
     .attachment-info { flex: 1; }
-    .attachment-name { font-size: 14px; font-weight: 600; color: #1a202c; }
+    .attachment-name { font-size: 14px; font-weight: 600; color: #1a202c; word-break: break-word; }
     .attachment-meta { font-size: 12px; color: #718096; margin-top: 2px; }
     .attachment-badge { background: #10b981; color: white; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 4px; }
+    .download-btn { display: inline-block; background: #0F3D5D; color: #ffffff !important; text-decoration: none; font-size: 13px; font-weight: 600; padding: 10px 18px; border-radius: 8px; margin-top: 12px; text-align: center; }
+    .download-btn i { font-size: 13px; color: #ffffff; margin-right: 6px; }
+    .portal-link { color: #0F3D5D; font-weight: 600; }
     .info-note { background: #eff6ff; border-radius: 10px; padding: 14px 16px; display: flex; gap: 10px; align-items: flex-start; margin: 20px 0; }
     .info-note i { color: #3b82f6; font-size: 16px; margin-top: 2px; }
     .info-note-text { font-size: 13px; color: #1e40af; line-height: 1.6; }
@@ -49,7 +53,7 @@
       </div>
       <h1>FedHub</h1>
       <div class="subtitle">Documentos de Faturamento</div>
-      <div class="success-badge"><i class="fas fa-envelope"></i> BOLETOS ENVIADOS</div>
+      <div class="success-badge"><i class="fas fa-file-download"></i> BOLETOS DISPONÍVEIS</div>
     </div>
 
     <div class="email-content">
@@ -74,18 +78,21 @@
       <div class="divider"></div>
 
       {% if boletos %}
-      <div class="info-title"><i class="fas fa-paperclip"></i> Boletos Anexados ({{ boletos|length }})</div>
+      <div class="info-title"><i class="fas fa-file-download"></i> Boletos disponíveis ({{ boletos|length }})</div>
       <div class="attachment-list">
         {% for boleto in boletos %}
         <div class="attachment-item">
-          <i class="fas fa-file-pdf"></i>
-          <div class="attachment-info">
-            <div class="attachment-name">{{ boleto.nome }}</div>
-            {% if boleto.fatura %}
-            <div class="attachment-meta">Fatura: {{ boleto.fatura }}</div>
-            {% endif %}
+          <div class="attachment-row">
+            <i class="fas fa-file-pdf"></i>
+            <div class="attachment-info">
+              <div class="attachment-name">{{ boleto.nome }}</div>
+              {% if boleto.fatura %}
+              <div class="attachment-meta">Fatura: {{ boleto.fatura }}</div>
+              {% endif %}
+            </div>
+            <span class="attachment-badge">PDF</span>
           </div>
-          <span class="attachment-badge">PDF</span>
+          <a href="{{ boleto.link }}" class="download-btn"><i class="fas fa-download"></i> Baixar boleto</a>
         </div>
         {% endfor %}
       </div>
@@ -94,7 +101,16 @@
       <div class="info-note">
         <i class="fas fa-info-circle"></i>
         <div class="info-note-text">
-          <strong>Importante:</strong> Os boletos estão anexos neste e-mail. Caso o boleto não seja processado pelo sistema bancário em até 24 horas, entre em contato com sua administradora de benefícios.
+          <strong>Importante:</strong> clique em <em>Baixar boleto</em> para abrir o PDF.
+          {% if link_validade_dias %}
+          Os links são válidos por <strong>{{ link_validade_dias }} dia{{ link_validade_dias|pluralize }}</strong>;
+          depois desse prazo, acesse o
+          <a href="{{ FRONTEND_URL }}" class="portal-link">portal FedHub</a> para baixar novamente.
+          {% else %}
+          Caso o link não funcione, acesse o
+          <a href="{{ FRONTEND_URL }}" class="portal-link">portal FedHub</a> para baixar os documentos.
+          {% endif %}
+          Se o boleto não for processado pelo sistema bancário em até 24 horas, entre em contato com sua administradora de benefícios.
         </div>
       </div>
 
