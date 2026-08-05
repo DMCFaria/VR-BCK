@@ -20,6 +20,7 @@ from .views import (
     PedidoCartaoStatusView,
     PedidoCartaoView,
     ProdutoViewSet,
+    ReenviarEmailView,
     UltimaImportacaoMovimentacoesView,
     UltimaMovimentacaoDashboard,
 )
@@ -67,6 +68,11 @@ urlpatterns = [
         'importacoes/<int:pk>/responsavel/',
         MarcarResponsavelView.as_view(),
         name='marcar-responsavel',
+    ),
+    path(
+        'importacoes/<int:pk>/reenviar-email/',
+        ReenviarEmailView.as_view(),
+        name='reenviar-email',
     ),
     path(
         'importacoes/ultima-movimentacao/',

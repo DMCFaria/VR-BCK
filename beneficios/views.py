@@ -303,6 +303,43 @@ class MarcarResponsavelView(views.APIView):
         )
 
 
+class ReenviarEmailView(views.APIView):
+    """
+    Reenvia o e-mail de boletos para o cliente.
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def post(self, request, pk):
+        try:
+            importacao = Importacao.objects.get(id=pk)
+        except Importacao.DoesNotExist:
+            return Response(
+                {"detail": "Importação não encontrada."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if importacao.status not in ('FATURADO', 'BOLETO_VR_ENVIADO'):
+            return Response(
+                {"detail": "O e-mail só pode ser reenviado para pedidos com status FATURADO ou BOLETO_VR_ENVIADO."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        from upload.tasks import _disparar_email_boleto_cliente
+        try:
+            result = _disparar_email_boleto_cliente.delay(importacao.id)
+            logger.info(f"[REENVIAR_EMAIL] Task agendada para importacao_id={importacao.id}")
+        except Exception as e:
+            logger.warning(f"[REENVIAR_EMAIL] Falha ao agendar task: {e}")
+            result = None
+
+        return Response({
+            "message": "E-mail de boleto será reenviado.",
+            "importacao_id": importacao.id,
+            "status": importacao.status,
+        }, status=status.HTTP_200_OK)
+
+
 class UltimaImportacaoMovimentacoesView(views.APIView):
     """
     Rota para buscar as movimentações da última importação da administradora do usuário.

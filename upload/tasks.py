@@ -688,13 +688,11 @@ def _disparar_email_boleto_cliente(self, importacao_id):
         attachments = []
         for arquivo in boletos:
             try:
-                from urllib.parse import urlparse, unquote
-                parsed_url = urlparse(arquivo.s3_key)
-                s3_key = unquote(parsed_url.path.lstrip('/'))
-                bucket = parsed_url.netloc.split('.')[0] or bucket_name
+                from urllib.parse import unquote
+                s3_key = unquote(arquivo.s3_key)
 
                 pdf_buffer = io.BytesIO()
-                s3_client.download_fileobj(bucket, s3_key, pdf_buffer)
+                s3_client.download_fileobj(bucket_name, s3_key, pdf_buffer)
                 pdf_buffer.seek(0)
                 pdf_base64 = base64.b64encode(pdf_buffer.read()).decode('utf-8')
 
@@ -702,7 +700,7 @@ def _disparar_email_boleto_cliente(self, importacao_id):
                     'filename': arquivo.nome_arquivo or f'boleto_{arquivo.id}.pdf',
                     'content': pdf_base64
                 })
-                logger.info(f"[BOLETO_EMAIL] Anexo adicionado: {arquivo.nome_arquivo}")
+                logger.info(f"[BOLETO_EMAIL] Anexo adicionado: {arquivo.nome_arquivo} ({len(pdf_base64)} bytes base64)")
             except Exception as e:
                 logger.warning(f"[BOLETO_EMAIL] Erro ao baixar boleto {arquivo.s3_key}: {e}")
                 continue
