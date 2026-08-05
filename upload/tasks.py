@@ -499,8 +499,11 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
         try:
             _disparar_email_boleto_cliente.delay(importacao_id)
             logger.info(f"[BOLETO_EMAIL] Task de envio de boleto agendada para importacao_id={importacao_id}")
-        except Exception:
-            logger.warning(f"[BOLETO_EMAIL] Falha ao agendar task de envio de boleto: {e}")
+        except Exception as exc:
+            logger.warning(
+                f"[BOLETO_EMAIL] Falha ao agendar task de envio de boleto "
+                f"(importacao_id={importacao_id}): {exc}"
+            )
 
         logger.info(f"Faturamento {faturamento.id} concluído com {total_condominios} condomínios")
        
@@ -648,35 +651,124 @@ def _upload_arquivos_originais(
             logger.debug(f"Upload arquivo original {tipo}: {nome_arquivo}")
 
 
+# Limite do S3 para URLs pre-assinadas geradas com credenciais de longo prazo
+# (SigV4): 7 dias. Nao ha como emitir link direto com validade maior que isso.
+LINK_BOLETO_EXPIRACAO_MAX_SEGUNDOS = 7 * 24 * 3600
+
+
+def _nome_arquivo_seguro(nome, fallback):
+    """Remove caracteres que quebrariam o header Content-Disposition."""
+    limpo = (nome or '').strip().replace('"', '').replace('\r', '').replace('\n', '')
+    return limpo or fallback
+
+
+def _gerar_link_download_boleto(s3_client, bucket_name, arquivo, expiracao_segundos):
+    """
+    Gera URL pre-assinada para download direto do boleto.
+
+    O bucket e privado (nenhum upload usa ACL public-read), portanto a URL
+    publica gravada em FaturamentoArquivo.url retorna AccessDenied. O link
+    enviado por e-mail precisa ser assinado.
+
+    Confere a existencia do objeto antes de assinar: generate_presigned_url
+    nao valida a chave, e um link para chave inexistente falharia somente na
+    mao do cliente.
+
+    Retorna None se o objeto nao existir ou a assinatura falhar.
+    """
+    s3_key = arquivo.s3_key
+    nome_arquivo = _nome_arquivo_seguro(arquivo.nome_arquivo, f'boleto_{arquivo.id}.pdf')
+
+    try:
+        s3_client.head_object(Bucket=bucket_name, Key=s3_key)
+    except Exception as exc:
+        logger.warning(
+            f"[BOLETO_EMAIL] Objeto ausente no S3, link nao gerado: {s3_key} ({exc})"
+        )
+        return None
+
+    params = {
+        'Bucket': bucket_name,
+        'Key': s3_key,
+        'ResponseContentType': 'application/pdf',
+        'ResponseContentDisposition': f'attachment; filename="{nome_arquivo}"',
+    }
+
+    try:
+        # Header HTTP nao transporta non-ASCII de forma confiavel; nesse caso
+        # deixa o S3 nomear o download a partir da propria chave.
+        nome_arquivo.encode('ascii')
+    except UnicodeEncodeError:
+        params.pop('ResponseContentDisposition')
+
+    try:
+        return s3_client.generate_presigned_url(
+            'get_object',
+            Params=params,
+            ExpiresIn=expiracao_segundos,
+        )
+    except Exception as exc:
+        logger.warning(f"[BOLETO_EMAIL] Falha ao assinar link de {s3_key}: {exc}")
+        return None
+
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def _disparar_email_boleto_cliente(self, importacao_id):
     """
-    Após processar_faturamento, envia e-mail com boletos em anexo para o cliente.
+    Apos processar_faturamento, envia e-mail com links de download dos boletos.
+
+    Os boletos NAO seguem como anexo: o gateway de e-mail do FedHub
+    (POST /api/email/send/gmail) nao suporta anexos -- o modelo EmailRequest
+    nao declara o campo e o Pydantic descarta extras em silencio, entao o
+    e-mail chegava sempre sem os PDFs. O e-mail leva links pre-assinados do S3.
     """
-    import io
-    import base64
-    from beneficios.models import Faturamento, FaturamentoArquivo, Importacao
-    from django.contrib.auth import get_user_model
+    from beneficios.models import FaturamentoArquivo, Importacao
     from core.fedhub.services.fedhub_service import FedhubService
 
-    User = get_user_model()
     bucket_name = getattr(settings, 'BUCKET_S3', 'fedcorp-prod')
+    expiracao = min(
+        int(getattr(
+            settings,
+            'BOLETO_LINK_EXPIRACAO_SEGUNDOS',
+            LINK_BOLETO_EXPIRACAO_MAX_SEGUNDOS,
+        )),
+        LINK_BOLETO_EXPIRACAO_MAX_SEGUNDOS,
+    )
 
     try:
         importacao = Importacao.objects.get(id=importacao_id)
-        faturamento = Faturamento.objects.get(id=importacao_id)
 
         if not importacao.usuario or not importacao.usuario.email:
             logger.warning(f"[BOLETO_EMAIL] Importacao {importacao_id} não tem usuario ou email. Pulando envio.")
             return {"status": "skipped", "reason": "no_email"}
 
         email_destino = importacao.usuario.email
-        logger.info(f"[BOLETO_EMAIL] Enviando boletos para: {email_destino} (importacao_id={importacao_id})")
 
-        boletos = list(faturamento.arquivos_originais.filter(tipo='boleto'))
+        # Uma importacao pode ter varios faturamentos (envios adicionais de
+        # documentos criam novos). Antes esta task fazia
+        # Faturamento.objects.get(id=importacao_id), usando o ID da importacao
+        # como ID de faturamento -- chaves de tabelas distintas, o que ora
+        # falhava em silencio, ora anexava boletos de outro cliente.
+        faturamentos = list(importacao.faturamentos.all())
+        if not faturamentos:
+            logger.warning(f"[BOLETO_EMAIL] Importacao {importacao_id} sem faturamentos. Pulando envio.")
+            return {"status": "skipped", "reason": "no_faturamentos"}
+
+        boletos = list(
+            FaturamentoArquivo.objects.filter(
+                faturamento__in=faturamentos,
+                tipo='boleto',
+            ).order_by('faturamento_id', 'criado_em', 'id')
+        )
         if not boletos:
             logger.warning(f"[BOLETO_EMAIL] Nenhum boleto encontrado para importacao_id={importacao_id}")
             return {"status": "skipped", "reason": "no_boletos"}
+
+        logger.info(
+            f"[BOLETO_EMAIL] Enviando {len(boletos)} boleto(s) de "
+            f"{len(faturamentos)} faturamento(s) para: {email_destino} "
+            f"(importacao_id={importacao_id})"
+        )
 
         s3_client = boto3.client(
             's3',
@@ -685,40 +777,44 @@ def _disparar_email_boleto_cliente(self, importacao_id):
             region_name='us-east-2'
         )
 
-        attachments = []
+        boletos_context = []
         for arquivo in boletos:
-            try:
-                from urllib.parse import unquote
-                s3_key = unquote(arquivo.s3_key)
-
-                pdf_buffer = io.BytesIO()
-                s3_client.download_fileobj(bucket_name, s3_key, pdf_buffer)
-                pdf_buffer.seek(0)
-                pdf_base64 = base64.b64encode(pdf_buffer.read()).decode('utf-8')
-
-                attachments.append({
-                    'filename': arquivo.nome_arquivo or f'boleto_{arquivo.id}.pdf',
-                    'content': pdf_base64
-                })
-                logger.info(f"[BOLETO_EMAIL] Anexo adicionado: {arquivo.nome_arquivo} ({len(pdf_base64)} bytes base64)")
-            except Exception as e:
-                logger.warning(f"[BOLETO_EMAIL] Erro ao baixar boleto {arquivo.s3_key}: {e}")
+            link = _gerar_link_download_boleto(s3_client, bucket_name, arquivo, expiracao)
+            if not link:
                 continue
+            boletos_context.append({
+                'nome': _nome_arquivo_seguro(arquivo.nome_arquivo, f'boleto_{arquivo.id}.pdf'),
+                'fatura': arquivo.fatura_num or '',
+                'link': link,
+            })
 
-        if not attachments:
-            logger.warning(f"[BOLETO_EMAIL] Nenhum anexo disponível para importacao_id={importacao_id}")
-            return {"status": "skipped", "reason": "no_attachments"}
+        if not boletos_context:
+            logger.error(
+                f"[BOLETO_EMAIL] Nenhum link pôde ser gerado para importacao_id={importacao_id} "
+                f"({len(boletos)} boleto(s) registrado(s), todos ausentes no S3). E-mail não enviado."
+            )
+            return {"status": "skipped", "reason": "no_links"}
+
+        if len(boletos_context) < len(boletos):
+            logger.warning(
+                f"[BOLETO_EMAIL] importacao_id={importacao_id}: "
+                f"{len(boletos) - len(boletos_context)} de {len(boletos)} boleto(s) "
+                f"sem link (ausentes no S3). E-mail seguirá parcial."
+            )
 
         competencia_str = ''
-        if faturamento.competencia:
-            competencia_str = faturamento.competencia.strftime('%m/%Y')
+        for fat in faturamentos:
+            if fat.competencia:
+                competencia_str = fat.competencia.strftime('%m/%Y')
+                break
 
         context = {
             'cliente_nome': importacao.usuario.nome or importacao.usuario.email.split('@')[0],
             'competencia': competencia_str,
             'vencimento': importacao.data_vencimento.strftime('%d/%m/%Y') if importacao.data_vencimento else None,
             'valor_total': f"R$ {float(importacao.valor_total or 0):,.2f}".replace(',', 'v').replace('.', ',').replace('v', '.'),
-            'boletos': [{'nome': a.nome_arquivo, 'fatura': a.fatura_num} for a in boletos],
+            'boletos': boletos_context,
+            'link_validade_dias': max(1, expiracao // (24 * 3600)),
             'prazo_pagamento': 'O pagamento deverá ser realizado até a data de vencimento informada no boleto.'
         }
 
@@ -726,14 +822,21 @@ def _disparar_email_boleto_cliente(self, importacao_id):
         enviado = fedhub_service.enviar_email_boleto(
             email=email_destino,
             context=context,
-            attachments=attachments
         )
 
         if enviado:
             importacao.status = 'BOLETO_VR_ENVIADO'
             importacao.save(update_fields=['status'])
-            logger.info(f"[BOLETO_EMAIL] E-mail enviado e status atualizado para importacao_id={importacao_id}")
-            return {"status": "sent", "to": email_destino, "attachments": len(attachments)}
+            logger.info(
+                f"[BOLETO_EMAIL] E-mail enviado e status atualizado para "
+                f"importacao_id={importacao_id} ({len(boletos_context)} link(s))"
+            )
+            return {
+                "status": "sent",
+                "to": email_destino,
+                "links": len(boletos_context),
+                "boletos_sem_link": len(boletos) - len(boletos_context),
+            }
         else:
             logger.error(f"[BOLETO_EMAIL] Falha ao enviar e-mail para importacao_id={importacao_id}")
             return {"status": "failed"}
@@ -741,9 +844,6 @@ def _disparar_email_boleto_cliente(self, importacao_id):
     except Importacao.DoesNotExist:
         logger.error(f"[BOLETO_EMAIL] Importacao {importacao_id} não encontrada")
         return {"status": "error", "reason": "importacao_not_found"}
-    except Faturamento.DoesNotExist:
-        logger.error(f"[BOLETO_EMAIL] Faturamento {importacao_id} não encontrado")
-        return {"status": "error", "reason": "faturamento_not_found"}
     except Exception as e:
         logger.exception(f"[BOLETO_EMAIL] Erro ao enviar boleto: {e}")
         raise self.retry(exc=e)

@@ -499,16 +499,32 @@ class FedhubService:
 
     def enviar_email_boleto(self, email: str, context: Dict = None, attachments: list = None) -> bool:
         """
-        Envia e-mail com boletos em anexo para o cliente.
+        Envia e-mail com os boletos do faturamento para o cliente.
+
+        Os boletos são entregues como links de download no corpo do e-mail
+        (URLs pré-assinadas do S3), não como anexo.
 
         Args:
             email: E-mail do destinatário
-            context: Contexto para renderização do template (cliente_nome, competencia, etc.)
-            attachments: Lista de dicts com {filename: str, content: base64_bytes}
+            context: Contexto para renderização do template
+                     (cliente_nome, competencia, boletos=[{nome, fatura, link}], etc.)
+            attachments: NÃO SUPORTADO pelo gateway. Mantido apenas para não
+                     quebrar chamadas antigas; se preenchido, é ignorado com
+                     aviso no log. O endpoint /api/email/send/gmail do FedHub
+                     não declara esse campo no modelo EmailRequest, então o
+                     Pydantic descartava os anexos em silêncio e o e-mail
+                     chegava sem os PDFs. Para reativar anexos é preciso
+                     alterar o FedHub-Backend (controller + EmailService).
         """
         try:
             if context is None:
                 context = {}
+
+            if attachments:
+                logger.warning(
+                    f"enviar_email_boleto recebeu {len(attachments)} anexo(s), mas o gateway "
+                    f"de e-mail não suporta anexos — serão ignorados. Use links no context."
+                )
 
             context.setdefault('cliente_nome', context.get('cliente_nome', 'Cliente'))
             context.setdefault('competencia', context.get('competencia', '—'))
@@ -523,9 +539,6 @@ class FedhubService:
                 "is_html": True
             }
 
-            if attachments:
-                payload["attachments"] = attachments
-
             with httpx.Client() as client:
                 response = client.post(
                     f"{self.base_url}/api/email/send/gmail",
@@ -534,7 +547,11 @@ class FedhubService:
                 )
 
                 if response.status_code == 200:
-                    logger.info(f"E-mail de boleto enviado com sucesso para: {email} ({len(attachments or [])} anexos)")
+                    total_links = len(context.get('boletos') or [])
+                    logger.info(
+                        f"E-mail de boleto enviado com sucesso para: {email} "
+                        f"({total_links} link(s) de download)"
+                    )
                     return True
                 else:
                     logger.error(f"Gateway retornou erro {response.status_code}: {response.text}")
