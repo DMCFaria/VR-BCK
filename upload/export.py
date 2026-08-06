@@ -122,35 +122,49 @@ def calcular_taxa(valor_beneficio, quantidade_dias, vinculo=None, produto=None):
     return Decimal('0.00')
 
 
-def get_taxa_cadastrada(vinculo=None, produto=None):
+def get_taxa_cadastrada(vinculo=None, produto=None, administradora_fallback=None):
     """
     Retorna a taxa cadastrada na administradora (taxa_valor e taxa_tipo).
     Segue a mesma prioridade de busca do calcular_taxa.
+    Se vinculo for None, usa administradora_fallback para buscar taxa padrão.
     """
-    if not vinculo:
-        return None, None
+    import logging
+    logger = logging.getLogger(__name__)
 
-    taxa_config = TaxaConfig.objects.filter(
-        vinculo=vinculo, produto=produto, ativo=True
-    ).first()
-
-    if not taxa_config and produto and produto.tipo:
+    if vinculo:
+        # 1. Busca por produto específico
         taxa_config = TaxaConfig.objects.filter(
-            vinculo=vinculo, tipo=produto.tipo, ativo=True
+            vinculo=vinculo, produto=produto, ativo=True
         ).first()
 
-    if not taxa_config:
-        taxa_config = TaxaConfig.objects.filter(
-            vinculo=vinculo, produto__isnull=True, tipo__isnull=True, ativo=True
-        ).first()
+        # 2. Busca por tipo do produto
+        if not taxa_config and produto and produto.tipo:
+            taxa_config = TaxaConfig.objects.filter(
+                vinculo=vinculo, tipo=produto.tipo, ativo=True
+            ).first()
 
-    if taxa_config:
-        return taxa_config.taxa_tipo, taxa_config.taxa_valor
+        # 3. Busca genérica (sem produto, sem tipo)
+        if not taxa_config:
+            taxa_config = TaxaConfig.objects.filter(
+                vinculo=vinculo, produto__isnull=True, tipo__isnull=True, ativo=True
+            ).first()
 
-    administradora = vinculo.administradora
-    if administradora and administradora.taxa_padrao_valor:
-        return administradora.taxa_padrao_tipo, administradora.taxa_padrao_valor
+        if taxa_config:
+            logger.info(f"[TAXA] Encontrada TaxaConfig id={taxa_config.id} | tipo={taxa_config.taxa_tipo} | valor={taxa_config.taxa_valor} | vinculo={vinculo.id}")
+            return taxa_config.taxa_tipo, taxa_config.taxa_valor
 
+        logger.info(f"[TAXA] Nenhuma TaxaConfig encontrada para vinculo={vinculo.id}, produto={produto.codigo_produto if produto else None}")
+
+        administradora = vinculo.administradora
+        if administradora and administradora.taxa_padrao_valor:
+            logger.info(f"[TAXA] Usando taxa padrão da administradora {administradora.id}: {administradora.taxa_padrao_tipo} = {administradora.taxa_padrao_valor}")
+            return administradora.taxa_padrao_tipo, administradora.taxa_padrao_valor
+
+    if administradora_fallback and administradora_fallback.taxa_padrao_valor:
+        logger.info(f"[TAXA] Usando administradora_fallback: {administradora_fallback.taxa_padrao_tipo} = {administradora_fallback.taxa_padrao_valor}")
+        return administradora_fallback.taxa_padrao_tipo, administradora_fallback.taxa_padrao_valor
+
+    logger.info(f"[TAXA] Nenhuma taxa encontrada, retornando (None, None)")
     return None, None
 
 
@@ -381,6 +395,8 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
     Gera dados para planilha de faturamento.
     Se importacao_id for passado, filtra apenas pelas movimentações dessa importação.
     """
+    import logging
+    logger = logging.getLogger(__name__)
     # Buscar a administradora da importação (se houver) para filtrar o vínculo correto
     admin_importacao = None
     if importacao_id:
@@ -445,8 +461,26 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
             vinculo = cond.vinculocondominio_set.first()
         administradora = vinculo.administradora if vinculo else None
 
+        # Se não encontrou vínculo, usa a administradora da importação como fallback
+        if not vinculo and admin_importacao:
+            administradora = admin_importacao
+
+        # Log para debug
+        logger.info(f"[FATURAMENTO] cond={cond.cnpj} | admin_importacao={admin_importacao.id if admin_importacao else None} | vinculo={vinculo.id if vinculo else None} | prod={prod.codigo_produto if prod else None}")
+
         # Busca a taxa cadastrada na administradora (valor registrado, nao calculado)
-        taxa_tipo, taxa_valor = get_taxa_cadastrada(vinculo=vinculo, produto=prod)
+        taxa_tipo, taxa_valor = get_taxa_cadastrada(vinculo=vinculo, produto=prod, administradora_fallback=administradora)
+
+        # Se não encontrou taxa e não tem vínculo ou vínculo sem taxa, busca em outros vínculos do condomínio
+        if taxa_tipo is None and cond:
+            outros_vinculos = cond.vinculocondominio_set.exclude(
+                id=vinculo.id if vinculo else None
+            )
+            for outro_vinculo in outros_vinculos:
+                taxa_tipo, taxa_valor = get_taxa_cadastrada(vinculo=outro_vinculo, produto=prod, administradora_fallback=outro_vinculo.administradora)
+                if taxa_tipo is not None:
+                    logger.info(f"[FATURAMENTO] Taxa encontrada em outro vínculo: vinculo={outro_vinculo.id}")
+                    break
 
         # Endereço do condomínio. Se estiver vazio (comum no modo cartão admin,
         # pois a planilha traz o endereço da administradora), consulta o CNPJ.
