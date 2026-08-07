@@ -1,4 +1,5 @@
 # users/views.py
+from django.db.models import Q
 from django.utils import timezone
 
 from rest_framework import generics, permissions, status
@@ -138,6 +139,21 @@ class UserListView(generics.ListAPIView):
         tipo = self.request.query_params.get('tipo')
         if tipo and tipo not in ['fat', 'dev']:
             queryset = queryset.filter(tipo=tipo)
+
+        # A tela de usuários envia ?search= com o texto do campo de busca.
+        # O parâmetro era ignorado aqui: a lista voltava inteira e o filtro
+        # parecia não funcionar.
+        #
+        # Busca nos três campos que a tabela exibe (UsuarioTable.jsx mostra
+        # `username || nome` numa coluna e `email` na outra), senão o usuário
+        # digita o que está vendo na tela e não encontra nada.
+        search = (self.request.query_params.get('search') or '').strip()
+        if search:
+            queryset = queryset.filter(
+                Q(nome__icontains=search)
+                | Q(username__icontains=search)
+                | Q(email__icontains=search)
+            )
 
         return queryset
 
