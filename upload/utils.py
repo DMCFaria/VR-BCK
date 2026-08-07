@@ -82,131 +82,154 @@ def get_movimentacoes_detalhada(parsed_data):
     
     return movimentacoes
 
-def _get_taxa_info_for_cnpj(vinculo, admin, cnpj, produtos=None, tipos=None):
+def _resolver_taxa(vinculo_id, produtos, tipos, taxas_por_vinculo, admin):
     """
-    Retorna (taxa_percentual, taxa_tipo) para um vínculo de condomínio.
-    Segue a mesma prioridade de get_taxa_cadastrada em export.py:
-    1. TaxaConfig com produto específico
-    2. TaxaConfig com tipo do produto
-    3. TaxaConfig genérica (sem produto, sem tipo)
-    4. Taxa padrão da administradora
+    Resolve a taxa aplicável a UM funcionário.
 
-    produtos e tipos são sets de códigos de produtos/tipos do funcionário.
-    Se fornecidos, tenta buscar taxa por produto ou tipo antes da genérica.
+    Retorna (taxa_valor, taxa_tipo, taxa_origem), onde taxa_origem indica de onde
+    a taxa veio — usado pelo frontend e pelo suporte para explicar o resultado:
+      'produto'        TaxaConfig do vínculo para um produto específico
+      'tipo'           TaxaConfig do vínculo para um tipo de produto
+      'vinculo'        TaxaConfig genérica do vínculo (todos os produtos)
+      'administradora' Taxa padrão da administradora (fallback)
+      None             Nenhuma taxa configurada
+
+    Cascata idêntica à de get_taxa_cadastrada em export.py. `produtos` e `tipos`
+    são os produtos/tipos DESTE funcionário — não os do condomínio inteiro.
     """
-    from entidades.models import TaxaConfig
+    configs = taxas_por_vinculo.get(vinculo_id, []) if vinculo_id else []
 
-    if not vinculo:
-        if admin and admin.taxa_padrao_valor > 0:
-            return float(admin.taxa_padrao_valor), admin.taxa_padrao_tipo
-        return 0, None
+    if configs and produtos:
+        for cfg in configs:
+            if cfg.produto_id and cfg.produto_id in produtos:
+                return float(cfg.taxa_valor), cfg.taxa_tipo, 'produto'
 
-    taxa_encontrada = None
+    if configs and tipos:
+        for cfg in configs:
+            if cfg.tipo and cfg.tipo in tipos:
+                return float(cfg.taxa_valor), cfg.taxa_tipo, 'tipo'
 
-    if produtos:
-        for prod_codigo in produtos:
-            from beneficios.models import Produto
-            prod_obj = Produto.objects.filter(codigo_produto=prod_codigo).first()
-            if prod_obj:
-                taxa_encontrada = TaxaConfig.objects.filter(
-                    vinculo=vinculo, produto=prod_obj, ativo=True
-                ).first()
-                if taxa_encontrada:
-                    break
+    if configs:
+        for cfg in configs:
+            if not cfg.produto_id and not cfg.tipo:
+                return float(cfg.taxa_valor), cfg.taxa_tipo, 'vinculo'
 
-    if not taxa_encontrada and tipos:
-        for tipo in tipos:
-            taxa_encontrada = TaxaConfig.objects.filter(
-                vinculo=vinculo, tipo=tipo, ativo=True
-            ).first()
-            if taxa_encontrada:
-                break
+    if admin and admin.taxa_padrao_valor and admin.taxa_padrao_valor > 0:
+        return float(admin.taxa_padrao_valor), admin.taxa_padrao_tipo, 'administradora'
 
-    if not taxa_encontrada:
-        taxa_encontrada = TaxaConfig.objects.filter(
-            vinculo=vinculo, produto__isnull=True, tipo__isnull=True, ativo=True
-        ).first()
+    return 0, None, None
 
-    if taxa_encontrada:
-        return float(taxa_encontrada.taxa_valor), taxa_encontrada.taxa_tipo
 
-    if admin and admin.taxa_padrao_valor > 0:
-        return float(admin.taxa_padrao_valor), admin.taxa_padrao_tipo
+def _calcular_valor_taxa(taxa_valor, taxa_tipo, total_beneficio, quantidade_dias):
+    """PERC: percentual sobre o benefício. FIXO: valor por dia/movimentação."""
+    if not taxa_valor or not taxa_tipo:
+        return decimal.Decimal('0.00')
 
-    return 0, None
+    if taxa_tipo == 'FIXO':
+        dias = quantidade_dias if quantidade_dias > 0 else 30
+        return decimal.Decimal(str(taxa_valor)) * decimal.Decimal(str(dias))
+
+    return total_beneficio * (decimal.Decimal(str(taxa_valor)) / decimal.Decimal('100'))
 
 
 def get_beneficiary_summary(parsed_data, administradora_cnpj=None):
+    """
+    Monta o resumo por beneficiário exibido na tela de importação, já com a taxa
+    de administração resolvida para cada funcionário.
+
+    Campos de taxa devolvidos por beneficiário:
+      taxa_valor       valor CONFIGURADO (ex.: 3.5 para 3,5% ou 5.00 para R$ 5,00/dia)
+      taxa_tipo        'PERC' | 'FIXO' | None
+      taxa_calculada   valor em REAIS resultante da aplicação da taxa
+      taxa_origem      ver _resolver_taxa()
+      taxa             alias de taxa_calculada, mantido por compatibilidade
+      taxa_percentual  alias de taxa_valor, mantido por compatibilidade
+    """
     from entidades.models import VinculoCondominio, TaxaConfig, Administradora
+    from beneficios.models import Produto
 
     total_por_cpf = defaultdict(decimal.Decimal)
+    quantidade_por_cpf = defaultdict(int)
     nomes_por_cpf = {}
     condominios_por_cpf = {}
     cnpjs_por_cpf = {}
+    ceps_por_cpf = {}
     produtos_por_cpf = defaultdict(set)
-    tipos_por_cpf = defaultdict(set)
 
     condominios = parsed_data.get('condominios', [])
     for condo in condominios:
         for func in condo.get('funcionarios', []):
             cpf = func.get('cpf')
-            nome = func.get('nome')
+            if not cpf:
+                continue
+
             valor_bene = func.get('valor_bene', 0)
+            if not isinstance(valor_bene, decimal.Decimal):
+                try:
+                    valor_bene = decimal.Decimal(str(valor_bene))
+                except (decimal.InvalidOperation, TypeError, ValueError):
+                    valor_bene = decimal.Decimal('0.00')
 
-            if cpf:
-                if not isinstance(valor_bene, decimal.Decimal):
-                    try:
-                        valor_bene = decimal.Decimal(str(valor_bene))
-                    except:
-                        valor_bene = decimal.Decimal('0.00')
-                total_por_cpf[cpf] += valor_bene
-                nomes_por_cpf[cpf] = nome
-                condominios_por_cpf[cpf] = condo.get('nome', '')
-                cnpjs_por_cpf[cpf] = condo.get('cnpj', '')
+            total_por_cpf[cpf] += valor_bene
+            nomes_por_cpf[cpf] = func.get('nome')
+            condominios_por_cpf[cpf] = condo.get('nome', '')
+            cnpjs_por_cpf[cpf] = condo.get('cnpj', '')
+            ceps_por_cpf[cpf] = condo.get('cep')
 
-                for mov in func.get('movimentacoes', []):
-                    codigo = mov.get('codigo_produto') or mov.get('codigo') or mov.get('produto', '')
-                    tipo = mov.get('tipo', '')
-                    if codigo:
-                        produtos_por_cpf[cpf].add(codigo)
-                    if tipo:
-                        tipos_por_cpf[cpf].add(tipo)
+            for mov in func.get('movimentacoes', []):
+                codigo = mov.get('codigo_produto') or mov.get('codigo') or mov.get('produto', '')
+                if codigo:
+                    produtos_por_cpf[cpf].add(str(codigo))
+                try:
+                    quantidade_por_cpf[cpf] += int(mov.get('quantidade', 1) or 1)
+                except (TypeError, ValueError):
+                    quantidade_por_cpf[cpf] += 1
 
-    taxas_por_cnpj = {}
+    # ---- Pré-carga: uma query por coleção, em vez de N por funcionário ----
+    admin = None
+    vinculo_por_cnpj = {}
+    taxas_por_vinculo = defaultdict(list)
+    tipo_por_produto = {}
+
     if administradora_cnpj:
         admin = Administradora.objects.filter(cnpj=administradora_cnpj).first()
-        if admin:
-            cnpjs_unicos = set(cnpjs_por_cpf.values())
-            for cnpj in cnpjs_unicos:
-                if not cnpj:
-                    continue
-                vinculo = VinculoCondominio.objects.filter(
-                    condominio__cnpj=cnpj,
-                    administradora=admin
-                ).select_related('condominio').first()
 
-                cpf_com_este_cnpj = next((cpf for cpf, c in cnpjs_por_cpf.items() if c == cnpj), None)
-                produtos = produtos_por_cpf.get(cpf_com_este_cnpj, set()) if cpf_com_este_cnpj else set()
-                tipos = tipos_por_cpf.get(cpf_com_este_cnpj, set()) if cpf_com_este_cnpj else set()
+    if admin:
+        cnpjs_unicos = {c for c in cnpjs_por_cpf.values() if c}
+        if cnpjs_unicos:
+            vinculos = VinculoCondominio.objects.filter(
+                administradora=admin,
+                condominio__cnpj__in=cnpjs_unicos,
+            ).values_list('id', 'condominio_id')
+            vinculo_por_cnpj = {cnpj: vid for vid, cnpj in vinculos}
 
-                taxa_percentual, taxa_tipo = _get_taxa_info_for_cnpj(vinculo, admin, cnpj, produtos, tipos)
-                taxas_por_cnpj[cnpj] = (taxa_percentual, taxa_tipo)
+        if vinculo_por_cnpj:
+            for cfg in TaxaConfig.objects.filter(
+                vinculo_id__in=vinculo_por_cnpj.values(), ativo=True
+            ):
+                taxas_por_vinculo[cfg.vinculo_id].append(cfg)
 
+    todos_produtos = {p for produtos in produtos_por_cpf.values() for p in produtos}
+    if todos_produtos:
+        tipo_por_produto = dict(
+            Produto.objects.filter(codigo_produto__in=todos_produtos)
+            .values_list('codigo_produto', 'tipo')
+        )
+
+    # ---- Resolução por funcionário ----
     summary_list = []
     for cpf, total in total_por_cpf.items():
         cnpj = cnpjs_por_cpf.get(cpf, '')
-        taxa_info = taxas_por_cnpj.get(cnpj, (0, None))
-        taxa_percentual, taxa_tipo = taxa_info
-        taxa_calculada = decimal.Decimal('0.00')
+        produtos = produtos_por_cpf.get(cpf, set())
+        tipos = {tipo_por_produto.get(p) for p in produtos if tipo_por_produto.get(p)}
 
-        if taxa_percentual > 0 and taxa_tipo:
-            total_beneficio = total_por_cpf.get(cpf, decimal.Decimal('0'))
-            if taxa_tipo == 'FIXO':
-                quantidade_dias = sum(mov.get('quantidade', 1) for func in condominios for f in func.get('funcionarios', []) if f.get('cpf') == cpf for mov in f.get('movimentacoes', []))
-                quantidade_dias = max(quantidade_dias, 1) if quantidade_dias > 0 else 30
-                taxa_calculada = decimal.Decimal(str(taxa_percentual)) * decimal.Decimal(str(quantidade_dias))
-            else:
-                taxa_calculada = total_beneficio * (decimal.Decimal(str(taxa_percentual)) / decimal.Decimal('100'))
+        taxa_valor, taxa_tipo, taxa_origem = _resolver_taxa(
+            vinculo_por_cnpj.get(cnpj), produtos, tipos, taxas_por_vinculo, admin
+        )
+
+        taxa_calculada = _calcular_valor_taxa(
+            taxa_valor, taxa_tipo, total, quantidade_por_cpf.get(cpf, 0)
+        )
 
         summary_list.append({
             "nome_funcionario": nomes_por_cpf.get(cpf, "Nome não encontrado"),
@@ -214,11 +237,16 @@ def get_beneficiary_summary(parsed_data, administradora_cnpj=None):
             "valor_total": str(total),
             "condominio": condominios_por_cpf.get(cpf),
             "cnpj": cnpj,
-            "taxa": float(taxa_calculada),
-            "taxa_percentual": taxa_percentual,
+            "taxa_valor": taxa_valor,
             "taxa_tipo": taxa_tipo,
-            "cep": condominios[-1].get("cep") if condominios else None,
+            "taxa_calculada": float(taxa_calculada),
+            "taxa_origem": taxa_origem,
+            # Compatibilidade com consumidores antigos
+            "taxa": float(taxa_calculada),
+            "taxa_percentual": taxa_valor,
+            "cep": ceps_por_cpf.get(cpf),
         })
+
     return summary_list
 
 

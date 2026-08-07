@@ -92,7 +92,7 @@ class AdministradoraSerializer(serializers.ModelSerializer):
             'id', 'cnpj', 'razao_social', 'nome_fantasia', 'email', 'ativo',
             'cartao_admin', 'd_mais',
             'endereco', 'numero', 'complemento', 'bairro', 'cidade', 'estado', 'cep',
-            'taxa_padrao_tipo', 'taxa_padrao_valor',
+            'taxa_modo', 'taxa_padrao_tipo', 'taxa_padrao_valor',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']

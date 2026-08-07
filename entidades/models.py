@@ -7,6 +7,12 @@ class Administradora(models.Model):
         ('FIXO', 'Valor Fixo (R$)'),
     ]
 
+    MODO_TAXA_CHOICES = [
+        ('PADRAO', 'Taxa padrão (mesma para todos os condomínios)'),
+        ('PRODUTO', 'Taxa por produto'),
+        ('CONDOMINIO', 'Taxa por condomínio'),
+    ]
+
     cnpj = models.CharField(max_length=20, unique=True, verbose_name="CNPJ")
     razao_social = models.CharField(max_length=255, verbose_name="Nome/Razão Social")
     nome_fantasia = models.CharField(max_length=255, verbose_name="Nome Fantasia", null=True, blank=True)
@@ -31,6 +37,17 @@ class Administradora(models.Model):
     d_mais = models.PositiveSmallIntegerField(
         default=3,
         verbose_name="D+"
+    )
+
+    # Modo de cobrança escolhido no cadastro. Determina qual configuração de taxa
+    # a tela deve exibir ao reabrir o cadastro — não pode ser inferido das
+    # TaxaConfig gravadas, porque os modos PRODUTO e CONDOMINIO geram registros
+    # na mesma tabela.
+    taxa_modo = models.CharField(
+        max_length=10,
+        choices=MODO_TAXA_CHOICES,
+        default='PADRAO',
+        verbose_name="Modo de Cobrança da Taxa"
     )
 
     # Taxa padrão da administradora
