@@ -11,6 +11,22 @@ from pypdf import PdfReader, PdfWriter
 
 logger = logging.getLogger(__name__)
 
+# Status a partir dos quais uma importação pode avançar para FATURADO.
+#
+# PENDING está FORA desta lista de propósito. O valor é sobrecarregado: além de
+# ser o default do model, é uma opção que o operador escolhe no dropdown do
+# dashboard para marcar "pagamento pendente" — um estado POSTERIOR ao
+# faturamento. Avançar a partir dele apagaria uma decisão manual.
+#
+# Os demais status (COMPRADO, PAGO, PAGO_PARCIALMENTE, CANCELADO,
+# BOLETO_VR_ENVIADO) também são posteriores ou terminais: enviar documentos
+# adicionais não pode rebaixar o pedido.
+STATUS_ANTERIORES_A_FATURADO = (
+    'PROCESSING',
+    'AGUARDANDO_FATURAMENTO',
+    'FAILED',
+)
+
 
 def _notificar_erro_pesquisa_cnpj(assunto, mensagem):
     """Envia email de alerta quando a pesquisa automática de CNPJ falha."""
@@ -487,14 +503,39 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
 
         try:
             from beneficios.models import Importacao, MovimentacaoBeneficio
-            if mode != 'adicionar':
-                Importacao.objects.filter(id=importacao_id).update(status='FATURADO')
-                MovimentacaoBeneficio.objects.filter(importacao=importacao_id).update(importacao_status='FATURADO')
+
+            # O avanço para FATURADO é responsabilidade do backend, não do
+            # frontend: antes dependia de um PATCH que o front disparava após o
+            # upload, e quando esse PATCH falhava a importação ficava presa no
+            # status anterior mesmo com o faturamento concluído.
+            #
+            # O filtro por status torna a escrita condicional e idempotente:
+            # avança quem ainda não foi faturado e não toca em quem já está
+            # COMPRADO/PAGO/CANCELADO — inclusive no mode='adicionar', em que
+            # documentos extras são anexados a um pedido já adiante no fluxo.
+            avancou = Importacao.objects.filter(
+                id=importacao_id,
+                status__in=STATUS_ANTERIORES_A_FATURADO,
+            ).update(status='FATURADO')
+
+            if avancou:
+                MovimentacaoBeneficio.objects.filter(
+                    importacao=importacao_id
+                ).update(importacao_status='FATURADO')
+                logger.info(
+                    f"[FATURAMENTO] Importacao {importacao_id} avançou para FATURADO"
+                )
+            else:
+                logger.info(
+                    f"[FATURAMENTO] Importacao {importacao_id} mantida no status atual "
+                    f"(já posterior ao faturamento, ou cancelada)"
+                )
+
             faturamento.status = 'COMPLETED'
             faturamento.save(update_fields=['status'])
             MovimentacaoBeneficio.objects.filter(importacao=importacao_id).update(fat_status='COMPLETED')
         except Exception:
-            logger.exception("Erro ao atualizar status da importação para COMPLETED")
+            logger.exception("Erro ao atualizar status da importação para FATURADO")
 
         try:
             _disparar_email_boleto_cliente.delay(importacao_id)
