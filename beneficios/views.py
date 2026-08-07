@@ -1,6 +1,7 @@
 import logging
 from django.utils import timezone
 
+from drf_spectacular.utils import extend_schema
 from rest_framework import viewsets, views, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -582,6 +583,7 @@ class ImportacaoListView(views.APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
+    @extend_schema(operation_id='beneficios_importacoes_list')
     def get(self, request):
         from datetime import timedelta
         from django.db.models import Prefetch

@@ -1,4 +1,5 @@
 # users/serializers.py
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 from .models import CustomUser
 from entidades.models import Administradora
@@ -60,6 +61,19 @@ class CustomUserSerializer(serializers.ModelSerializer):
             'administradora_ativa': {'required': False, 'allow_null': True},
         }
 
+    @extend_schema_field(
+        {
+            'type': 'array',
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'id': {'type': 'integer'},
+                    'razao_social': {'type': 'string'},
+                    'nome_fantasia': {'type': 'string'},
+                },
+            },
+        }
+    )
     def get_administradoras_data(self, obj):
         admins = obj.administradoras.all()
         return [

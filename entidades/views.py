@@ -1,6 +1,7 @@
 import json
 from django.db.models import Prefetch, Q
 
+from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -445,6 +446,16 @@ class AdministradoraViewSet(viewsets.ModelViewSet):
                 status=500
             )
     
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                'regra_id',
+                OpenApiTypes.INT,
+                OpenApiParameter.PATH,
+                description='ID da regra de valor (igual ao ID da administradora).',
+            )
+        ]
+    )
     @action(detail=True, methods=['put'], url_path='regra-valor/(?P<regra_id>[^/.]+)')
     def atualizar_regra_valor(self, request, pk=None, regra_id=None):
         """
