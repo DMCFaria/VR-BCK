@@ -137,6 +137,8 @@ class GerenteSerializer(serializers.ModelSerializer):
 
 class TaxaConfigSerializer(serializers.ModelSerializer):
     vinculo_display = serializers.SerializerMethodField(read_only=True)
+    condominio_nome = serializers.CharField(source='vinculo.condominio.nome', read_only=True, default=None)
+    condominio_cnpj = serializers.CharField(source='vinculo.condominio.cnpj', read_only=True, default=None)
     produto = ProdutoField(
         queryset=Produto.objects.all(),
         required=False,
@@ -185,6 +187,8 @@ class TaxaConfigSerializer(serializers.ModelSerializer):
             'id',
             'vinculo',
             'vinculo_display',
+            'condominio_nome',
+            'condominio_cnpj',
             'produto',
             'produto_nome',
             'produto_codigo',
