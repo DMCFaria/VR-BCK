@@ -562,7 +562,12 @@ class UltimaMovimentacaoDashboard(views.APIView):
             'total_funcionarios': sum(len(c['funcionarios']) for c in condominios),
             'total_movimentacoes': movimentacoes.count(),
             'importacao_nome': f"IMP-{ultima_importacao.id}",
-            'tipo_importacao': ultima_importacao.modelo_importacao
+            'tipo_importacao': ultima_importacao.modelo_importacao,
+            # Planilhas no S3. A editada só existe quando o usuário corrigiu
+            # dados na confirmação; o card da visão geral prioriza ela e cai na
+            # original quando não houver.
+            'arquivo_s3': ultima_importacao.arquivo_s3,
+            'arquivo_s3_editado': ultima_importacao.arquivo_s3_editado,
         }
         
         logger.info(f"Dashboard - Última importação: ID {ultima_importacao.id}, "
