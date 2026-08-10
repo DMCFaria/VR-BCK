@@ -500,15 +500,31 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
                     logger.info(f"[FATURAMENTO] Taxa encontrada em outro vínculo: vinculo={outro_vinculo.id}")
                     break
 
-        # Endereço do condomínio. Se estiver vazio (comum no modo cartão admin,
-        # pois a planilha traz o endereço da administradora), consulta o CNPJ.
+        # Endereço do condomínio.
+        #
+        # Exigir que TODOS os campos estivessem vazios para consultar o CNPJ
+        # deixava passar o caso mais comum de endereço errado: no modo cartão
+        # admin a planilha traz o endereço da ADMINISTRADORA como local de
+        # entrega, então o registro fica preenchido — só que com o endereço
+        # errado — e a consulta nunca disparava.
+        #
+        # `is_searched` marca que o endereço veio da consulta por CNPJ. Para
+        # administradora com cartão admin, enquanto isso for falso o que está
+        # gravado veio da planilha e não é o endereço do condomínio.
         endereco_cond = cond.endereco or ''
         bairro_cond = cond.bairro or ''
         cidade_cond = cond.cidade or ''
         estado_cond = cond.estado or ''
         cep_cond = cond.cep or ''
 
-        if cond.cnpj and not any([endereco_cond, bairro_cond, cidade_cond, estado_cond, cep_cond]):
+        endereco_vazio = not any([endereco_cond, bairro_cond, cidade_cond, estado_cond, cep_cond])
+        endereco_nao_confiavel = bool(
+            admin_importacao
+            and admin_importacao.cartao_admin
+            and not cond.is_searched
+        )
+
+        if cond.cnpj and (endereco_vazio or endereco_nao_confiavel):
             if cond.cnpj not in cache_enderecos:
                 cache_enderecos[cond.cnpj] = _consultar_endereco_condominio(cond.cnpj)
             dados_cnpj = cache_enderecos[cond.cnpj]
