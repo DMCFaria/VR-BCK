@@ -269,17 +269,25 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
             cnpj_limpo = condo['cnpj']
             
             if cnpj_limpo not in existing_condos:
+                # Mesma regra do ramo de atualização abaixo: com cartao_admin=True
+                # a planilha traz o endereço da ADMINISTRADORA como local de
+                # entrega, igual para todos os condomínios. Gravar isso aqui
+                # criava o condomínio já com o endereço errado — e como os campos
+                # ficavam preenchidos, a consulta por CNPJ do faturamento nunca
+                # disparava e o erro seguia para planilha, TXT e nota de débito.
+                usar_endereco_planilha = not administradora.cartao_admin
+
                 condos_to_create.append(Condominio(
                     cnpj=cnpj_limpo,
                     nome=condo['nome'],
                     tipo_local='CONDOMINIO',
-                    endereco=condo.get('rua', ''),
-                    numero=condo.get('numero', ''),
-                    complemento=condo.get('complemento', ''),
-                    bairro=condo.get('bairro', ''),
-                    cidade=condo.get('cidade', ''),
-                    estado=condo.get('estado', ''),
-                    cep=condo.get('cep', '')
+                    endereco=condo.get('rua', '') if usar_endereco_planilha else '',
+                    numero=condo.get('numero', '') if usar_endereco_planilha else '',
+                    complemento=condo.get('complemento', '') if usar_endereco_planilha else '',
+                    bairro=condo.get('bairro', '') if usar_endereco_planilha else '',
+                    cidade=condo.get('cidade', '') if usar_endereco_planilha else '',
+                    estado=condo.get('estado', '') if usar_endereco_planilha else '',
+                    cep=condo.get('cep', '') if usar_endereco_planilha else ''
                 ))
             else:
                 condo_obj = existing_condos[cnpj_limpo]
