@@ -44,6 +44,24 @@ def _consultar_endereco_condominio(cnpj):
         return None
 
 
+def nome_produto_exibicao(produto):
+    """
+    Nome do produto como deve sair na planilha de faturamento, sem o prefixo da
+    fornecedora: "VR Alimentação" -> "Alimentação", "VR Auto" -> "Auto".
+
+    Só remove "VR" quando ele aparece isolado no início. "VR+VA" e nomes como
+    "VR Multi VR+VA" (que vira "Multi VR+VA") continuam íntegros, e um produto
+    chamado apenas "VR" mantém o nome original em vez de virar string vazia.
+    """
+    nome = (produto.nome or '').strip()
+
+    if not nome:
+        return produto.get_tipo_display() if produto.tipo else produto.codigo_produto
+
+    sem_prefixo = re.sub(r'^VR\s+', '', nome, flags=re.IGNORECASE).strip()
+    return sem_prefixo or nome
+
+
 def remover_acentos(texto):
     """Remove acentos e caracteres especiais, convertendo para ASCII."""
     if not texto:
@@ -449,9 +467,9 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
             data_fim = data_ini + timedelta(days=30)
             periodos = f"{data_ini.strftime('%d/%m/%Y')} - {data_fim.strftime('%d/%m/%Y')}"
 
-        # Sempre usa o nome original do produto da planilha (prod.nome).
+        # Nome do produto da planilha (prod.nome), sem o prefixo "VR".
         # O tipo normalizado (get_tipo_display) so deve ser usado em casos de fallback.
-        produto_display = prod.nome if prod.nome else (prod.get_tipo_display() if prod.tipo else prod.codigo_produto)
+        produto_display = nome_produto_exibicao(prod)
 
         # Busca o vínculo entre o condomínio e a administradora
         # Prioriza o vínculo da mesma administradora da importação
