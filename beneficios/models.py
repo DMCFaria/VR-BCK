@@ -75,6 +75,12 @@ class Importacao(models.Model):
     total_registros = models.IntegerField(default=0, verbose_name="Total de Registros")
     registros_processados = models.IntegerField(default=0, verbose_name="Registros Processados")
     erros = models.JSONField(default=list, verbose_name="Erros")
+    observacao = models.TextField(
+        blank=True,
+        default='',
+        verbose_name="Observação",
+        help_text="Texto livre informado pela administradora no envio da importação."
+    )
     arquivo_s3 = models.CharField(max_length=500, blank=True, null=True, verbose_name="Arquivo S3")
     arquivo_s3_editado = models.CharField(max_length=500, blank=True, null=True, verbose_name="Arquivo S3 Editado")
     data_vencimento = models.DateField(verbose_name="Data de Vencimento", null=True, blank=True)

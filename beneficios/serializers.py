@@ -278,6 +278,7 @@ class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
             'arquivo_s3',
             'arquivo_s3_editado',
             'numero_fatura',
+            'observacao',
             'documentos',
         ]
 
