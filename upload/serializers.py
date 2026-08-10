@@ -111,6 +111,7 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
     dados_modificados = serializers.JSONField(required=False, allow_null=True, default=None)
     cartao_admin = serializers.BooleanField(required=False, allow_null=True, default=None)
     administradora_cnpj = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    observacao = serializers.CharField(required=False, allow_blank=True, allow_null=True, default='')
 
     def validate(self, data):
         if not data.get('file_upload_id') and not data.get('importacao_id'):
@@ -637,7 +638,8 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 vigencia_inicio=validated_data.get('vigencia_inicio') or validated_data.get('periodo_inicio'),
                 vigencia_fim=validated_data.get('vigencia_fim') or validated_data.get('periodo_fim'),
                 modelo_importacao=modelo_importacao,
-                arquivo_s3=arquivo_s3_url
+                arquivo_s3=arquivo_s3_url,
+                observacao=(validated_data.get('observacao') or '').strip()
             )
 
             if movimentacoes_to_create:
