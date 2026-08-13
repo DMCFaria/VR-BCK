@@ -150,8 +150,15 @@ def pesquisar_enderecos_condominios(self, cnpjs, importacao_id=None):
                 condominio.cep = dados["cep"]
                 campos_atualizados.append("cep")
 
-            condominio.is_searched = True
-            condominio.save(update_fields=campos_atualizados + ["is_searched"])
+            # Só marca is_searched quando o endereço realmente veio da consulta;
+            # um endereço pré-existente (possivelmente errado, vindo da planilha)
+            # não é sobrescrito aqui, e marcá-lo como pesquisado escondia o erro
+            # das rotinas de correção/reconsulta.
+            if any(c in campos_atualizados for c in ("endereco", "bairro", "cidade", "cep")):
+                condominio.is_searched = True
+                condominio.save(update_fields=campos_atualizados + ["is_searched"])
+            elif campos_atualizados:
+                condominio.save(update_fields=campos_atualizados)
             atualizados += 1
 
             logger.info(

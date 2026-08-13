@@ -174,6 +174,16 @@ def _remover_acentos(texto):
     return ''.join(c for c in nfkd if not unicodedata.combining(c))
 
 
+def _endereco_normalizado(local):
+    """
+    Tupla de endereço normalizada (sem acentos, casefold) para comparar
+    locais de entrega entre si. Usada na detecção de cartão admin.
+    """
+    def norm(campo):
+        return _remover_acentos(_safe_str(local.get(campo))).casefold().strip()
+    return tuple(norm(c) for c in ('rua', 'numero', 'bairro', 'cidade', 'cep'))
+
+
 def _normalizar_header(val):
     """Extrai e normaliza o texto do header para comparação (primeira linha, sem espaços extras)."""
     if val is None:
@@ -352,7 +362,14 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
     # Determina se é modo "cartão admin" baseado apenas na aba Local de Entrega.
     # Regra acordada: se houver apenas 1 local de entrega => cartao_admin=True
     # (a administradora centraliza a entrega). Se houver 0 locais => erro.
-    # Se houver >1 local => condomínios normais, cartao_admin=False.
+    #
+    # Com >1 local, normalmente são condomínios com endereços próprios
+    # (cartao_admin=False). Mas existe um formato híbrido em que a planilha
+    # lista um local por condomínio e repete o endereço da ADMINISTRADORA em
+    # todos eles — nesse caso o endereço não é do condomínio e a entrega
+    # também é centralizada, então é cartão admin do mesmo jeito. Endereços
+    # todos vazios NÃO contam: seguem como condomínios normais, pois o
+    # faturamento já consulta o CNPJ quando o endereço está vazio.
     cartao_admin = False
     if not locais_raw:
         result['errors'].append(
@@ -361,7 +378,11 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
     elif len(locais_raw) == 1:
         cartao_admin = True
     else:
-        cartao_admin = False
+        enderecos = {_endereco_normalizado(locais[codigo]) for codigo in locais_raw}
+        if len(enderecos) == 1:
+            (endereco_unico,) = enderecos
+            rua = endereco_unico[0]
+            cartao_admin = bool(rua)
 
     result['cartao_admin'] = cartao_admin
 

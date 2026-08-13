@@ -260,5 +260,117 @@ class TestColunasNaoMapeadas(unittest.TestCase):
             )
 
 
+class TestDeteccaoCartaoAdmin(unittest.TestCase):
+    """
+    Testes da detecção de cartão admin pela aba 'Local de Entrega'.
+
+    Além do caso clássico (1 único local), a planilha pode vir num formato
+    híbrido: um local por condomínio, todos com o endereço da ADMINISTRADORA
+    repetido (entrega centralizada). Esse formato também é cartão admin.
+    """
+
+    ENDERECO_ADM = ('AV ADHEMAR DE BARROS', '120', '', 'VILA SANTA ROSA', 'GUARUJÁ', 'SP', '11430003')
+
+    def _criar_planilha(self, tmpdir, locais):
+        """
+        Cria uma planilha mínima no layout VR com as abas Sumario,
+        Local de Entrega e Beneficiario. `locais` é uma lista de tuplas
+        (cnpj, nome, rua, numero, complemento, bairro, cidade, estado, cep).
+        """
+        import openpyxl
+
+        wb = openpyxl.Workbook()
+        ws_sum = wb.active
+        ws_sum.title = 'Sumario'
+        ws_sum.cell(1, 1).value = 'CNPJ'
+        ws_sum.cell(1, 2).value = '35315360000167'
+
+        ws_loc = wb.create_sheet('Local de Entrega')
+        ws_loc.append(['Código', 'Nome', 'Tipo', 'Rua', 'Número', 'Complemento', 'Bairro', 'Cidade', 'Estado', 'CEP'])
+        for cnpj, nome, rua, numero, complemento, bairro, cidade, estado, cep in locais:
+            ws_loc.append([cnpj, nome, '', rua, numero, complemento, bairro, cidade, estado, cep])
+
+        ws_ben = wb.create_sheet('Beneficiario')
+        ws_ben.cell(2, 1).value = 'CPF'
+        ws_ben.cell(2, 5).value = 'Nome'
+        # Um beneficiário válido no primeiro local, com VR Refeição (col 10)
+        ws_ben.cell(3, 1).value = '52998224725'
+        ws_ben.cell(3, 2).value = locais[0][0]
+        ws_ben.cell(3, 4).value = 'MAT001'
+        ws_ben.cell(3, 5).value = 'FUNCIONARIO TESTE'
+        ws_ben.cell(3, 7).value = '01/01/1990'
+        ws_ben.cell(3, 10).value = 100.0
+
+        file_path = os.path.join(tmpdir, 'planilha_teste.xlsx')
+        wb.save(file_path)
+        return file_path
+
+    def _parse(self, tmpdir, locais):
+        file_path = self._criar_planilha(tmpdir, locais)
+        return parse_fut_template(
+            file_path,
+            file_upload_id=1495,
+            valor_max_beneficio=Decimal('9999.99'),
+            administradora_cnpj='35315360000167',
+        )
+
+    def _local(self, cnpj, nome, endereco):
+        rua, numero, complemento, bairro, cidade, estado, cep = endereco
+        return (cnpj, nome, rua, numero, complemento, bairro, cidade, estado, cep)
+
+    def test_um_unico_local_marca_cartao_admin(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data = self._parse(tmpdir, [
+                self._local('00034178000153', 'COND A', self.ENDERECO_ADM),
+            ])
+            self.assertTrue(data['cartao_admin'])
+
+    def test_varios_locais_com_mesmo_endereco_marca_cartao_admin(self):
+        """Formato híbrido: N locais, todos com o endereço da administradora."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data = self._parse(tmpdir, [
+                self._local('00034178000153', 'COND A', self.ENDERECO_ADM),
+                self._local('00034453000139', 'COND B', self.ENDERECO_ADM),
+                self._local('00034680000164', 'COND C', self.ENDERECO_ADM),
+            ])
+            self.assertTrue(data['cartao_admin'])
+
+    def test_mesmo_endereco_com_variacao_de_acento_e_caixa_marca_cartao_admin(self):
+        import tempfile
+        endereco_variante = ('av adhemar de barros', '120', '', 'Vila Santa Rosa', 'Guaruja', 'SP', '11430003')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data = self._parse(tmpdir, [
+                self._local('00034178000153', 'COND A', self.ENDERECO_ADM),
+                self._local('00034453000139', 'COND B', endereco_variante),
+            ])
+            self.assertTrue(data['cartao_admin'])
+
+    def test_varios_locais_com_enderecos_distintos_nao_marca_cartao_admin(self):
+        import tempfile
+        endereco_b = ('RUA DAS FLORES', '55', '', 'CENTRO', 'SANTOS', 'SP', '11010000')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data = self._parse(tmpdir, [
+                self._local('00034178000153', 'COND A', self.ENDERECO_ADM),
+                self._local('00034453000139', 'COND B', endereco_b),
+            ])
+            self.assertFalse(data['cartao_admin'])
+
+    def test_varios_locais_com_enderecos_vazios_nao_marca_cartao_admin(self):
+        """
+        Endereços todos vazios não indicam entrega centralizada — o
+        faturamento consulta o CNPJ quando o endereço está vazio.
+        """
+        import tempfile
+        endereco_vazio = ('', '', '', '', '', '', '')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data = self._parse(tmpdir, [
+                self._local('00034178000153', 'COND A', endereco_vazio),
+                self._local('00034453000139', 'COND B', endereco_vazio),
+            ])
+            self.assertFalse(data['cartao_admin'])
+
+
 if __name__ == '__main__':
     unittest.main()

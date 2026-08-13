@@ -44,7 +44,11 @@ class CNPJConsultaService:
             return cls._consultar_brasilapi(cnpj_limpo)
 
         if fonte == "bigdatacorp_addresses":
-            return cls._consultar_bigdatacorp_addresses(cnpj_limpo)
+            dados = cls._consultar_bigdatacorp_addresses(cnpj_limpo)
+            if dados:
+                return dados
+            logger.warning(f"BigDataCorp addresses falhou para {cnpj_limpo}, tentando BrasilAPI fallback")
+            return cls._consultar_brasilapi(cnpj_limpo)
 
         if fonte == "brasilapi":
             return cls._consultar_brasilapi(cnpj_limpo)
