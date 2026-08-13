@@ -104,8 +104,16 @@ class Command(BaseCommand):
                     condominio.cep = dados["cep"]
                     campos_atualizados.append("cep")
 
-                condominio.is_searched = True
-                condominio.save(update_fields=campos_atualizados + ["is_searched"])
+                # Só marca is_searched quando o endereço realmente veio da
+                # consulta (aplicado agora). Endereço pré-existente não
+                # sobrescrito continua elegível a reconsulta/correção.
+                if sobrescrever or any(
+                    c in campos_atualizados for c in ("endereco", "bairro", "cidade", "cep")
+                ):
+                    condominio.is_searched = True
+                    condominio.save(update_fields=campos_atualizados + ["is_searched"])
+                elif campos_atualizados:
+                    condominio.save(update_fields=campos_atualizados)
                 atualizados += 1
 
                 self.stdout.write(

@@ -96,8 +96,20 @@ def _pesquisar_enderecos_condominios_async(cnpjs, importacao_id, cartao_admin=Fa
                     condominio.cep = dados["cep"]
                     campos_atualizados.append("cep")
 
-                condominio.is_searched = True
-                condominio.save(update_fields=campos_atualizados + ["is_searched"])
+                # Só marca is_searched quando a consulta de fato foi aplicada ao
+                # endereço. Fora do cartão admin, um endereço já preenchido (que
+                # pode ter vindo errado da planilha) não é sobrescrito — marcar
+                # is_searched nesse caso escondia o endereço errado de todas as
+                # rotinas de correção/reconsulta.
+                endereco_veio_da_consulta = cartao_admin or any(
+                    campo in campos_atualizados
+                    for campo in ("endereco", "bairro", "cidade", "cep")
+                )
+                if endereco_veio_da_consulta:
+                    condominio.is_searched = True
+                    condominio.save(update_fields=campos_atualizados + ["is_searched"])
+                elif campos_atualizados:
+                    condominio.save(update_fields=campos_atualizados)
                 logger.info(f"[PESQUISA_THREAD] Condomínio {cnpj} atualizado: {campos_atualizados}")
 
             except Exception as e:
