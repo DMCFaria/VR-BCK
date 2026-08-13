@@ -68,8 +68,10 @@ class Command(BaseCommand):
         sleep = options["sleep"]
 
         if not getattr(settings, "BIGDATA_ACCESS_TOKEN", "") or not getattr(settings, "BIGDATA_TOKEN_ID", ""):
-            self.stderr.write(self.style.ERROR("BIGDATA_ACCESS_TOKEN ou BIGDATA_TOKEN_ID não configurados."))
-            return
+            self.stdout.write(self.style.WARNING(
+                "BIGDATA_ACCESS_TOKEN/BIGDATA_TOKEN_ID não configurados — "
+                "as consultas usarão o fallback BrasilAPI."
+            ))
 
         qs = Condominio.objects.filter(
             vinculocondominio__administradora__cartao_admin=True,
