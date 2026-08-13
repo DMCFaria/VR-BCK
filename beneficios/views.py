@@ -17,6 +17,23 @@ from .serializers import (
 
 logger = logging.getLogger(__name__)
 
+
+def aplicar_visibilidade_importacoes(queryset, user):
+    """
+    Visibilidade de importações para perfis de administradora:
+    - adm: não vê importações feitas por dep, dev e sup;
+    - dep: não vê importações feitas por adm, dev e sup;
+    - sup: vê tudo da administradora (união de adm + dep + ele mesmo);
+    - dev/fat: sem filtro (escopo global é tratado pelo chamador).
+    Regra única para os pontos de listagem/última importação/detalhe.
+    """
+    if user.tipo == "adm":
+        return queryset.exclude(usuario__tipo__in=["dep", "dev", "sup"])
+    if user.tipo == "dep":
+        return queryset.exclude(usuario__tipo__in=["adm", "dev", "sup"])
+    return queryset
+
+
 class ProdutoViewSet(viewsets.ModelViewSet):
     """
     ViewSet para listar, criar, atualizar e deletar Produtos.
@@ -362,10 +379,7 @@ class UltimaImportacaoMovimentacoesView(views.APIView):
             administradora=administradora,
             status__in=['COMPLETED', 'FATURADO']
         )
-        if user.tipo == "adm":
-            ultima_importacao = ultima_importacao.exclude(usuario__tipo__in=["dep", "dev"])
-        if user.tipo == "dep":
-            ultima_importacao = ultima_importacao.exclude(usuario__tipo__in=["adm", "dev"])
+        ultima_importacao = aplicar_visibilidade_importacoes(ultima_importacao, user)
         ultima_importacao = ultima_importacao.order_by('-data_importacao').first()
    
    
@@ -466,10 +480,7 @@ class UltimaMovimentacaoDashboard(views.APIView):
         ultima_importacao = Importacao.objects.filter(
             administradora=administradora
         )
-        if user.tipo == "adm":
-            ultima_importacao = ultima_importacao.exclude(usuario__tipo__in=["dep", "dev"])
-        if user.tipo == "dep":
-            ultima_importacao = ultima_importacao.exclude(usuario__tipo__in=["adm", "dev"])
+        ultima_importacao = aplicar_visibilidade_importacoes(ultima_importacao, user)
         ultima_importacao = ultima_importacao.order_by('-data_importacao').first()
         
         if not ultima_importacao:
@@ -618,10 +629,7 @@ class ImportacaoListView(views.APIView):
             ).select_related(
                 'file_upload', 'usuario', 'administradora'
             )
-            if user.tipo == "adm":
-                queryset = queryset.exclude(usuario__tipo__in=["dep", "dev"])
-            if user.tipo == "dep":
-                queryset = queryset.exclude(usuario__tipo__in=["adm", "dev"])
+            queryset = aplicar_visibilidade_importacoes(queryset, user)
             importacoes = queryset.order_by('-data_importacao')
 
         documentos_prefetch = Prefetch(
@@ -831,10 +839,7 @@ class ImportacaoDetailView(views.APIView):
                     administradora=administradora,
                     id=pk
                 ).select_related('file_upload', 'usuario', 'administradora')
-                if user.tipo == "adm":
-                    queryset = queryset.exclude(usuario__tipo__in=["dep", "dev"])
-                if user.tipo == "dep":
-                    queryset = queryset.exclude(usuario__tipo__in=["adm", "dev"])
+                queryset = aplicar_visibilidade_importacoes(queryset, user)
             importacao = queryset.first()
 
             if not importacao:
@@ -1668,7 +1673,14 @@ class ConsultarBoletosView(views.APIView):
         except (TypeError, ValueError):
             limit = 50
 
-        if user.tipo == 'adm':
+        # Allowlist: só dev/fat escolhem a administradora via query param.
+        # Qualquer outro perfil (adm, dep, sup, cli...) recebe escopo forçado
+        # da própria administradora ativa — sem isso, um usuário de
+        # administradora conseguia consultar boletos de outra via
+        # ?administradora_id= (vazamento entre administradoras).
+        if user.tipo in ('dev', 'fat'):
+            pass  # administradora_id do query param é respeitado (ou None = todas)
+        else:
             administradora_ativa = getattr(user, 'administradora_ativa', None)
             if not administradora_ativa:
                 return Response(
@@ -1676,8 +1688,6 @@ class ConsultarBoletosView(views.APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             administradora_id = administradora_ativa.id
-        elif user.tipo in ('dev', 'fat'):
-            administradora_id = None
 
         hoje = date.today()
         corte_pago = hoje - timedelta(days=30)

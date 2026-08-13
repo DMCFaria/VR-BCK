@@ -45,6 +45,7 @@ class CustomUser(AbstractUser):
         ("dep", "Departamento Pessoal"),
         ("fat", "Faturista"),
         ("adm", "Usuário da Administradora"),
+        ("sup", "Supervisor da Administradora"),
         ("cli", "Cliente(Condomínio)"),
     ]
     

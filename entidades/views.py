@@ -24,28 +24,19 @@ logger = logging.getLogger(__name__)
 class IsDevFatOrAdministradoraOwnerOrReadOnly(BasePermission):
     """
     Permite leitura para qualquer usuário autenticado.
-    dev/fat podem criar, alterar ou excluir qualquer taxa.
-    Usuários do tipo 'adm' podem alterar apenas taxas da administradora ativa.
+    Escrita (criar, alterar, excluir taxa) é EXCLUSIVA de dev/fat — regra de
+    negócio confirmada na demanda do perfil supervisor: nenhum usuário de
+    administradora (adm, dep, sup) configura taxa.
     """
     def has_permission(self, request, view):
         if request.method in SAFE_METHODS:
             return True
-        user = request.user
-        if getattr(user, 'tipo', None) in ('dev', 'fat'):
-            return True
-        if getattr(user, 'tipo', None) == 'adm' and getattr(user, 'administradora_ativa_id', None):
-            return True
-        return False
+        return getattr(request.user, 'tipo', None) in ('dev', 'fat')
 
     def has_object_permission(self, request, view, obj):
         if request.method in SAFE_METHODS:
             return True
-        user = request.user
-        if getattr(user, 'tipo', None) in ('dev', 'fat'):
-            return True
-        if getattr(user, 'tipo', None) == 'adm':
-            return obj.vinculo.administradora_id == user.administradora_ativa_id
-        return False
+        return getattr(request.user, 'tipo', None) in ('dev', 'fat')
 
 
 class CondominioPagination(PageNumberPagination):
