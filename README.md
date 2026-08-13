@@ -119,6 +119,9 @@ CELERY_RESULT_BACKEND=redis://localhost:6379/0
 # FedHub (e-mails e notificações)
 FEDHUB_URL=http://localhost:8090
 FEDHUB_X_API_KEY=
+# Bearer token renovável (novo modelo de auth; a chave acima segue como fallback)
+FEDHUB_CLIENT_ID=
+FEDHUB_CLIENT_SECRET=
 EMAIL_FATURAMENTO=faturamento@fedcorp.com
 
 # NFS-e
