@@ -110,6 +110,11 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
     detail = serializers.CharField(required=False)
     dados_modificados = serializers.JSONField(required=False, allow_null=True, default=None)
     cartao_admin = serializers.BooleanField(required=False, allow_null=True, default=None)
+    # Auditoria: colaboradores removidos manualmente na tela de conferência
+    # antes do envio (caso Simone/pedido 393 — exclusão era invisível).
+    excluidos_conferencia = serializers.ListField(
+        child=serializers.DictField(), required=False, allow_empty=True
+    )
     administradora_cnpj = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     observacao = serializers.CharField(required=False, allow_blank=True, allow_null=True, default='')
 
@@ -136,6 +141,16 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
 
         if 'recebimento_beneficio' in data and data['recebimento_beneficio'] and not data.get('data_recebimento'):
             data['data_recebimento'] = data['recebimento_beneficio']
+
+        # Regra de negócio: o vencimento nunca pode cair hoje nem no passado.
+        # A regra existia só na tela (e com off-by-one que aceitava "hoje");
+        # aqui vira garantia real, independente do front.
+        if data.get('data_vencimento'):
+            from datetime import date as _date
+            if data['data_vencimento'] <= _date.today():
+                raise serializers.ValidationError({
+                    'data_vencimento': 'A data de vencimento deve ser a partir do próximo dia útil — não pode cair hoje nem no passado.'
+                })
 
         return data
 
@@ -667,6 +682,22 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 except Exception:
                     pass
 
+            # Auditoria: exclusões feitas na tela de conferência ficam
+            # registradas no histórico da importação (campo erros).
+            erros_iniciais = []
+            excluidos_conferencia = validated_data.get('excluidos_conferencia') or []
+            if excluidos_conferencia:
+                erros_iniciais.append({
+                    'tipo': 'EXCLUSAO_CONFERENCIA',
+                    'colaboradores': excluidos_conferencia,
+                    'usuario': processed_by_user.email if processed_by_user else None,
+                    'data': datetime.now().isoformat(timespec='seconds'),
+                })
+                logger.info(
+                    f"Conferência excluiu {len(excluidos_conferencia)} colaborador(es): "
+                    f"{[c.get('nome') for c in excluidos_conferencia]}"
+                )
+
             importacao = Importacao.objects.create(
                 file_upload_id=file_upload_id,
                 usuario=processed_by_user,
@@ -682,7 +713,8 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 vigencia_fim=validated_data.get('vigencia_fim') or validated_data.get('periodo_fim'),
                 modelo_importacao=modelo_importacao,
                 arquivo_s3=arquivo_s3_url,
-                observacao=(validated_data.get('observacao') or '').strip()
+                observacao=(validated_data.get('observacao') or '').strip(),
+                erros=erros_iniciais,
             )
 
             if movimentacoes_to_create:

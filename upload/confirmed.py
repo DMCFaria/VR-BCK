@@ -254,6 +254,14 @@ class ConfirmationView(views.APIView):
         importacao_id = payload.get("importacao_id")
         dados_modificados = payload.get("dados_modificados")
         condominios_data = payload.get("condominios")
+
+        # O front nunca envia "dados_modificados" — a planilha editada nunca
+        # era gerada no fluxo VR (só no VT, que monta a estrutura a partir dos
+        # próprios condomínios; ver vt_confirm.py). Os condominios do payload
+        # são exatamente o que foi confirmado na tela, já com exclusões e
+        # edições de valor aplicadas — é o retrato que o faturista precisa.
+        if not dados_modificados and condominios_data:
+            dados_modificados = {"condominios": condominios_data}
         summary = payload.get('summary', {})
 
         logger.info(f"[CONFIRMACAO] file_upload_id: {file_id}, importacao_id: {importacao_id}")
