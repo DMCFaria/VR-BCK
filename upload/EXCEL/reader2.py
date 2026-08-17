@@ -8,51 +8,59 @@ import openpyxl
 logger = logging.getLogger(__name__)
 
 
-CODIGO_PRODUTO_PADRAO = '207'
+# Fallback para produto Refeição-like sem código próprio identificado.
+CODIGO_PRODUTO_PADRAO = '31'
 
 # Mapeamento dos headers de produto encontrados nas planilhas para o
 # código do produto usado nos registros 50/60 do TXT de compra.
+# Códigos conforme a tabela oficial da VR (PRODUTOS - VR.xlsx, ago/2026).
 COLUNAS_PRODUTO = {
     # ===== Sem prefixo "VR " (VR-exemplo.xlsm / Template_VR_OLD.xlsx) =====
-    'Refeição': CODIGO_PRODUTO_PADRAO,
-    'Multi Refeição': CODIGO_PRODUTO_PADRAO,
+    'Refeição': '31',
+    'Multi Refeição': '244',
     'Alimentação': '27',
-    'Multi Alimentação': '27',
+    'Multi Alimentação': '212',
     'Auto': '28',
-    'Mobilidade': '28',
-    'VR Mobilidade': '28',
-    'Multi Mobilidade': '28',
-    'VR Multi Mobilidade': '28',
+    'Mobilidade': '262',
+    'VR Mobilidade': '262',
+    'Multi Mobilidade': '262',
+    'VR Multi Mobilidade': '262',
     'Cesta': '201',
     'Boas Festas': '202',
+    'Multi Boas Festas': '217',
     'Auxílio Alimentação': '204',
-    'Multi Auxílio Alimentação': '204',
-    'Auxílio Refeição': CODIGO_PRODUTO_PADRAO,
-    'Multi Auxílio Refeição': CODIGO_PRODUTO_PADRAO,
-    'Multibenefício': CODIGO_PRODUTO_PADRAO,
-    'Multibenefícios': CODIGO_PRODUTO_PADRAO,
-    'Auxílio VR+VA': CODIGO_PRODUTO_PADRAO,
-    'Multi Auxílio VR+VA': CODIGO_PRODUTO_PADRAO,
-    'Multi - Home Office': CODIGO_PRODUTO_PADRAO,
-    'Multi Home office': CODIGO_PRODUTO_PADRAO,
+    'Multi Auxílio Alimentação': '211',
+    'Auxílio Refeição': '243',
+    'Multi Auxílio Refeição': '245',
+    'Multibenefício': '207',
+    'Multibenefícios': '207',
+    'Auxílio VR+VA': '209',
+    'Multi Auxílio VR+VA': '213',
+    'Multi - Home Office': '58',
+    'Multi Home office': '58',
+    'Refeição Adicional': '242',
+    'Auto Manutenção': '261',
     # ===== Com prefixo "VR " (Template_VR.xlsm) =====
-    'VR Multi Home office': CODIGO_PRODUTO_PADRAO,
-    'VR Refeição': CODIGO_PRODUTO_PADRAO,
+    'VR Multi Home office': '58',
+    'VR Refeição': '31',
     'VR Alimentação': '27',
     'VR Auto': '28',
     'VR Alimentação Cesta': '201',
     'VR Boas Festas': '202',
+    'VR Multi Boas Festas': '217',
     'VR Auxílio Alimentação': '204',
-    'VR Auxílio Refeição': CODIGO_PRODUTO_PADRAO,
-    'VR Multibenefícios': CODIGO_PRODUTO_PADRAO,
-    'VR+VA': CODIGO_PRODUTO_PADRAO,
-    'VR Multi Refeição': CODIGO_PRODUTO_PADRAO,
-    'VR Multi Alimentação': '27',
-    'VR Multi Alimentação Valor do crédito': '27',
-    'VR Multi Refeição Auxílio': CODIGO_PRODUTO_PADRAO,
-    'VR Multi Alimentação Auxílio': '204',
-    'VR Multi VR+VA': CODIGO_PRODUTO_PADRAO,
-    'VR Multi - Home Office': CODIGO_PRODUTO_PADRAO,
+    'VR Auxílio Refeição': '243',
+    'VR Multibenefícios': '207',
+    'VR+VA': '209',
+    'VR Multi Refeição': '244',
+    'VR Multi Alimentação': '212',
+    'VR Multi Alimentação Valor do crédito': '212',
+    'VR Multi Refeição Auxílio': '245',
+    'VR Multi Alimentação Auxílio': '211',
+    'VR Multi VR+VA': '213',
+    'VR Multi - Home Office': '58',
+    'VR Refeição Adicional': '242',
+    'VR Auto Manutenção': '261',
 }
 
 # Mapeamento dos headers de produto para o TIPO normalizado.
@@ -96,6 +104,13 @@ MAPEAMENTO_PRODUTO_TIPO = {
     'VR Multi Alimentação Auxílio': 'Multi - Alimentação',
     'VR Multi VR+VA': 'Multi - VR+VA',
     'VR Multi - Home Office': 'Multi - Home Office',
+    # Produtos de baixa aderência que chegam por cabeçalho
+    'Multi Boas Festas': 'Boas Festas',
+    'VR Multi Boas Festas': 'Boas Festas',
+    'Refeição Adicional': 'Refeição',
+    'VR Refeição Adicional': 'Refeição',
+    'Auto Manutenção': 'Auto',
+    'VR Auto Manutenção': 'Auto',
 }
 
 # Headers de produtos que devem ser reconhecidos mas rejeitados com erro claro.
@@ -111,24 +126,28 @@ PRODUTOS_REJEITADOS = {
 # Coluna J=10 até Z=26, na ordem exata do template VR padrão.
 # Se a coluna estiver neste dict, o produto é determinado pela posição,
 # INDEPENDENTE do header da coluna.
+# Códigos conforme a tabela oficial da VR (PRODUTOS - VR.xlsx, ago/2026):
+# cada produto tem código próprio. O mapeamento antigo achatava tudo em
+# {27, 28, 201, 202, 204, 207}, misturando produtos distintos no mesmo
+# código e corrompendo nome/tipo nas telas e na planilha de faturamento.
 COLUNAS_POSICAO = {
-    10: {'nome': 'VR Refeição',               'codigo': '207', 'tipo': 'Refeição'},
+    10: {'nome': 'VR Refeição',               'codigo': '31',  'tipo': 'Refeição'},
     11: {'nome': 'VR Alimentação',             'codigo': '27',  'tipo': 'Alimentação'},
     12: {'nome': 'VR Auto',                    'codigo': '28',  'tipo': 'Auto'},
-    13: {'nome': 'VR Cultura',                 'codigo': None,  'tipo': None, 'rejeitado': True},
+    13: {'nome': 'VR Cultura',                 'codigo': '30',  'tipo': None, 'rejeitado': True},
     14: {'nome': 'VR Alimentação Cesta',       'codigo': '201', 'tipo': 'Boas Festas'},
     15: {'nome': 'VR Boas Festas',             'codigo': '202', 'tipo': 'Boas Festas'},
     16: {'nome': 'VR Auxílio Alimentação',     'codigo': '204', 'tipo': 'Alimentação'},
-    17: {'nome': 'VR Auxílio Refeição',        'codigo': '207', 'tipo': 'Refeição'},
+    17: {'nome': 'VR Auxílio Refeição',        'codigo': '243', 'tipo': 'Refeição'},
     18: {'nome': 'VR Multibenefícios',         'codigo': '207', 'tipo': 'Multi - VR+VA'},
-    19: {'nome': 'VR+VA',                      'codigo': '207', 'tipo': 'Multi - VR+VA'},
-    20: {'nome': 'VR Multi Refeição',          'codigo': '207', 'tipo': 'Multi - Refeição'},
-    21: {'nome': 'VR Multi Alimentação',       'codigo': '27',  'tipo': 'Multi - Alimentação'},
-    22: {'nome': 'VR Multi Refeição Auxílio',  'codigo': '207', 'tipo': 'Multi - Refeição'},
-    23: {'nome': 'VR Multi Alimentação Auxílio','codigo': '204', 'tipo': 'Multi - Alimentação'},
-    24: {'nome': 'VR Multi VR+VA',             'codigo': '207', 'tipo': 'Multi - VR+VA'},
-    25: {'nome': 'VR Multi Home office',       'codigo': '207', 'tipo': 'Multi - Home Office'},
-    26: {'nome': 'VR Multi Mobilidade',        'codigo': '28',  'tipo': 'Multi - Mobilidade'},
+    19: {'nome': 'VR+VA',                      'codigo': '209', 'tipo': 'Multi - VR+VA'},
+    20: {'nome': 'VR Multi Refeição',          'codigo': '244', 'tipo': 'Multi - Refeição'},
+    21: {'nome': 'VR Multi Alimentação',       'codigo': '212', 'tipo': 'Multi - Alimentação'},
+    22: {'nome': 'VR Multi Refeição Auxílio',  'codigo': '245', 'tipo': 'Multi - Refeição'},
+    23: {'nome': 'VR Multi Alimentação Auxílio','codigo': '211', 'tipo': 'Multi - Alimentação'},
+    24: {'nome': 'VR Multi VR+VA',             'codigo': '213', 'tipo': 'Multi - VR+VA'},
+    25: {'nome': 'VR Multi Home office',       'codigo': '58',  'tipo': 'Multi - Home Office'},
+    26: {'nome': 'VR Multi Mobilidade',        'codigo': '262', 'tipo': 'Multi - Mobilidade'},
 }
 
 # Sheets 60/99/etc são para geração do TXT via VBA - não precisam ser lidas
