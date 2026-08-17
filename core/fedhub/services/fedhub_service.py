@@ -67,6 +67,7 @@ class FedhubService:
             with httpx.Client() as client:
                 response = client.post(
                     f"{self.base_url}/api/email/send/gmail",
+                    headers=get_headers(),
                     json={
                         "to_email": email,
                         "subject": f"{context['tipo_processamento']} - Fedhub",
@@ -141,6 +142,7 @@ class FedhubService:
             with httpx.Client() as client:
                 response = client.post(
                     f"{self.base_url}/api/email/send/gmail",
+                    headers=get_headers(),
                     json={
                         "to_email": email,
                         "subject": f"Faturamento Concluído - FedHub - {context['competencia']}",
@@ -210,6 +212,7 @@ class FedhubService:
 
                 response = client.post(
                     f"{self.base_url}/api/email/send/gmail",
+                    headers=get_headers(),
                     json={
                         "to_email": email,
                         "subject": "Redefinição de Senha - FedHub - Benefícios",
@@ -270,6 +273,7 @@ class FedhubService:
             with httpx.Client() as client:
                 response = client.post(
                     f"{self.base_url}/api/email/send/gmail",
+                    headers=get_headers(),
                     json={
                         "to_email": email,
                         "subject": f"Bem-vindo ao FedHub - Suas credenciais de acesso",
@@ -474,6 +478,7 @@ class FedhubService:
             with httpx.Client() as client:
                 response = client.post(
                     f"{self.base_url}/api/email/send/gmail",
+                    headers=get_headers(),
                     json={
                         "to_email": email_destinatario,
                         "subject": f"ALERTA: Falha na Emissão de NFS-e (Faturamento #{faturamento_id})",
@@ -542,6 +547,7 @@ class FedhubService:
             with httpx.Client() as client:
                 response = client.post(
                     f"{self.base_url}/api/email/send/gmail",
+                    headers=get_headers(),
                     json=payload,
                     timeout=60.0
                 )

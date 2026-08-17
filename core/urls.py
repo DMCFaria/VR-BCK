@@ -5,10 +5,22 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
     TokenVerifyView, # Opcional, para verificar a validade do token
 )
+from drf_spectacular.views import (
+    SpectacularAPIView,
+    SpectacularRedocView,
+    SpectacularSwaggerView,
+)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    
+
+    # ----------------------------------------------------
+    # Documentação da API (OpenAPI 3 / Swagger)
+    # ----------------------------------------------------
+    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+    path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+    path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
+
 
     # ----------------------------------------------------
     # Rotas de Autenticação JWT (Endpoint para Login/Token)

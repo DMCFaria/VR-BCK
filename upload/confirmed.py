@@ -348,12 +348,7 @@ class ConfirmationView(views.APIView):
                 arquivo_s3_editado_url = None
                 logger.info(f"[CONFIRMACAO] Verificando geração de planilha editada - dados_modificados: {bool(dados_modificados)}, file_upload: {bool(file_upload)}")
 
-                dados_tem_conteudo = dados_modificados and (
-                    (dados_modificados.get('condominios') and len(dados_modificados['condominios']) > 0) or
-                    (dados_modificados.get('funcionarios') and len(dados_modificados['funcionarios']) > 0) or
-                    (dados_modificados.get('movimentacoes') and len(dados_modificados['movimentacoes']) > 0)
-                )
-                if dados_tem_conteudo and file_upload:
+                if dados_modificados and file_upload:
                     logger.info(f"[CONFIRMACAO] Iniciando geração de planilha editada")
                     data_competencia = None
                     if competencia_mes and competencia_ano:

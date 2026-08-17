@@ -42,8 +42,9 @@ INSTALLED_APPS = [
     
     # Apps de Terceiros
     'rest_framework',
-    'rest_framework_simplejwt', 
+    'rest_framework_simplejwt',
     'corsheaders',
+    'drf_spectacular',
 
     # Seu App
     'users',
@@ -108,7 +109,49 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
-    )
+    ),
+    'DEFAULT_SCHEMA_CLASS': 'core.schema.VRAutoSchema',
+}
+
+
+# ----------------------------------------------------
+# Documentação da API (OpenAPI 3 / Swagger)
+# ----------------------------------------------------
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'VR-BCK API',
+    'DESCRIPTION': (
+        'API REST para gestão de benefícios (VR/VA e VT): upload e '
+        'processamento de planilhas, faturamento, boletos/NFS-e, '
+        'cadastro de administradoras, condomínios e funcionários.'
+    ),
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'SCHEMA_PATH_PREFIX': '/api',
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SORT_OPERATIONS': False,
+    'SERVE_PERMISSIONS': ['rest_framework.permissions.AllowAny'],
+    'SWAGGER_UI_SETTINGS': {
+        'persistAuthorization': True,
+        'displayRequestDuration': True,
+        'filter': True,
+    },
+    # Vários modelos possuem um campo "tipo" com conjuntos de escolhas
+    # diferentes; sem estes nomes o gerador cria enums com sufixo aleatório.
+    'ENUM_NAME_OVERRIDES': {
+        'TipoUsuarioEnum': 'users.models.CustomUser.TYPE_CHOICES',
+        'TipoProdutoEnum': 'beneficios.models.Produto.TIPO_CHOICES',
+        'TipoPedidoCartaoEnum': 'beneficios.models.PedidoCartao.TIPO_CHOICES',
+        'TipoArquivoFaturamentoEnum': 'beneficios.models.FaturamentoArquivo.TIPO_CHOICES',
+        'TipoTaxaEnum': 'entidades.models.TaxaConfig.TIPO_TAXA_CHOICES',
+    },
+    'TAGS': [
+        {'name': 'Autenticação', 'description': 'Emissão e renovação de tokens JWT.'},
+        {'name': 'Usuários', 'description': 'Cadastro, login, perfil e vínculo com administradoras.'},
+        {'name': 'Entidades', 'description': 'Administradoras, condomínios, funcionários, gerentes, vínculos e taxas.'},
+        {'name': 'Benefícios', 'description': 'Produtos, movimentações, importações, boletos, kanban e pedidos de cartão.'},
+        {'name': 'Upload', 'description': 'Upload de planilhas VR/VT, faturamento, exports e downloads.'},
+        {'name': 'Consultas', 'description': 'Consultas externas de CNPJ e integrações Google.'},
+    ],
 }
 
 

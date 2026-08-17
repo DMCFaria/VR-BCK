@@ -1,3 +1,4 @@
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 from .models import Condominio, Funcionario, Administradora, VinculoCondominio, Gerente, TaxaConfig
 from beneficios.models import Produto
@@ -39,6 +40,18 @@ class CondominioSerializer(serializers.ModelSerializer):
 
         return cnpj
 
+    @extend_schema_field(
+        {
+            'type': 'array',
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'id': {'type': 'integer'},
+                    'nome': {'type': 'string'},
+                },
+            },
+        }
+    )
     def get_administradoras(self, obj):
         vinculos = getattr(obj, 'vinculocondominio_set', None)
         if vinculos is None:
@@ -122,36 +135,6 @@ class GerenteSerializer(serializers.ModelSerializer):
         fields = ['id', 'nome', 'email', 'telefone', 'ativo', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
 
-class VinculoCondominioSerializer(serializers.ModelSerializer):
-    condominio_nome = serializers.CharField(source='condominio.nome', read_only=True)
-    condominio_cnpj = serializers.CharField(source='condominio.cnpj', read_only=True)
-    administradora_nome = serializers.CharField(source='administradora.razao_social', read_only=True)
-    administradora_cnpj = serializers.CharField(source='administradora.cnpj', read_only=True)
-    gerentes_detalhes = GerenteSerializer(source='gerentes', many=True, read_only=True)
-    taxas_config = serializers.SerializerMethodField(read_only=True)
-
-    def get_taxas_config(self, obj):
-        taxas = obj.taxas_config.all()
-        return TaxaConfigSerializer(taxas, many=True).data
-
-    class Meta:
-        model = VinculoCondominio
-        fields = [
-            'id',
-            'condominio',
-            'condominio_nome',
-            'condominio_cnpj',
-            'administradora',
-            'administradora_nome',
-            'administradora_cnpj',
-            'gerentes',
-            'gerentes_detalhes',
-            'taxas_config',
-            'created_at'
-        ]
-        read_only_fields = ['created_at']
-
-
 class TaxaConfigSerializer(serializers.ModelSerializer):
     vinculo_display = serializers.SerializerMethodField(read_only=True)
     condominio_nome = serializers.CharField(source='vinculo.condominio.nome', read_only=True, default=None)
@@ -171,6 +154,7 @@ class TaxaConfigSerializer(serializers.ModelSerializer):
     )
     tipo_display = serializers.CharField(source='get_tipo_display', read_only=True)
 
+    @extend_schema_field(serializers.CharField())
     def get_vinculo_display(self, obj):
         return str(obj.vinculo)
 
@@ -217,3 +201,29 @@ class TaxaConfigSerializer(serializers.ModelSerializer):
             'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']
+
+
+class VinculoCondominioSerializer(serializers.ModelSerializer):
+    condominio_nome = serializers.CharField(source='condominio.nome', read_only=True)
+    condominio_cnpj = serializers.CharField(source='condominio.cnpj', read_only=True)
+    administradora_nome = serializers.CharField(source='administradora.razao_social', read_only=True)
+    administradora_cnpj = serializers.CharField(source='administradora.cnpj', read_only=True)
+    gerentes_detalhes = GerenteSerializer(source='gerentes', many=True, read_only=True)
+    taxas_config = TaxaConfigSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = VinculoCondominio
+        fields = [
+            'id',
+            'condominio',
+            'condominio_nome',
+            'condominio_cnpj',
+            'administradora',
+            'administradora_nome',
+            'administradora_cnpj',
+            'gerentes',
+            'gerentes_detalhes',
+            'taxas_config',
+            'created_at'
+        ]
+        read_only_fields = ['created_at']
