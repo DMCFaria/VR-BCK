@@ -494,22 +494,50 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
         # Mapeamento de tipo (string) para o valor interno do choices do Produto.
         TIPO_PARA_VALUE = {v: k for k, v in Produto.TIPO_CHOICES}
 
-        # Códigos canônicos do template VR padrão.
-        CODIGOS_CANONICOS = {'27', '28', '201', '202', '204', '207'}
+        # Catálogo oficial da VR (PRODUTOS - VR.xlsx, ago/2026): cada produto
+        # tem código próprio. O nome/tipo destes códigos é FIXO — não é mais
+        # sobrescrito pelo cabeçalho da planilha (bug antigo: o código 207
+        # servia para vários produtos e o registro ficava com o nome do último
+        # cabeçalho importado).
+        CATALOGO_PRODUTOS_VR = {
+            '31':  ('Refeição', 'REFEICAO'),
+            '243': ('Auxílio Refeição', 'REFEICAO'),
+            '242': ('Refeição Adicional', 'REFEICAO'),
+            '27':  ('Alimentação', 'ALIMENTACAO'),
+            '204': ('Auxílio Alimentação', 'ALIMENTACAO'),
+            '201': ('Cesta', 'BOAS_FESTAS'),
+            '202': ('Boas Festas', 'BOAS_FESTAS'),
+            '217': ('Multi - Boas Festas', 'BOAS_FESTAS'),
+            '28':  ('Auto', 'AUTO'),
+            '261': ('Auto Manutenção', 'AUTO'),
+            '30':  ('Cultura', None),
+            '207': ('Multibenefícios', 'MULTI_VR_VA'),
+            '209': ('Auxílio VR+VA', 'MULTI_VR_VA'),
+            '213': ('Multi - Auxílio VR+VA', 'MULTI_VR_VA'),
+            '244': ('Multi - Refeição', 'MULTI_REFEICAO'),
+            '245': ('Multi - Auxílio Refeição', 'MULTI_REFEICAO'),
+            '212': ('Multi - Alimentação', 'MULTI_ALIMENTACAO'),
+            '211': ('Multi - Auxílio Alimentação', 'MULTI_ALIMENTACAO'),
+            '58':  ('Multi - Home Office', 'MULTI_HOME_OFFICE'),
+            '262': ('Multi - Mobilidade', 'MULTI_MOBILIDADE'),
+            '59':  ('Multi - Premiação', None),
+        }
+        CODIGOS_CANONICOS = set(CATALOGO_PRODUTOS_VR)
 
-        # Mapeamento tipo antigo → código canônico (para códigos não canônicos).
+        # Fallback por tipo para payloads legados sem código canônico
+        # (parsers RB/AHREAS, importações antigas).
         MAPEAMENTO_TIPO_PARA_CODIGO = {
             'ALIMENTACAO':        '27',
             'AUTO':               '28',
-            'REFEICAO':           '207',
-            'MULTI_HOME_OFFICE':  '207',
+            'REFEICAO':           '31',
+            'MULTI_HOME_OFFICE':  '58',
             'BOAS_FESTAS':        '202',
-            'MULTI_ALIMENTACAO':  '27',
-            'MULTI_VR_VA':        '207',
-            'MULTI_REFEICAO':     '207',
-            'MULTI_MOBILIDADE':   '28',
+            'MULTI_ALIMENTACAO':  '212',
+            'MULTI_VR_VA':        '213',
+            'MULTI_REFEICAO':     '244',
+            'MULTI_MOBILIDADE':   '262',
         }
-        CODIGO_CANONICO_PADRAO = '207'
+        CODIGO_CANONICO_PADRAO = '31'
 
         def _mapear_codigo_canonico(codigo, tipo_str):
             """Mapeia código não canônico para o canônico baseado no tipo."""
@@ -524,20 +552,27 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 prod_map[key] = (nome, tipo)
 
         prods_to_create = []
-        prods_to_update_tipo = []
+        prods_to_update = []
         for key, (nome, tipo) in prod_map.items():
-            tipo_value = TIPO_PARA_VALUE.get(tipo)
+            oficial = CATALOGO_PRODUTOS_VR.get(key)
+            if oficial:
+                nome_final, tipo_final = oficial
+            else:
+                nome_final, tipo_final = nome[:255], TIPO_PARA_VALUE.get(tipo)
+
             if key not in existing_prods:
                 prods_to_create.append(Produto(
                     codigo_produto=key,
-                    nome=nome[:255],
-                    tipo=tipo_value
+                    nome=nome_final,
+                    tipo=tipo_final,
                 ))
-            else:
+            elif oficial:
+                # Códigos do catálogo convergem para o nome/tipo oficial.
                 prod_obj = existing_prods[key]
-                if tipo_value and prod_obj.tipo != tipo_value:
-                    prod_obj.tipo = tipo_value
-                    prods_to_update_tipo.append(prod_obj)
+                if prod_obj.nome != nome_final or prod_obj.tipo != tipo_final:
+                    prod_obj.nome = nome_final
+                    prod_obj.tipo = tipo_final
+                    prods_to_update.append(prod_obj)
 
         if prods_to_create:
             Produto.objects.bulk_create(prods_to_create, ignore_conflicts=True)
@@ -545,9 +580,9 @@ class ProcessamentoFinalSerializer(serializers.Serializer):
                 existing_prods[p.codigo_produto] = p
             logger.info(f"Criados {len(prods_to_create)} novos produtos")
 
-        if prods_to_update_tipo:
-            Produto.objects.bulk_update(prods_to_update_tipo, ['tipo'])
-            logger.info(f"Atualizado tipo de {len(prods_to_update_tipo)} produtos existentes")
+        if prods_to_update:
+            Produto.objects.bulk_update(prods_to_update, ['nome', 'tipo'])
+            logger.info(f"Normalizado nome/tipo de {len(prods_to_update)} produtos do catálogo")
         
         # ========== 10. CRIAR VÍNCULOS CONDOMÍNIO-ADMINISTRADORA ==========
         existing_vinculos = set(VinculoCondominio.objects.filter(

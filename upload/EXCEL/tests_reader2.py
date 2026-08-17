@@ -139,8 +139,22 @@ class TestColunasPosicao(unittest.TestCase):
     def test_cultura_marcada_como_rejeitado(self):
         """A coluna 13 (VR Cultura) deve estar marcada como rejeitada."""
         self.assertTrue(COLUNAS_POSICAO[13].get('rejeitado'))
-        self.assertIsNone(COLUNAS_POSICAO[13]['codigo'])
+        self.assertEqual(COLUNAS_POSICAO[13]['codigo'], '30')
         self.assertIsNone(COLUNAS_POSICAO[13]['tipo'])
+
+    def test_codigos_posicionais_sao_os_oficiais_da_vr(self):
+        """
+        Códigos conforme a tabela oficial da VR (PRODUTOS - VR.xlsx):
+        cada produto tem código próprio — nada de reutilizar 207/27/28.
+        """
+        esperados = {
+            10: '31', 11: '27', 12: '28', 13: '30', 14: '201', 15: '202',
+            16: '204', 17: '243', 18: '207', 19: '209', 20: '244',
+            21: '212', 22: '245', 23: '211', 24: '213', 25: '58', 26: '262',
+        }
+        for col, codigo in esperados.items():
+            self.assertEqual(COLUNAS_POSICAO[col]['codigo'], codigo,
+                             f'Coluna {col} deveria mapear para o código {codigo}')
 
 
 class TestDeduplicacao(unittest.TestCase):
