@@ -153,8 +153,15 @@ class UploadView(views.APIView):
             # Verificar se há informações faltando ou linhas com erro
             erros_condominios = parsed_data.get("erros_condominios", [])
             linhas_com_erro = parsed_data.get("linhas_com_erro", [])
-            
-            tem_erros = len(erros_condominios) > 0 or len(linhas_com_erro) > 0
+
+            # CPF_DUPLICADO_DIVERGENTE não marca o upload como falho: as linhas
+            # em conflito já foram excluídas do lote e o front exibe o aviso;
+            # o restante da planilha segue o fluxo normal.
+            erros_fatais = [
+                l for l in linhas_com_erro
+                if l.get("tipo_erro") != "CPF_DUPLICADO_DIVERGENTE"
+            ]
+            tem_erros = len(erros_condominios) > 0 or len(erros_fatais) > 0
             
             if tem_erros:
                 status_processamento = "ERRO"
@@ -199,6 +206,8 @@ class UploadView(views.APIView):
                 "data_to_backend": data_to_backend_safe,
                 "linhas_com_erro": linhas_com_erro,
                 "erros_condominios": erros_condominios,
+                # Avisos não bloqueantes (ex.: linhas somadas do mesmo CPF)
+                "avisos": convert_decimals_to_json_safe(parsed_data.get("avisos", [])),
                 "detail": detail_msg,
             }
             if import_mode:

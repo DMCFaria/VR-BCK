@@ -285,11 +285,15 @@ class TestDeteccaoCartaoAdmin(unittest.TestCase):
 
     ENDERECO_ADM = ('AV ADHEMAR DE BARROS', '120', '', 'VILA SANTA ROSA', 'GUARUJÁ', 'SP', '11430003')
 
-    def _criar_planilha(self, tmpdir, locais):
+    def _criar_planilha(self, tmpdir, locais, beneficiarios=None):
         """
         Cria uma planilha mínima no layout VR com as abas Sumario,
-        Local de Entrega e Beneficiario. `locais` é uma lista de tuplas
-        (cnpj, nome, rua, numero, complemento, bairro, cidade, estado, cep).
+        Local de Entrega e Beneficiario.
+        `locais`: lista de tuplas (cnpj, nome, rua, numero, complemento,
+        bairro, cidade, estado, cep).
+        `beneficiarios`: lista de dicts {cpf, local, nome, nascimento, valor,
+        col} (col = coluna do produto, padrão 10 = VR Refeição). Se omitido,
+        cria um beneficiário válido no primeiro local.
         """
         import openpyxl
 
@@ -304,16 +308,24 @@ class TestDeteccaoCartaoAdmin(unittest.TestCase):
         for cnpj, nome, rua, numero, complemento, bairro, cidade, estado, cep in locais:
             ws_loc.append([cnpj, nome, '', rua, numero, complemento, bairro, cidade, estado, cep])
 
+        if beneficiarios is None:
+            beneficiarios = [{
+                'cpf': '52998224725', 'local': locais[0][0],
+                'nome': 'FUNCIONARIO TESTE', 'nascimento': '01/01/1990',
+                'valor': 100.0, 'col': 10,
+            }]
+
         ws_ben = wb.create_sheet('Beneficiario')
         ws_ben.cell(2, 1).value = 'CPF'
         ws_ben.cell(2, 5).value = 'Nome'
-        # Um beneficiário válido no primeiro local, com VR Refeição (col 10)
-        ws_ben.cell(3, 1).value = '52998224725'
-        ws_ben.cell(3, 2).value = locais[0][0]
-        ws_ben.cell(3, 4).value = 'MAT001'
-        ws_ben.cell(3, 5).value = 'FUNCIONARIO TESTE'
-        ws_ben.cell(3, 7).value = '01/01/1990'
-        ws_ben.cell(3, 10).value = 100.0
+        for i, b in enumerate(beneficiarios):
+            row = 3 + i
+            ws_ben.cell(row, 1).value = b['cpf']
+            ws_ben.cell(row, 2).value = b.get('local', locais[0][0])
+            ws_ben.cell(row, 4).value = b.get('matricula', f'MAT{row:03d}')
+            ws_ben.cell(row, 5).value = b['nome']
+            ws_ben.cell(row, 7).value = b.get('nascimento', '01/01/1990')
+            ws_ben.cell(row, b.get('col', 10)).value = b.get('valor', 100.0)
 
         file_path = os.path.join(tmpdir, 'planilha_teste.xlsx')
         wb.save(file_path)
@@ -384,6 +396,78 @@ class TestDeteccaoCartaoAdmin(unittest.TestCase):
                 self._local('00034453000139', 'COND B', endereco_vazio),
             ])
             self.assertFalse(data['cartao_admin'])
+
+
+class TestCpfDuplicado(TestDeteccaoCartaoAdmin):
+    """
+    Mesmo CPF em mais de uma linha:
+    - nome/nascimento divergentes = pessoas distintas com CPF errado →
+      as DUAS linhas são bloqueadas (CPF_DUPLICADO_DIVERGENTE);
+    - dados iguais = mesma pessoa → soma os valores e registra aviso
+      (CPF_SOMADO) para exibição em tela.
+    Reutiliza o builder de planilha da TestDeteccaoCartaoAdmin.
+    """
+
+    LOCAIS = None  # definido em setUp para reuso
+
+    def setUp(self):
+        self.locais = [self._local('00034178000153', 'COND A', self.ENDERECO_ADM)]
+
+    def _parse_beneficiarios(self, beneficiarios):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = self._criar_planilha(tmpdir, self.locais, beneficiarios)
+            return parse_fut_template(
+                file_path,
+                file_upload_id=1496,
+                valor_max_beneficio=Decimal('9999.99'),
+                administradora_cnpj='35315360000167',
+            )
+
+    def test_cpf_duplicado_divergente_bloqueia_as_duas_linhas(self):
+        data = self._parse_beneficiarios([
+            {'cpf': '52998224725', 'nome': 'FULANO DA SILVA', 'nascimento': '01/01/1990', 'valor': 100.0},
+            {'cpf': '52998224725', 'nome': 'BELTRANO SOUZA', 'nascimento': '05/05/1985', 'valor': 200.0},
+            {'cpf': '11861784775', 'nome': 'PESSOA NORMAL', 'nascimento': '02/02/1992', 'valor': 50.0},
+        ])
+
+        erros_dup = [l for l in data['linhas_com_erro'] if l['tipo_erro'] == 'CPF_DUPLICADO_DIVERGENTE']
+        self.assertEqual(len(erros_dup), 2, erros_dup)
+
+        funcionarios = [f for c in data['condominios'] for f in c['funcionarios']]
+        cpfs_validos = {f['cpf'] for f in funcionarios}
+        self.assertNotIn('52998224725', cpfs_validos)
+        self.assertIn('11861784775', cpfs_validos)
+
+        # Totais estornados: só a pessoa normal conta.
+        self.assertEqual(data['summary']['valor_total_beneficios'], Decimal('50.0'))
+
+    def test_cpf_duplicado_mesma_pessoa_soma_e_avisa(self):
+        data = self._parse_beneficiarios([
+            {'cpf': '52998224725', 'nome': 'FULANO DA SILVA', 'nascimento': '01/01/1990', 'valor': 100.0},
+            {'cpf': '52998224725', 'nome': 'Fulano da Silva', 'nascimento': '01/01/1990', 'valor': 50.0},
+        ])
+
+        self.assertEqual(data['linhas_com_erro'], [])
+        funcionarios = [f for c in data['condominios'] for f in c['funcionarios']]
+        self.assertEqual(len(funcionarios), 1)
+        self.assertEqual(funcionarios[0]['valor_bene'], Decimal('150.0'))
+
+        avisos = data.get('avisos', [])
+        self.assertEqual(len(avisos), 1, avisos)
+        self.assertEqual(avisos[0]['tipo'], 'CPF_SOMADO')
+        self.assertEqual(avisos[0]['cpf'], '52998224725')
+        self.assertEqual(len(avisos[0]['linhas']), 2)
+
+    def test_cpfs_distintos_seguem_normais(self):
+        data = self._parse_beneficiarios([
+            {'cpf': '52998224725', 'nome': 'FULANO DA SILVA', 'valor': 100.0},
+            {'cpf': '11861784775', 'nome': 'PESSOA NORMAL', 'valor': 50.0},
+        ])
+        self.assertEqual(data['linhas_com_erro'], [])
+        self.assertEqual(data.get('avisos', []), [])
+        funcionarios = [f for c in data['condominios'] for f in c['funcionarios']]
+        self.assertEqual(len(funcionarios), 2)
 
 
 if __name__ == '__main__':
