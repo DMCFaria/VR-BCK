@@ -286,8 +286,12 @@ class MarcarResponsavelView(views.APIView):
         user = request.user
         acao = request.data.get('acao', 'marcar')
 
+        # Dev passa por cima da trava de responsável: pode assumir ou liberar
+        # pedido que está com outro usuário (suporte/destravamento).
+        eh_dev = getattr(user, 'tipo', None) == 'dev'
+
         if acao == 'marcar':
-            if importacao.responsavel and importacao.responsavel != user:
+            if importacao.responsavel and importacao.responsavel != user and not eh_dev:
                 return Response(
                     {"detail": f"Importação já está sendo processada por {importacao.responsavel.nome or importacao.responsavel.email}.",
                      "responsavel": importacao.responsavel.id,
@@ -303,7 +307,7 @@ class MarcarResponsavelView(views.APIView):
             }, status=status.HTTP_200_OK)
 
         elif acao == 'desmarcar':
-            if importacao.responsavel and importacao.responsavel != user:
+            if importacao.responsavel and importacao.responsavel != user and not eh_dev:
                 return Response(
                     {"detail": "Apenas o responsável pode desmarcar."},
                     status=status.HTTP_403_FORBIDDEN
