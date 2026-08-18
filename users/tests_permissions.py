@@ -241,6 +241,26 @@ class VisibilidadeImportacoesTests(BasePermissoesTestCase):
         self.assertEqual(self.autores_visiveis(self.sup), {'adm', 'dep', 'sup', 'dev'})
 
 
+class PedidoCartaoAcessoTests(BasePermissoesTestCase):
+    """
+    Pedidos de cartão da administradora são exclusivos do supervisor
+    (dev/fat passam pela visão operacional). O adm não deve acessar —
+    a página ficou anos com o menu oculto justamente por isso, e o
+    backend não checava tipo nenhum.
+    """
+
+    URL = '/api/beneficios/pedidos-cartao/'
+
+    def test_adm_dep_cli_nao_acessam(self):
+        for usuario in (self.adm, self.dep, self.cli):
+            resp = self.client_de(usuario).get(self.URL)
+            self.assertEqual(resp.status_code, 403, f'{usuario.tipo} deveria ser negado')
+
+    def test_sup_acessa(self):
+        resp = self.client_de(self.sup).get(self.URL)
+        self.assertEqual(resp.status_code, 200, resp.data)
+
+
 class GoogleLoginTests(BasePermissoesTestCase):
     URL = '/api/users/google-login/'
 

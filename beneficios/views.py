@@ -685,17 +685,34 @@ class ImportacaoListView(views.APIView):
 
 class PedidoCartaoView(views.APIView):
     """
-    Cria e lista pedidos de cartão do usuário da administradora.
+    Cria e lista pedidos de cartão da administradora.
+    Exclusivo do supervisor (sup) — o adm não deve acessar; dev/fat usam
+    a visão operacional (PedidoCartaoOperacionalView). Antes não havia
+    checagem de tipo: qualquer autenticado com administradora criava pedido.
     POST: cria pedido (força administradora do user logado)
     GET: lista pedidos da administradora do user logado
     """
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
+    TIPOS_PERMITIDOS = ('sup', 'dev', 'fat')
+
+    def _tipo_negado(self, user):
+        if getattr(user, 'tipo', None) not in self.TIPOS_PERMITIDOS:
+            return Response(
+                {'detail': 'Acesso não autorizado para o seu perfil.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return None
+
     def post(self, request):
         from beneficios.serializers import PedidoCartaoSerializer
 
         user = request.user
+        negado = self._tipo_negado(user)
+        if negado:
+            return negado
+
         administradora = getattr(user, 'administradora_ativa', None)
 
         if not administradora:
@@ -715,6 +732,10 @@ class PedidoCartaoView(views.APIView):
         from beneficios.serializers import PedidoCartaoSerializer
 
         user = request.user
+        negado = self._tipo_negado(user)
+        if negado:
+            return negado
+
         administradora = getattr(user, 'administradora_ativa', None)
 
         if not administradora:
