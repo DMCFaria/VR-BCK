@@ -295,6 +295,7 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
         "errors": [],
         "linhas_com_erro": [],
         "erros_condominios": [],
+        "avisos": [],
         "summary": {
             "total_condominios": 0,
             "total_funcionarios": 0,
@@ -688,7 +689,46 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
                     "endereco_bairro": None,
                     "valor_bene": Decimal('0.00'),
                     "movimentacoes": [],
+                    "linha": row_num,
+                    "linhas_somadas": [],
+                    "conflito_cpf": False,
                 }
+            else:
+                # CPF repetido no mesmo condomínio: só é a mesma pessoa se nome
+                # e nascimento baterem. Divergência = CPF errado para pessoas
+                # distintas — somar aqui creditaria duas pessoas num CPF só.
+                existente = locais[codigo_local]["funcionarios"][func_key]
+                nome_atual = (nome or '').strip().upper()
+                nome_anterior = (existente["nome"] or '').strip().upper()
+                nascimento_diverge = bool(
+                    data_nasc and existente["data_nascimento"]
+                    and data_nasc != existente["data_nascimento"]
+                )
+
+                if nome_atual != nome_anterior or nascimento_diverge:
+                    existente["conflito_cpf"] = True
+                    result['linhas_com_erro'].append({
+                        "tipo_erro": "CPF_DUPLICADO_DIVERGENTE",
+                        "linha": row_num,
+                        "dados": {
+                            "cpf": cpf_raw,
+                            "nome": nome,
+                            "codigo_local": codigo_local,
+                            "matricula": matricula,
+                            "data_nascimento": _safe_str(data_nasc_raw),
+                        },
+                        "erros": [
+                            (
+                                f"CPF duplicado com dados divergentes: já usado na linha "
+                                f"{existente['linha']} por '{existente['nome']}'"
+                                + (f" (nasc. {existente['data_nascimento']})" if existente['data_nascimento'] else "")
+                                + " — mesmo CPF para pessoas distintas; corrija o CPF na planilha."
+                            )
+                        ],
+                    })
+                    continue
+
+                existente["linhas_somadas"].append(row_num)
 
             func = locais[codigo_local]["funcionarios"][func_key]
 
@@ -742,6 +782,41 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
         for fkey, func in local["funcionarios"].items():
             if not func["movimentacoes"]:
                 continue
+
+            # Conflito de CPF (mesmo CPF, pessoa diferente): a 1ª ocorrência
+            # também sai do lote — não dá para saber qual das duas está com o
+            # CPF certo. Estorna os valores já acumulados e registra o erro.
+            if func.get("conflito_cpf"):
+                local["valor_condo"] -= func["valor_bene"]
+                result['summary']['valor_total_beneficios'] -= func["valor_bene"]
+                result['linhas_com_erro'].append({
+                    "tipo_erro": "CPF_DUPLICADO_DIVERGENTE",
+                    "linha": func.get("linha"),
+                    "dados": {
+                        "cpf": func["cpf"],
+                        "nome": func["nome"],
+                        "codigo_local": codigo,
+                        "matricula": func["matricula"],
+                        "data_nascimento": _safe_str(func["data_nascimento"]),
+                    },
+                    "erros": [
+                        "CPF duplicado com dados divergentes: o mesmo CPF aparece em "
+                        "outra linha com nome/nascimento diferente — mesmo CPF para "
+                        "pessoas distintas; corrija o CPF na planilha."
+                    ],
+                })
+                continue
+
+            if func.get("linhas_somadas"):
+                result['avisos'].append({
+                    "tipo": "CPF_SOMADO",
+                    "cpf": func["cpf"],
+                    "nome": func["nome"],
+                    "condominio": local.get("nome") or codigo,
+                    "linhas": [func.get("linha")] + func["linhas_somadas"],
+                    "valor_total": func["valor_bene"],
+                })
+
             lista_func.append({
                 "nome": func["nome"],
                 "cpf": func["cpf"],
@@ -806,7 +881,14 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
 
     # Se há erros acumulados (erros gerais, linhas com erro ou erros de condomínio),
     # retornamos o payload focado nos erros.
-    if result["errors"] or result["linhas_com_erro"] or result["erros_condominios"]:
+    # Exceção: CPF_DUPLICADO_DIVERGENTE não derruba a planilha inteira — as
+    # linhas em conflito já foram excluídas do lote e seguem visíveis em
+    # linhas_com_erro para o aviso em tela; o restante do lote continua.
+    erros_fatais = [
+        l for l in result["linhas_com_erro"]
+        if l.get("tipo_erro") != "CPF_DUPLICADO_DIVERGENTE"
+    ]
+    if result["errors"] or erros_fatais or result["erros_condominios"]:
         mensagem_erro = "Planilha contém informações obrigatórias ausentes ou incorretas."
         if result["errors"]:
             mensagem_erro = "; ".join(result["errors"])
