@@ -72,7 +72,7 @@ class UploadView(views.APIView):
                     parsed_data = parse_ahreas_layout(file_path, upload_instance.id, valor_max_beneficio=valor_max)
                 else:
                     return self._handle_error(upload_instance, f"Layout TXT '{import_mode}' não reconhecido.")
-                logger.info(f"Parsed data: {parsed_data}")
+                logger.info(f"Parsed data ({import_mode}): summary={parsed_data.get('summary')}")
             elif extension in ['.xlsx', '.xlsm']:
                 import_mode = None
                 validacao = validar_dimensoes_planilha(file_path)
@@ -84,7 +84,9 @@ class UploadView(views.APIView):
                     valor_max_beneficio=valor_max,
                     administradora_cnpj=administradora_cnpj
                 )
-                logger.info(f"Parsed data (FUT): {parsed_data}")
+                # Não logar o payload inteiro: em planilhas grandes são MB de
+                # string por upload (custo de CPU/log). O summary basta.
+                logger.info(f"Parsed data (FUT): summary={parsed_data.get('summary')}")
             
             else:
                 return self._handle_error(upload_instance, f"Extensão {extension} não permitida.")

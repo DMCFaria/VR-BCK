@@ -459,6 +459,36 @@ class TestCpfDuplicado(TestDeteccaoCartaoAdmin):
         self.assertEqual(avisos[0]['cpf'], '52998224725')
         self.assertEqual(len(avisos[0]['linhas']), 2)
 
+    def test_cnpj_local_com_mais_de_14_digitos_e_sinalizado(self):
+        """CNPJ >14 dígitos era truncado em silêncio; agora vira erro visível."""
+        import tempfile
+
+        # Na aba Local de Entrega
+        with tempfile.TemporaryDirectory() as tmpdir:
+            locais = [self._local('000341780001534', 'COND CNPJ LONGO', self.ENDERECO_ADM)]
+            file_path = self._criar_planilha(tmpdir, locais, [{
+                'cpf': '52998224725', 'local': '000341780001534',
+                'nome': 'FUNCIONARIO TESTE', 'nascimento': '01/01/1990',
+                'valor': 100.0,
+            }])
+            data = parse_fut_template(file_path, file_upload_id=1497)
+            self.assertTrue(
+                any('máximo 14' in e for e in data.get('errors', [])),
+                data.get('errors')
+            )
+
+        # Na coluna do beneficiário
+        with tempfile.TemporaryDirectory() as tmpdir:
+            locais = [self._local('00034178000153', 'COND A', self.ENDERECO_ADM)]
+            file_path = self._criar_planilha(tmpdir, locais, [{
+                'cpf': '52998224725', 'local': '000341780001534',
+                'nome': 'FUNCIONARIO TESTE', 'nascimento': '01/01/1990',
+                'valor': 100.0,
+            }])
+            data = parse_fut_template(file_path, file_upload_id=1498)
+            erros = [e for l in data.get('linhas_com_erro', []) for e in l.get('erros', [])]
+            self.assertTrue(any('máximo 14' in e for e in erros), erros)
+
     def test_cpfs_distintos_seguem_normais(self):
         data = self._parse_beneficiarios([
             {'cpf': '52998224725', 'nome': 'FULANO DA SILVA', 'valor': 100.0},
