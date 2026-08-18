@@ -421,6 +421,17 @@ def _parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, adm
         if not codigo:
             continue
 
+        # CNPJ com mais de 14 dígitos é erro de digitação: antes era truncado
+        # em silêncio e virava um CNPJ errado com cara de válido.
+        digitos_codigo = re.sub(r'\D', '', codigo)
+        if len(digitos_codigo) > 14:
+            nome_local = _safe_str(row[1]) if len(row) > 1 else codigo
+            result['errors'].append(
+                f"Aba 'Local de Entrega': o CNPJ do local '{nome_local}' tem "
+                f"{len(digitos_codigo)} dígitos (máximo 14): {codigo}. Corrija na planilha."
+            )
+            continue
+
         locais_raw.append(codigo)
         locais[codigo] = {
             "nome": _safe_str(row[1]) if len(row) > 1 else codigo,
@@ -663,6 +674,12 @@ def _parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, adm
         # 3. Validar Código Local de Entrega
         if not codigo_local:
             erros_linha_atual.append("Código local de entrega (CNPJ) ausente")
+        else:
+            digitos_local = re.sub(r'\D', '', codigo_local)
+            if len(digitos_local) > 14:
+                erros_linha_atual.append(
+                    f"CNPJ do local de entrega inválido ({len(digitos_local)} dígitos — máximo 14): corrija na planilha"
+                )
 
         # 5. Validar Data de Nascimento
         data_nasc = _parse_date(data_nasc_raw)
