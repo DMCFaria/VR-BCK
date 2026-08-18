@@ -489,16 +489,13 @@ def gerar_faturamento(importacao_id=None, data_inicio=None, data_fim=None, admin
         # Busca a taxa cadastrada na administradora (valor registrado, nao calculado)
         taxa_tipo, taxa_valor = get_taxa_cadastrada(vinculo=vinculo, produto=prod, administradora_fallback=administradora)
 
-        # Se não encontrou taxa e não tem vínculo ou vínculo sem taxa, busca em outros vínculos do condomínio
-        if taxa_tipo is None and cond:
-            outros_vinculos = cond.vinculocondominio_set.exclude(
-                id=vinculo.id if vinculo else None
-            )
-            for outro_vinculo in outros_vinculos:
-                taxa_tipo, taxa_valor = get_taxa_cadastrada(vinculo=outro_vinculo, produto=prod, administradora_fallback=outro_vinculo.administradora)
-                if taxa_tipo is not None:
-                    logger.info(f"[FATURAMENTO] Taxa encontrada em outro vínculo: vinculo={outro_vinculo.id}")
-                    break
+        # NÃO buscar taxa em "outros vínculos" do condomínio: cada vínculo é de
+        # OUTRA administradora, e a taxa é acordo comercial entre a administradora
+        # da importação e o condomínio. O fallback antigo fazia a taxa padrão de
+        # uma administradora vazar para o faturamento de outra (caso LC: 2
+        # condomínios compartilhados com a Fedcorp saíam com os 10% dela sem a
+        # LC ter taxa nenhuma cadastrada). Sem taxa na cadeia da administradora
+        # da importação = sem taxa (0).
 
         # Endereço do condomínio.
         #
