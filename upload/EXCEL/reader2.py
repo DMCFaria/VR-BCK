@@ -218,6 +218,24 @@ def validar_dimensoes_planilha(file_path, max_abas=50, max_linhas_beneficiario=1
 
     Retorna dict com 'ok' (bool) e 'erro' (str, se aplicável).
     """
+    # Planilha protegida por senha (ou .xls 97-2003 renomeado): o Excel
+    # embrulha em contêiner OLE2 e o openpyxl falha com o críptico
+    # "File is not a zip file". Detectar pela assinatura e explicar.
+    try:
+        with open(file_path, 'rb') as f:
+            assinatura = f.read(8)
+        if assinatura == b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1':
+            return {
+                "ok": False,
+                "erro": (
+                    "A planilha está protegida por senha ou no formato antigo "
+                    "Excel 97-2003. Remova a senha de abertura (Arquivo → Informações "
+                    "→ Proteger Pasta de Trabalho) ou salve como .xlsx/.xlsm e envie novamente."
+                ),
+            }
+    except Exception:
+        pass
+
     try:
         wb = openpyxl.load_workbook(file_path, read_only=True)
     except Exception as e:
@@ -284,6 +302,40 @@ def validar_dimensoes_planilha(file_path, max_abas=50, max_linhas_beneficiario=1
 
 
 def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, administradora_cnpj=None):
+    """
+    Lê o template VR em modo read_only (o template traz ~40 abas de VBA e o
+    modo normal carrega todas — 11s+ num arquivo pequeno, estourando o timeout
+    de 30s do gunicorn em produção). Alguns arquivos têm o metadado de
+    dimensões quebrado e voltam VAZIOS no read_only: nesses casos, sem nenhum
+    erro nem condomínio no resultado, reprocessa no modo completo.
+    """
+    resultado = _parse_fut_template(
+        file_path, file_upload_id, valor_max_beneficio, administradora_cnpj,
+        read_only=True,
+    )
+
+    # Sem nenhum condomínio nem linha processada = leitura suspeita (arquivos
+    # com metadado quebrado voltam vazios e ainda geram erros artificiais tipo
+    # "aba sem locais"). O reparse completo confirma: se a planilha for vazia
+    # de verdade, o modo completo devolve o mesmo erro legítimo.
+    vazio_suspeito = (
+        not resultado.get('condominios')
+        and not resultado.get('linhas_com_erro')
+    )
+    if vazio_suspeito:
+        logger.warning(
+            "[READER] Parse read_only voltou vazio — refazendo em modo completo "
+            "(possível metadado de dimensões quebrado no arquivo)."
+        )
+        resultado = _parse_fut_template(
+            file_path, file_upload_id, valor_max_beneficio, administradora_cnpj,
+            read_only=False,
+        )
+
+    return resultado
+
+
+def _parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, administradora_cnpj=None, read_only=True):
     if valor_max_beneficio is None:
         valor_max_beneficio = Decimal('9999.99')
 
@@ -315,7 +367,12 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
         return result
 
     try:
-        wb = openpyxl.load_workbook(file_path, data_only=True)
+        # read_only: o template VR traz ~40 abas (VBA/registros 60/99) e o modo
+        # normal carrega todas — 11s+ num arquivo de 269 linhas, estourando o
+        # timeout de 30s do gunicorn em produção (upload preso em PENDING +
+        # erro 500). Só usamos iter_rows nas 3 abas de interesse, que o modo
+        # read_only atende, como a validar_dimensoes_planilha já faz.
+        wb = openpyxl.load_workbook(file_path, data_only=True, read_only=read_only)
     except Exception as e:
         result['errors'].append(f"Erro ao abrir planilha: {str(e)}")
         return result
