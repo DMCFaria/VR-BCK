@@ -255,12 +255,18 @@ class ConfirmationView(views.APIView):
         dados_modificados = payload.get("dados_modificados")
         condominios_data = payload.get("condominios")
 
-        # O front nunca envia "dados_modificados" — a planilha editada nunca
-        # era gerada no fluxo VR (só no VT, que monta a estrutura a partir dos
-        # próprios condomínios; ver vt_confirm.py). Os condominios do payload
-        # são exatamente o que foi confirmado na tela, já com exclusões e
-        # edições de valor aplicadas — é o retrato que o faturista precisa.
-        if not dados_modificados and condominios_data:
+        # "houve_edicao" indica que o confirmado difere da planilha original
+        # (exclusão/edição manual na conferência, ajuste automático de limite
+        # ou conversão Benedetti). Só então a planilha editada é gerada.
+        # Default True: payload de SPA em cache antigo (sem a flag) mantém o
+        # comportamento legado de gerar sempre, em vez de arriscar não gerar
+        # quando houve edição.
+        houve_edicao = bool(payload.get("houve_edicao", True))
+
+        # Os condominios do payload são exatamente o que foi confirmado na
+        # tela, já com exclusões e edições de valor aplicadas — é o retrato
+        # que o faturista precisa na planilha editada.
+        if houve_edicao and not dados_modificados and condominios_data:
             dados_modificados = {"condominios": condominios_data}
         summary = payload.get('summary', {})
 
@@ -354,9 +360,9 @@ class ConfirmationView(views.APIView):
                 logger.debug(f"[CONFIRMACAO] Nome do arquivo para email: {arquivo_nome}")
 
                 arquivo_s3_editado_url = None
-                logger.info(f"[CONFIRMACAO] Verificando geração de planilha editada - dados_modificados: {bool(dados_modificados)}, file_upload: {bool(file_upload)}")
+                logger.info(f"[CONFIRMACAO] Verificando geração de planilha editada - houve_edicao: {houve_edicao}, dados_modificados: {bool(dados_modificados)}, file_upload: {bool(file_upload)}")
 
-                if dados_modificados and file_upload:
+                if houve_edicao and dados_modificados and file_upload:
                     logger.info(f"[CONFIRMACAO] Iniciando geração de planilha editada")
                     data_competencia = None
                     if competencia_mes and competencia_ano:

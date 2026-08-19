@@ -403,8 +403,9 @@ class TestCpfDuplicado(TestDeteccaoCartaoAdmin):
     Mesmo CPF em mais de uma linha:
     - nome/nascimento divergentes = pessoas distintas com CPF errado →
       as DUAS linhas são bloqueadas (CPF_DUPLICADO_DIVERGENTE);
-    - dados iguais = mesma pessoa → soma os valores e registra aviso
-      (CPF_SOMADO) para exibição em tela.
+    - dados iguais = mesma pessoa → soma os valores; o aviso (CPF_SOMADO)
+      só aparece quando as linhas somam no MESMO produto — produtos
+      distintos são complemento legítimo e somam em silêncio.
     Reutiliza o builder de planilha da TestDeteccaoCartaoAdmin.
     """
 
@@ -458,6 +459,45 @@ class TestCpfDuplicado(TestDeteccaoCartaoAdmin):
         self.assertEqual(avisos[0]['tipo'], 'CPF_SOMADO')
         self.assertEqual(avisos[0]['cpf'], '52998224725')
         self.assertEqual(len(avisos[0]['linhas']), 2)
+
+    def test_cpf_duplicado_beneficios_distintos_soma_sem_aviso(self):
+        """
+        Mesma pessoa em duas linhas com PRODUTOS diferentes (ex.: Refeição
+        numa linha, Alimentação na outra): a soma é intencional e não deve
+        gerar o aviso CPF_SOMADO em tela.
+        """
+        data = self._parse_beneficiarios([
+            {'cpf': '52998224725', 'nome': 'FULANO DA SILVA', 'nascimento': '01/01/1990', 'valor': 100.0, 'col': 10},
+            {'cpf': '52998224725', 'nome': 'FULANO DA SILVA', 'nascimento': '01/01/1990', 'valor': 50.0, 'col': 11},
+        ])
+
+        self.assertEqual(data['linhas_com_erro'], [])
+        funcionarios = [f for c in data['condominios'] for f in c['funcionarios']]
+        self.assertEqual(len(funcionarios), 1)
+        self.assertEqual(funcionarios[0]['valor_bene'], Decimal('150.0'))
+        self.assertEqual(len(funcionarios[0]['movimentacoes']), 2)
+
+        self.assertEqual(data.get('avisos', []), [])
+
+    def test_cpf_duplicado_mistura_produto_repetido_e_novo_avisa(self):
+        """
+        Se a linha repetida soma num produto já existente E acrescenta um
+        produto novo, o aviso deve aparecer (houve soma no mesmo produto).
+        """
+        data = self._parse_beneficiarios([
+            {'cpf': '52998224725', 'nome': 'FULANO DA SILVA', 'nascimento': '01/01/1990', 'valor': 100.0, 'col': 10},
+            {'cpf': '52998224725', 'nome': 'FULANO DA SILVA', 'nascimento': '01/01/1990', 'valor': 50.0, 'col': 10},
+            {'cpf': '52998224725', 'nome': 'FULANO DA SILVA', 'nascimento': '01/01/1990', 'valor': 30.0, 'col': 11},
+        ])
+
+        funcionarios = [f for c in data['condominios'] for f in c['funcionarios']]
+        self.assertEqual(len(funcionarios), 1)
+        self.assertEqual(funcionarios[0]['valor_bene'], Decimal('180.0'))
+
+        avisos = data.get('avisos', [])
+        self.assertEqual(len(avisos), 1, avisos)
+        self.assertEqual(avisos[0]['tipo'], 'CPF_SOMADO')
+        self.assertEqual(len(avisos[0]['linhas']), 3)
 
     def test_cnpj_local_com_mais_de_14_digitos_e_sinalizado(self):
         """CNPJ >14 dígitos era truncado em silêncio; agora vira erro visível."""
