@@ -748,6 +748,7 @@ def _parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, adm
                 }
 
             func_key = f"{codigo_local}_{cpf}"
+            linha_repetida = False
             if func_key not in locais[codigo_local]["funcionarios"]:
                 locais[codigo_local]["funcionarios"][func_key] = {
                     "nome": nome.upper() if nome else '',
@@ -766,6 +767,7 @@ def _parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, adm
                     "linha": row_num,
                     "linhas_somadas": [],
                     "conflito_cpf": False,
+                    "mesmo_beneficio_somado": False,
                 }
             else:
                 # CPF repetido no mesmo condomínio: só é a mesma pessoa se nome
@@ -803,6 +805,7 @@ def _parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, adm
                     continue
 
                 existente["linhas_somadas"].append(row_num)
+                linha_repetida = True
 
             func = locais[codigo_local]["funcionarios"][func_key]
 
@@ -834,6 +837,11 @@ def _parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, adm
                 )
                 if existing_mov:
                     existing_mov["valor"] += valor
+                    # Linha repetida do mesmo CPF somando no MESMO produto:
+                    # merece aviso em tela. Linhas repetidas com produtos
+                    # distintos são complemento legítimo e somam em silêncio.
+                    if linha_repetida:
+                        func["mesmo_beneficio_somado"] = True
                 else:
                     func["movimentacoes"].append({
                         "produto": nome_produto,
@@ -881,7 +889,7 @@ def _parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, adm
                 })
                 continue
 
-            if func.get("linhas_somadas"):
+            if func.get("linhas_somadas") and func.get("mesmo_beneficio_somado"):
                 result['avisos'].append({
                     "tipo": "CPF_SOMADO",
                     "cpf": func["cpf"],
