@@ -29,6 +29,36 @@ def validar_extensao_arquivo(file_path, original_filename):
     except Exception:
         return f"{nome}.xlsm"
 
+# Assinaturas de arquivo Excel corrompido/ilegível pelo openpyxl. O caso mais
+# comum em produção é o "MultiCellRange" (metadados de células mescladas /
+# formatação condicional quebrados dentro do xlsx/xlsm) — o arquivo abre no
+# Excel, mas o parser não consegue ler.
+_ASSINATURAS_ARQUIVO_CORROMPIDO = (
+    "MultiCellRange",
+    "File is not a zip file",
+    "BadZipFile",
+    "expected <class 'openpyxl",
+)
+
+ORIENTACAO_ARQUIVO_CORROMPIDO = (
+    "Não foi possível ler a planilha: o arquivo parece estar corrompido "
+    "(estrutura interna inválida, mesmo abrindo normalmente no Excel). "
+    "Como resolver: baixe o modelo oficial em 'Baixar modelos de excel' na "
+    "tela de Importação, copie e cole os dados da sua planilha no modelo "
+    "novo e importe novamente."
+)
+
+def mensagem_erro_arquivo(exc):
+    """
+    Traduz exceções de leitura do Excel em mensagem amigável para tela.
+    Retorna a orientação de arquivo corrompido quando reconhece a assinatura;
+    caso contrário, a mensagem genérica com o erro original.
+    """
+    texto = str(exc)
+    if any(a in texto for a in _ASSINATURAS_ARQUIVO_CORROMPIDO):
+        return ORIENTACAO_ARQUIVO_CORROMPIDO
+    return f"Erro inesperado: {texto}"
+
 def convert_decimals_to_json_safe(data):
     if isinstance(data, dict):
         return {key: convert_decimals_to_json_safe(value) for key, value in data.items()}
