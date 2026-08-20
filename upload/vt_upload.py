@@ -8,7 +8,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from upload.vt_parser import parse_vt_excel
 from .serializers import FileUploadSerializer
-from .utils import convert_decimals_to_json_safe, validar_extensao_arquivo
+from .utils import convert_decimals_to_json_safe, validar_extensao_arquivo, mensagem_erro_arquivo
 from datetime import datetime
 import boto3   
 from django.conf import settings
@@ -217,7 +217,7 @@ class UploadVTView(views.APIView):
                         pass
             except:
                 pass
-            return self._handle_error(upload_instance, f"Erro inesperado: {str(e)}")
+            return self._handle_error(upload_instance, mensagem_erro_arquivo(e))
 
     def _get_beneficiary_summary(self, movimentacoes):
         """Agrupa movimentações por beneficiário (CPF)"""

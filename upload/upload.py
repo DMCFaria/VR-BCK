@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from .serializers import FileUploadSerializer
-from .utils import convert_decimals_to_json_safe, get_beneficiary_summary, get_movimentacoes_detalhada, validar_extensao_arquivo
+from .utils import convert_decimals_to_json_safe, get_beneficiary_summary, get_movimentacoes_detalhada, validar_extensao_arquivo, mensagem_erro_arquivo
 from datetime import datetime
 import boto3   
 from django.conf import settings
@@ -221,9 +221,10 @@ class UploadView(views.APIView):
             )
 
         except Exception as e:
+            logger.error(f"Erro no processamento do upload: {e}", exc_info=True)
             if os.path.exists(file_path):
                 os.remove(file_path)
-            return self._handle_error(upload_instance, f"Erro inesperado: {str(e)}")
+            return self._handle_error(upload_instance, mensagem_erro_arquivo(e))
 
     def _handle_error(self, instance, message):
         """Helper para padronizar falhas"""
