@@ -10,7 +10,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.db import transaction
 
 from beneficios.models import Faturamento, Importacao
-from upload.pdf_reader import ler_boleto
+from upload.pdf_reader import ler_boleto, classificar_pdf_por_conteudo
 from core.fedhub.services.fedhub_service import FedhubService
 from .tasks import processar_faturamento
 
@@ -74,11 +74,11 @@ class UploadFaturamentoView(views.APIView):
         # Use lists() para não descartar arquivos quando o usuário envia vários PDFs.
         mode = request.data.get('mode', 'substituir')
 
+        nao_identificados = []
         for nome_campo, arquivos_campo in arquivos.lists():
             for arquivo in arquivos_campo:
-                # Comparação sem acentos: 'NOTA DÉBITO.pdf' precisa casar com
-                # 'debito' (a versão anterior checava 'dédito', um typo que
-                # nunca casava, e nomes acentuados caíam fora → 400).
+                # 1ª passada: pelo nome (campo ou arquivo), sem acentos —
+                # 'NOTA DÉBITO.pdf' precisa casar com 'debito'.
                 nome_lower = _sem_acentos(nome_campo.lower())
                 real_name_lower = _sem_acentos(getattr(arquivo, 'name', '').lower())
                 if (
@@ -92,21 +92,37 @@ class UploadFaturamentoView(views.APIView):
                     arquivos_nota_debito.append(arquivo)
                 elif 'nf' in nome_lower or 'nf' in real_name_lower:
                     arquivos_nota_fiscal.append(arquivo)
+                else:
+                    # 2ª passada: pelo conteúdo do PDF — o nome do arquivo
+                    # deixa de ser obrigatório.
+                    tipo_conteudo = classificar_pdf_por_conteudo(arquivo)
+                    if tipo_conteudo == 'boleto':
+                        arquivos_boleto.append(arquivo)
+                    elif tipo_conteudo == 'nota_debito':
+                        arquivos_nota_debito.append(arquivo)
+                    elif tipo_conteudo == 'nota_fiscal':
+                        arquivos_nota_fiscal.append(arquivo)
+                    else:
+                        nao_identificados.append(getattr(arquivo, 'name', nome_campo))
 
         # No modo 'adicionar' o pedido já tem documentos: aceita qualquer
         # subconjunto (ex.: incluir só uma nota fiscal). Boleto + nota de
         # débito continuam obrigatórios no fluxo de substituição/importação.
         erros = []
+        if nao_identificados:
+            erros.append(
+                "Não foi possível identificar o tipo (boleto, nota de débito ou nota fiscal) "
+                f"pelo nome nem pelo conteúdo de: {', '.join(nao_identificados)}. "
+                "Verifique se o PDF está legível ou renomeie o arquivo indicando o tipo."
+            )
         if mode == 'adicionar':
             if not (arquivos_boleto or arquivos_nota_debito or arquivos_nota_fiscal):
-                erros.append(
-                    "Nenhum arquivo reconhecido. O nome deve conter 'BOLETO'/'RECIBOQ', 'DEBITO' ou 'NF'."
-                )
+                erros.append("Nenhum arquivo de boleto, nota de débito ou nota fiscal reconhecido.")
         else:
             if not arquivos_boleto:
-                erros.append("Arquivo de BOLETO não encontrado. O nome deve conter 'RECIBOQ' ou 'BOLETO'.")
+                erros.append("Arquivo de BOLETO não encontrado entre os enviados.")
             if not arquivos_nota_debito:
-                erros.append("Arquivo de NOTA DE DÉBITO não encontrado. O nome deve conter 'DEBITO'.")
+                erros.append("Arquivo de NOTA DE DÉBITO não encontrado entre os enviados.")
 
         if erros:
             return Response(
