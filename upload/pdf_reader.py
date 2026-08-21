@@ -55,6 +55,58 @@ def extrair_cnpj_nota_fiscal(texto):
     return match_digits.group(1) if match_digits else None
 
 
+def classificar_pdf_por_conteudo(pdf_file, max_paginas=2):
+    """
+    Classifica um PDF como 'boleto', 'nota_debito' ou 'nota_fiscal' pelo TEXTO
+    das primeiras páginas — fallback para quando o nome do arquivo não segue o
+    padrão. Retorna None quando não reconhece (ou o PDF é ilegível).
+    """
+    import unicodedata
+
+    try:
+        pdf_file.seek(0)
+        reader = PdfReader(pdf_file)
+        texto = ''
+        for page in reader.pages[:max_paginas]:
+            texto += (page.extract_text() or '') + '\n'
+    except Exception:
+        return None
+    finally:
+        try:
+            pdf_file.seek(0)
+        except Exception:
+            pass
+
+    normalizado = unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode('ascii').upper()
+
+    # Ordem importa: títulos são mais específicos que marcadores genéricos
+    # (um boleto pode citar "nota fiscal" nas instruções de pagamento).
+    if 'NOTA DE DEBITO' in normalizado:
+        return 'nota_debito'
+
+    marcadores_boleto = (
+        'FICHA DE COMPENSACAO',
+        'LINHA DIGITAVEL',
+        'LOCAL DE PAGAMENTO',
+        'NOSSO NUMERO',
+        'PAGAVEL EM QUALQUER BANCO',
+    )
+    if any(m in normalizado for m in marcadores_boleto):
+        return 'boleto'
+
+    marcadores_nf = (
+        'NFS-E',
+        'NOTA FISCAL DE SERVICO',
+        'NOTA FISCAL ELETRONICA',
+        'DANFE',
+        'NOTA FISCAL',
+    )
+    if any(m in normalizado for m in marcadores_nf):
+        return 'nota_fiscal'
+
+    return None
+
+
 def ler_boleto(pdf_file):
     """
     Lê o conteúdo do PDF de Boleto e exibe no terminal.
