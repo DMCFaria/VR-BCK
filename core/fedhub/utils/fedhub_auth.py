@@ -18,6 +18,7 @@ from decouple import config
 logger = logging.getLogger(__name__)
 
 _MARGEM_RENOVACAO = 60  # renova 60s antes de expirar
+_BACKOFF_FALHA = 60  # após falha, não retenta por 60s — senão cada request pagaria o timeout do POST
 
 
 class FedHubAuth:
@@ -25,6 +26,7 @@ class FedHubAuth:
         self._lock = threading.Lock()
         self._token = None
         self._expira_em = 0.0
+        self._nao_tentar_antes_de = 0.0
 
     def _renovar(self) -> None:
         base_url = config("FEDHUB_URL", default="http://localhost:8090").rstrip("/")
@@ -46,11 +48,15 @@ class FedHubAuth:
             return None
         with self._lock:
             if self._token is None or time.time() >= self._expira_em:
+                if time.time() < self._nao_tentar_antes_de:
+                    return None  # em backoff: segue só com a chave legada, sem pagar o POST
                 try:
                     self._renovar()
+                    self._nao_tentar_antes_de = 0.0
                 except Exception as e:
                     logger.warning(f"FedHub auth: falha ao obter token ({e}); usando só a chave legada")
                     self._token = None
+                    self._nao_tentar_antes_de = time.time() + _BACKOFF_FALHA
         return self._token
 
 
