@@ -139,8 +139,22 @@ class TestColunasPosicao(unittest.TestCase):
     def test_cultura_marcada_como_rejeitado(self):
         """A coluna 13 (VR Cultura) deve estar marcada como rejeitada."""
         self.assertTrue(COLUNAS_POSICAO[13].get('rejeitado'))
-        self.assertIsNone(COLUNAS_POSICAO[13]['codigo'])
+        self.assertEqual(COLUNAS_POSICAO[13]['codigo'], '30')
         self.assertIsNone(COLUNAS_POSICAO[13]['tipo'])
+
+    def test_codigos_posicionais_sao_os_oficiais_da_vr(self):
+        """
+        Códigos conforme a tabela oficial da VR (PRODUTOS - VR.xlsx):
+        cada produto tem código próprio — nada de reutilizar 207/27/28.
+        """
+        esperados = {
+            10: '31', 11: '27', 12: '28', 13: '30', 14: '201', 15: '202',
+            16: '204', 17: '243', 18: '207', 19: '209', 20: '244',
+            21: '212', 22: '245', 23: '211', 24: '213', 25: '58', 26: '262',
+        }
+        for col, codigo in esperados.items():
+            self.assertEqual(COLUNAS_POSICAO[col]['codigo'], codigo,
+                             f'Coluna {col} deveria mapear para o código {codigo}')
 
 
 class TestDeduplicacao(unittest.TestCase):
@@ -271,11 +285,15 @@ class TestDeteccaoCartaoAdmin(unittest.TestCase):
 
     ENDERECO_ADM = ('AV ADHEMAR DE BARROS', '120', '', 'VILA SANTA ROSA', 'GUARUJÁ', 'SP', '11430003')
 
-    def _criar_planilha(self, tmpdir, locais):
+    def _criar_planilha(self, tmpdir, locais, beneficiarios=None):
         """
         Cria uma planilha mínima no layout VR com as abas Sumario,
-        Local de Entrega e Beneficiario. `locais` é uma lista de tuplas
-        (cnpj, nome, rua, numero, complemento, bairro, cidade, estado, cep).
+        Local de Entrega e Beneficiario.
+        `locais`: lista de tuplas (cnpj, nome, rua, numero, complemento,
+        bairro, cidade, estado, cep).
+        `beneficiarios`: lista de dicts {cpf, local, nome, nascimento, valor,
+        col} (col = coluna do produto, padrão 10 = VR Refeição). Se omitido,
+        cria um beneficiário válido no primeiro local.
         """
         import openpyxl
 
@@ -290,16 +308,24 @@ class TestDeteccaoCartaoAdmin(unittest.TestCase):
         for cnpj, nome, rua, numero, complemento, bairro, cidade, estado, cep in locais:
             ws_loc.append([cnpj, nome, '', rua, numero, complemento, bairro, cidade, estado, cep])
 
+        if beneficiarios is None:
+            beneficiarios = [{
+                'cpf': '52998224725', 'local': locais[0][0],
+                'nome': 'FUNCIONARIO TESTE', 'nascimento': '01/01/1990',
+                'valor': 100.0, 'col': 10,
+            }]
+
         ws_ben = wb.create_sheet('Beneficiario')
         ws_ben.cell(2, 1).value = 'CPF'
         ws_ben.cell(2, 5).value = 'Nome'
-        # Um beneficiário válido no primeiro local, com VR Refeição (col 10)
-        ws_ben.cell(3, 1).value = '52998224725'
-        ws_ben.cell(3, 2).value = locais[0][0]
-        ws_ben.cell(3, 4).value = 'MAT001'
-        ws_ben.cell(3, 5).value = 'FUNCIONARIO TESTE'
-        ws_ben.cell(3, 7).value = '01/01/1990'
-        ws_ben.cell(3, 10).value = 100.0
+        for i, b in enumerate(beneficiarios):
+            row = 3 + i
+            ws_ben.cell(row, 1).value = b['cpf']
+            ws_ben.cell(row, 2).value = b.get('local', locais[0][0])
+            ws_ben.cell(row, 4).value = b.get('matricula', f'MAT{row:03d}')
+            ws_ben.cell(row, 5).value = b['nome']
+            ws_ben.cell(row, 7).value = b.get('nascimento', '01/01/1990')
+            ws_ben.cell(row, b.get('col', 10)).value = b.get('valor', 100.0)
 
         file_path = os.path.join(tmpdir, 'planilha_teste.xlsx')
         wb.save(file_path)
@@ -370,6 +396,148 @@ class TestDeteccaoCartaoAdmin(unittest.TestCase):
                 self._local('00034453000139', 'COND B', endereco_vazio),
             ])
             self.assertFalse(data['cartao_admin'])
+
+
+class TestCpfDuplicado(TestDeteccaoCartaoAdmin):
+    """
+    Mesmo CPF em mais de uma linha:
+    - nome/nascimento divergentes = pessoas distintas com CPF errado →
+      as DUAS linhas são bloqueadas (CPF_DUPLICADO_DIVERGENTE);
+    - dados iguais = mesma pessoa → soma os valores; o aviso (CPF_SOMADO)
+      só aparece quando as linhas somam no MESMO produto — produtos
+      distintos são complemento legítimo e somam em silêncio.
+    Reutiliza o builder de planilha da TestDeteccaoCartaoAdmin.
+    """
+
+    LOCAIS = None  # definido em setUp para reuso
+
+    def setUp(self):
+        self.locais = [self._local('00034178000153', 'COND A', self.ENDERECO_ADM)]
+
+    def _parse_beneficiarios(self, beneficiarios):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = self._criar_planilha(tmpdir, self.locais, beneficiarios)
+            return parse_fut_template(
+                file_path,
+                file_upload_id=1496,
+                valor_max_beneficio=Decimal('9999.99'),
+                administradora_cnpj='35315360000167',
+            )
+
+    def test_cpf_duplicado_divergente_bloqueia_as_duas_linhas(self):
+        data = self._parse_beneficiarios([
+            {'cpf': '52998224725', 'nome': 'FULANO DA SILVA', 'nascimento': '01/01/1990', 'valor': 100.0},
+            {'cpf': '52998224725', 'nome': 'BELTRANO SOUZA', 'nascimento': '05/05/1985', 'valor': 200.0},
+            {'cpf': '11861784775', 'nome': 'PESSOA NORMAL', 'nascimento': '02/02/1992', 'valor': 50.0},
+        ])
+
+        erros_dup = [l for l in data['linhas_com_erro'] if l['tipo_erro'] == 'CPF_DUPLICADO_DIVERGENTE']
+        self.assertEqual(len(erros_dup), 2, erros_dup)
+
+        funcionarios = [f for c in data['condominios'] for f in c['funcionarios']]
+        cpfs_validos = {f['cpf'] for f in funcionarios}
+        self.assertNotIn('52998224725', cpfs_validos)
+        self.assertIn('11861784775', cpfs_validos)
+
+        # Totais estornados: só a pessoa normal conta.
+        self.assertEqual(data['summary']['valor_total_beneficios'], Decimal('50.0'))
+
+    def test_cpf_duplicado_mesma_pessoa_soma_e_avisa(self):
+        data = self._parse_beneficiarios([
+            {'cpf': '52998224725', 'nome': 'FULANO DA SILVA', 'nascimento': '01/01/1990', 'valor': 100.0},
+            {'cpf': '52998224725', 'nome': 'Fulano da Silva', 'nascimento': '01/01/1990', 'valor': 50.0},
+        ])
+
+        self.assertEqual(data['linhas_com_erro'], [])
+        funcionarios = [f for c in data['condominios'] for f in c['funcionarios']]
+        self.assertEqual(len(funcionarios), 1)
+        self.assertEqual(funcionarios[0]['valor_bene'], Decimal('150.0'))
+
+        avisos = data.get('avisos', [])
+        self.assertEqual(len(avisos), 1, avisos)
+        self.assertEqual(avisos[0]['tipo'], 'CPF_SOMADO')
+        self.assertEqual(avisos[0]['cpf'], '52998224725')
+        self.assertEqual(len(avisos[0]['linhas']), 2)
+
+    def test_cpf_duplicado_beneficios_distintos_soma_sem_aviso(self):
+        """
+        Mesma pessoa em duas linhas com PRODUTOS diferentes (ex.: Refeição
+        numa linha, Alimentação na outra): a soma é intencional e não deve
+        gerar o aviso CPF_SOMADO em tela.
+        """
+        data = self._parse_beneficiarios([
+            {'cpf': '52998224725', 'nome': 'FULANO DA SILVA', 'nascimento': '01/01/1990', 'valor': 100.0, 'col': 10},
+            {'cpf': '52998224725', 'nome': 'FULANO DA SILVA', 'nascimento': '01/01/1990', 'valor': 50.0, 'col': 11},
+        ])
+
+        self.assertEqual(data['linhas_com_erro'], [])
+        funcionarios = [f for c in data['condominios'] for f in c['funcionarios']]
+        self.assertEqual(len(funcionarios), 1)
+        self.assertEqual(funcionarios[0]['valor_bene'], Decimal('150.0'))
+        self.assertEqual(len(funcionarios[0]['movimentacoes']), 2)
+
+        self.assertEqual(data.get('avisos', []), [])
+
+    def test_cpf_duplicado_mistura_produto_repetido_e_novo_avisa(self):
+        """
+        Se a linha repetida soma num produto já existente E acrescenta um
+        produto novo, o aviso deve aparecer (houve soma no mesmo produto).
+        """
+        data = self._parse_beneficiarios([
+            {'cpf': '52998224725', 'nome': 'FULANO DA SILVA', 'nascimento': '01/01/1990', 'valor': 100.0, 'col': 10},
+            {'cpf': '52998224725', 'nome': 'FULANO DA SILVA', 'nascimento': '01/01/1990', 'valor': 50.0, 'col': 10},
+            {'cpf': '52998224725', 'nome': 'FULANO DA SILVA', 'nascimento': '01/01/1990', 'valor': 30.0, 'col': 11},
+        ])
+
+        funcionarios = [f for c in data['condominios'] for f in c['funcionarios']]
+        self.assertEqual(len(funcionarios), 1)
+        self.assertEqual(funcionarios[0]['valor_bene'], Decimal('180.0'))
+
+        avisos = data.get('avisos', [])
+        self.assertEqual(len(avisos), 1, avisos)
+        self.assertEqual(avisos[0]['tipo'], 'CPF_SOMADO')
+        self.assertEqual(len(avisos[0]['linhas']), 3)
+
+    def test_cnpj_local_com_mais_de_14_digitos_e_sinalizado(self):
+        """CNPJ >14 dígitos era truncado em silêncio; agora vira erro visível."""
+        import tempfile
+
+        # Na aba Local de Entrega
+        with tempfile.TemporaryDirectory() as tmpdir:
+            locais = [self._local('000341780001534', 'COND CNPJ LONGO', self.ENDERECO_ADM)]
+            file_path = self._criar_planilha(tmpdir, locais, [{
+                'cpf': '52998224725', 'local': '000341780001534',
+                'nome': 'FUNCIONARIO TESTE', 'nascimento': '01/01/1990',
+                'valor': 100.0,
+            }])
+            data = parse_fut_template(file_path, file_upload_id=1497)
+            self.assertTrue(
+                any('máximo 14' in e for e in data.get('errors', [])),
+                data.get('errors')
+            )
+
+        # Na coluna do beneficiário
+        with tempfile.TemporaryDirectory() as tmpdir:
+            locais = [self._local('00034178000153', 'COND A', self.ENDERECO_ADM)]
+            file_path = self._criar_planilha(tmpdir, locais, [{
+                'cpf': '52998224725', 'local': '000341780001534',
+                'nome': 'FUNCIONARIO TESTE', 'nascimento': '01/01/1990',
+                'valor': 100.0,
+            }])
+            data = parse_fut_template(file_path, file_upload_id=1498)
+            erros = [e for l in data.get('linhas_com_erro', []) for e in l.get('erros', [])]
+            self.assertTrue(any('máximo 14' in e for e in erros), erros)
+
+    def test_cpfs_distintos_seguem_normais(self):
+        data = self._parse_beneficiarios([
+            {'cpf': '52998224725', 'nome': 'FULANO DA SILVA', 'valor': 100.0},
+            {'cpf': '11861784775', 'nome': 'PESSOA NORMAL', 'valor': 50.0},
+        ])
+        self.assertEqual(data['linhas_com_erro'], [])
+        self.assertEqual(data.get('avisos', []), [])
+        funcionarios = [f for c in data['condominios'] for f in c['funcionarios']]
+        self.assertEqual(len(funcionarios), 2)
 
 
 if __name__ == '__main__':

@@ -8,51 +8,59 @@ import openpyxl
 logger = logging.getLogger(__name__)
 
 
-CODIGO_PRODUTO_PADRAO = '207'
+# Fallback para produto Refeição-like sem código próprio identificado.
+CODIGO_PRODUTO_PADRAO = '31'
 
 # Mapeamento dos headers de produto encontrados nas planilhas para o
 # código do produto usado nos registros 50/60 do TXT de compra.
+# Códigos conforme a tabela oficial da VR (PRODUTOS - VR.xlsx, ago/2026).
 COLUNAS_PRODUTO = {
     # ===== Sem prefixo "VR " (VR-exemplo.xlsm / Template_VR_OLD.xlsx) =====
-    'Refeição': CODIGO_PRODUTO_PADRAO,
-    'Multi Refeição': CODIGO_PRODUTO_PADRAO,
+    'Refeição': '31',
+    'Multi Refeição': '244',
     'Alimentação': '27',
-    'Multi Alimentação': '27',
+    'Multi Alimentação': '212',
     'Auto': '28',
-    'Mobilidade': '28',
-    'VR Mobilidade': '28',
-    'Multi Mobilidade': '28',
-    'VR Multi Mobilidade': '28',
+    'Mobilidade': '262',
+    'VR Mobilidade': '262',
+    'Multi Mobilidade': '262',
+    'VR Multi Mobilidade': '262',
     'Cesta': '201',
     'Boas Festas': '202',
+    'Multi Boas Festas': '217',
     'Auxílio Alimentação': '204',
-    'Multi Auxílio Alimentação': '204',
-    'Auxílio Refeição': CODIGO_PRODUTO_PADRAO,
-    'Multi Auxílio Refeição': CODIGO_PRODUTO_PADRAO,
-    'Multibenefício': CODIGO_PRODUTO_PADRAO,
-    'Multibenefícios': CODIGO_PRODUTO_PADRAO,
-    'Auxílio VR+VA': CODIGO_PRODUTO_PADRAO,
-    'Multi Auxílio VR+VA': CODIGO_PRODUTO_PADRAO,
-    'Multi - Home Office': CODIGO_PRODUTO_PADRAO,
-    'Multi Home office': CODIGO_PRODUTO_PADRAO,
+    'Multi Auxílio Alimentação': '211',
+    'Auxílio Refeição': '243',
+    'Multi Auxílio Refeição': '245',
+    'Multibenefício': '207',
+    'Multibenefícios': '207',
+    'Auxílio VR+VA': '209',
+    'Multi Auxílio VR+VA': '213',
+    'Multi - Home Office': '58',
+    'Multi Home office': '58',
+    'Refeição Adicional': '242',
+    'Auto Manutenção': '261',
     # ===== Com prefixo "VR " (Template_VR.xlsm) =====
-    'VR Multi Home office': CODIGO_PRODUTO_PADRAO,
-    'VR Refeição': CODIGO_PRODUTO_PADRAO,
+    'VR Multi Home office': '58',
+    'VR Refeição': '31',
     'VR Alimentação': '27',
     'VR Auto': '28',
     'VR Alimentação Cesta': '201',
     'VR Boas Festas': '202',
+    'VR Multi Boas Festas': '217',
     'VR Auxílio Alimentação': '204',
-    'VR Auxílio Refeição': CODIGO_PRODUTO_PADRAO,
-    'VR Multibenefícios': CODIGO_PRODUTO_PADRAO,
-    'VR+VA': CODIGO_PRODUTO_PADRAO,
-    'VR Multi Refeição': CODIGO_PRODUTO_PADRAO,
-    'VR Multi Alimentação': '27',
-    'VR Multi Alimentação Valor do crédito': '27',
-    'VR Multi Refeição Auxílio': CODIGO_PRODUTO_PADRAO,
-    'VR Multi Alimentação Auxílio': '204',
-    'VR Multi VR+VA': CODIGO_PRODUTO_PADRAO,
-    'VR Multi - Home Office': CODIGO_PRODUTO_PADRAO,
+    'VR Auxílio Refeição': '243',
+    'VR Multibenefícios': '207',
+    'VR+VA': '209',
+    'VR Multi Refeição': '244',
+    'VR Multi Alimentação': '212',
+    'VR Multi Alimentação Valor do crédito': '212',
+    'VR Multi Refeição Auxílio': '245',
+    'VR Multi Alimentação Auxílio': '211',
+    'VR Multi VR+VA': '213',
+    'VR Multi - Home Office': '58',
+    'VR Refeição Adicional': '242',
+    'VR Auto Manutenção': '261',
 }
 
 # Mapeamento dos headers de produto para o TIPO normalizado.
@@ -96,6 +104,13 @@ MAPEAMENTO_PRODUTO_TIPO = {
     'VR Multi Alimentação Auxílio': 'Multi - Alimentação',
     'VR Multi VR+VA': 'Multi - VR+VA',
     'VR Multi - Home Office': 'Multi - Home Office',
+    # Produtos de baixa aderência que chegam por cabeçalho
+    'Multi Boas Festas': 'Boas Festas',
+    'VR Multi Boas Festas': 'Boas Festas',
+    'Refeição Adicional': 'Refeição',
+    'VR Refeição Adicional': 'Refeição',
+    'Auto Manutenção': 'Auto',
+    'VR Auto Manutenção': 'Auto',
 }
 
 # Headers de produtos que devem ser reconhecidos mas rejeitados com erro claro.
@@ -111,24 +126,28 @@ PRODUTOS_REJEITADOS = {
 # Coluna J=10 até Z=26, na ordem exata do template VR padrão.
 # Se a coluna estiver neste dict, o produto é determinado pela posição,
 # INDEPENDENTE do header da coluna.
+# Códigos conforme a tabela oficial da VR (PRODUTOS - VR.xlsx, ago/2026):
+# cada produto tem código próprio. O mapeamento antigo achatava tudo em
+# {27, 28, 201, 202, 204, 207}, misturando produtos distintos no mesmo
+# código e corrompendo nome/tipo nas telas e na planilha de faturamento.
 COLUNAS_POSICAO = {
-    10: {'nome': 'VR Refeição',               'codigo': '207', 'tipo': 'Refeição'},
+    10: {'nome': 'VR Refeição',               'codigo': '31',  'tipo': 'Refeição'},
     11: {'nome': 'VR Alimentação',             'codigo': '27',  'tipo': 'Alimentação'},
     12: {'nome': 'VR Auto',                    'codigo': '28',  'tipo': 'Auto'},
-    13: {'nome': 'VR Cultura',                 'codigo': None,  'tipo': None, 'rejeitado': True},
+    13: {'nome': 'VR Cultura',                 'codigo': '30',  'tipo': None, 'rejeitado': True},
     14: {'nome': 'VR Alimentação Cesta',       'codigo': '201', 'tipo': 'Boas Festas'},
     15: {'nome': 'VR Boas Festas',             'codigo': '202', 'tipo': 'Boas Festas'},
     16: {'nome': 'VR Auxílio Alimentação',     'codigo': '204', 'tipo': 'Alimentação'},
-    17: {'nome': 'VR Auxílio Refeição',        'codigo': '207', 'tipo': 'Refeição'},
+    17: {'nome': 'VR Auxílio Refeição',        'codigo': '243', 'tipo': 'Refeição'},
     18: {'nome': 'VR Multibenefícios',         'codigo': '207', 'tipo': 'Multi - VR+VA'},
-    19: {'nome': 'VR+VA',                      'codigo': '207', 'tipo': 'Multi - VR+VA'},
-    20: {'nome': 'VR Multi Refeição',          'codigo': '207', 'tipo': 'Multi - Refeição'},
-    21: {'nome': 'VR Multi Alimentação',       'codigo': '27',  'tipo': 'Multi - Alimentação'},
-    22: {'nome': 'VR Multi Refeição Auxílio',  'codigo': '207', 'tipo': 'Multi - Refeição'},
-    23: {'nome': 'VR Multi Alimentação Auxílio','codigo': '204', 'tipo': 'Multi - Alimentação'},
-    24: {'nome': 'VR Multi VR+VA',             'codigo': '207', 'tipo': 'Multi - VR+VA'},
-    25: {'nome': 'VR Multi Home office',       'codigo': '207', 'tipo': 'Multi - Home Office'},
-    26: {'nome': 'VR Multi Mobilidade',        'codigo': '28',  'tipo': 'Multi - Mobilidade'},
+    19: {'nome': 'VR+VA',                      'codigo': '209', 'tipo': 'Multi - VR+VA'},
+    20: {'nome': 'VR Multi Refeição',          'codigo': '244', 'tipo': 'Multi - Refeição'},
+    21: {'nome': 'VR Multi Alimentação',       'codigo': '212', 'tipo': 'Multi - Alimentação'},
+    22: {'nome': 'VR Multi Refeição Auxílio',  'codigo': '245', 'tipo': 'Multi - Refeição'},
+    23: {'nome': 'VR Multi Alimentação Auxílio','codigo': '211', 'tipo': 'Multi - Alimentação'},
+    24: {'nome': 'VR Multi VR+VA',             'codigo': '213', 'tipo': 'Multi - VR+VA'},
+    25: {'nome': 'VR Multi Home office',       'codigo': '58',  'tipo': 'Multi - Home Office'},
+    26: {'nome': 'VR Multi Mobilidade',        'codigo': '262', 'tipo': 'Multi - Mobilidade'},
 }
 
 # Sheets 60/99/etc são para geração do TXT via VBA - não precisam ser lidas
@@ -199,6 +218,24 @@ def validar_dimensoes_planilha(file_path, max_abas=50, max_linhas_beneficiario=1
 
     Retorna dict com 'ok' (bool) e 'erro' (str, se aplicável).
     """
+    # Planilha protegida por senha (ou .xls 97-2003 renomeado): o Excel
+    # embrulha em contêiner OLE2 e o openpyxl falha com o críptico
+    # "File is not a zip file". Detectar pela assinatura e explicar.
+    try:
+        with open(file_path, 'rb') as f:
+            assinatura = f.read(8)
+        if assinatura == b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1':
+            return {
+                "ok": False,
+                "erro": (
+                    "A planilha está protegida por senha ou no formato antigo "
+                    "Excel 97-2003. Remova a senha de abertura (Arquivo → Informações "
+                    "→ Proteger Pasta de Trabalho) ou salve como .xlsx/.xlsm e envie novamente."
+                ),
+            }
+    except Exception:
+        pass
+
     try:
         wb = openpyxl.load_workbook(file_path, read_only=True)
     except Exception as e:
@@ -265,6 +302,40 @@ def validar_dimensoes_planilha(file_path, max_abas=50, max_linhas_beneficiario=1
 
 
 def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, administradora_cnpj=None):
+    """
+    Lê o template VR em modo read_only (o template traz ~40 abas de VBA e o
+    modo normal carrega todas — 11s+ num arquivo pequeno, estourando o timeout
+    de 30s do gunicorn em produção). Alguns arquivos têm o metadado de
+    dimensões quebrado e voltam VAZIOS no read_only: nesses casos, sem nenhum
+    erro nem condomínio no resultado, reprocessa no modo completo.
+    """
+    resultado = _parse_fut_template(
+        file_path, file_upload_id, valor_max_beneficio, administradora_cnpj,
+        read_only=True,
+    )
+
+    # Sem nenhum condomínio nem linha processada = leitura suspeita (arquivos
+    # com metadado quebrado voltam vazios e ainda geram erros artificiais tipo
+    # "aba sem locais"). O reparse completo confirma: se a planilha for vazia
+    # de verdade, o modo completo devolve o mesmo erro legítimo.
+    vazio_suspeito = (
+        not resultado.get('condominios')
+        and not resultado.get('linhas_com_erro')
+    )
+    if vazio_suspeito:
+        logger.warning(
+            "[READER] Parse read_only voltou vazio — refazendo em modo completo "
+            "(possível metadado de dimensões quebrado no arquivo)."
+        )
+        resultado = _parse_fut_template(
+            file_path, file_upload_id, valor_max_beneficio, administradora_cnpj,
+            read_only=False,
+        )
+
+    return resultado
+
+
+def _parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, administradora_cnpj=None, read_only=True):
     if valor_max_beneficio is None:
         valor_max_beneficio = Decimal('9999.99')
 
@@ -276,6 +347,7 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
         "errors": [],
         "linhas_com_erro": [],
         "erros_condominios": [],
+        "avisos": [],
         "summary": {
             "total_condominios": 0,
             "total_funcionarios": 0,
@@ -295,7 +367,12 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
         return result
 
     try:
-        wb = openpyxl.load_workbook(file_path, data_only=True)
+        # read_only: o template VR traz ~40 abas (VBA/registros 60/99) e o modo
+        # normal carrega todas — 11s+ num arquivo de 269 linhas, estourando o
+        # timeout de 30s do gunicorn em produção (upload preso em PENDING +
+        # erro 500). Só usamos iter_rows nas 3 abas de interesse, que o modo
+        # read_only atende, como a validar_dimensoes_planilha já faz.
+        wb = openpyxl.load_workbook(file_path, data_only=True, read_only=read_only)
     except Exception as e:
         result['errors'].append(f"Erro ao abrir planilha: {str(e)}")
         return result
@@ -342,6 +419,17 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
     for row in ws_locais.iter_rows(min_row=2, values_only=True):
         codigo = _safe_str(row[0])
         if not codigo:
+            continue
+
+        # CNPJ com mais de 14 dígitos é erro de digitação: antes era truncado
+        # em silêncio e virava um CNPJ errado com cara de válido.
+        digitos_codigo = re.sub(r'\D', '', codigo)
+        if len(digitos_codigo) > 14:
+            nome_local = _safe_str(row[1]) if len(row) > 1 else codigo
+            result['errors'].append(
+                f"Aba 'Local de Entrega': o CNPJ do local '{nome_local}' tem "
+                f"{len(digitos_codigo)} dígitos (máximo 14): {codigo}. Corrija na planilha."
+            )
             continue
 
         locais_raw.append(codigo)
@@ -586,6 +674,12 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
         # 3. Validar Código Local de Entrega
         if not codigo_local:
             erros_linha_atual.append("Código local de entrega (CNPJ) ausente")
+        else:
+            digitos_local = re.sub(r'\D', '', codigo_local)
+            if len(digitos_local) > 14:
+                erros_linha_atual.append(
+                    f"CNPJ do local de entrega inválido ({len(digitos_local)} dígitos — máximo 14): corrija na planilha"
+                )
 
         # 5. Validar Data de Nascimento
         data_nasc = _parse_date(data_nasc_raw)
@@ -654,6 +748,7 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
                 }
 
             func_key = f"{codigo_local}_{cpf}"
+            linha_repetida = False
             if func_key not in locais[codigo_local]["funcionarios"]:
                 locais[codigo_local]["funcionarios"][func_key] = {
                     "nome": nome.upper() if nome else '',
@@ -669,7 +764,48 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
                     "endereco_bairro": None,
                     "valor_bene": Decimal('0.00'),
                     "movimentacoes": [],
+                    "linha": row_num,
+                    "linhas_somadas": [],
+                    "conflito_cpf": False,
+                    "mesmo_beneficio_somado": False,
                 }
+            else:
+                # CPF repetido no mesmo condomínio: só é a mesma pessoa se nome
+                # e nascimento baterem. Divergência = CPF errado para pessoas
+                # distintas — somar aqui creditaria duas pessoas num CPF só.
+                existente = locais[codigo_local]["funcionarios"][func_key]
+                nome_atual = (nome or '').strip().upper()
+                nome_anterior = (existente["nome"] or '').strip().upper()
+                nascimento_diverge = bool(
+                    data_nasc and existente["data_nascimento"]
+                    and data_nasc != existente["data_nascimento"]
+                )
+
+                if nome_atual != nome_anterior or nascimento_diverge:
+                    existente["conflito_cpf"] = True
+                    result['linhas_com_erro'].append({
+                        "tipo_erro": "CPF_DUPLICADO_DIVERGENTE",
+                        "linha": row_num,
+                        "dados": {
+                            "cpf": cpf_raw,
+                            "nome": nome,
+                            "codigo_local": codigo_local,
+                            "matricula": matricula,
+                            "data_nascimento": _safe_str(data_nasc_raw),
+                        },
+                        "erros": [
+                            (
+                                f"CPF duplicado com dados divergentes: já usado na linha "
+                                f"{existente['linha']} por '{existente['nome']}'"
+                                + (f" (nasc. {existente['data_nascimento']})" if existente['data_nascimento'] else "")
+                                + " — mesmo CPF para pessoas distintas; corrija o CPF na planilha."
+                            )
+                        ],
+                    })
+                    continue
+
+                existente["linhas_somadas"].append(row_num)
+                linha_repetida = True
 
             func = locais[codigo_local]["funcionarios"][func_key]
 
@@ -701,6 +837,11 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
                 )
                 if existing_mov:
                     existing_mov["valor"] += valor
+                    # Linha repetida do mesmo CPF somando no MESMO produto:
+                    # merece aviso em tela. Linhas repetidas com produtos
+                    # distintos são complemento legítimo e somam em silêncio.
+                    if linha_repetida:
+                        func["mesmo_beneficio_somado"] = True
                 else:
                     func["movimentacoes"].append({
                         "produto": nome_produto,
@@ -723,6 +864,41 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
         for fkey, func in local["funcionarios"].items():
             if not func["movimentacoes"]:
                 continue
+
+            # Conflito de CPF (mesmo CPF, pessoa diferente): a 1ª ocorrência
+            # também sai do lote — não dá para saber qual das duas está com o
+            # CPF certo. Estorna os valores já acumulados e registra o erro.
+            if func.get("conflito_cpf"):
+                local["valor_condo"] -= func["valor_bene"]
+                result['summary']['valor_total_beneficios'] -= func["valor_bene"]
+                result['linhas_com_erro'].append({
+                    "tipo_erro": "CPF_DUPLICADO_DIVERGENTE",
+                    "linha": func.get("linha"),
+                    "dados": {
+                        "cpf": func["cpf"],
+                        "nome": func["nome"],
+                        "codigo_local": codigo,
+                        "matricula": func["matricula"],
+                        "data_nascimento": _safe_str(func["data_nascimento"]),
+                    },
+                    "erros": [
+                        "CPF duplicado com dados divergentes: o mesmo CPF aparece em "
+                        "outra linha com nome/nascimento diferente — mesmo CPF para "
+                        "pessoas distintas; corrija o CPF na planilha."
+                    ],
+                })
+                continue
+
+            if func.get("linhas_somadas") and func.get("mesmo_beneficio_somado"):
+                result['avisos'].append({
+                    "tipo": "CPF_SOMADO",
+                    "cpf": func["cpf"],
+                    "nome": func["nome"],
+                    "condominio": local.get("nome") or codigo,
+                    "linhas": [func.get("linha")] + func["linhas_somadas"],
+                    "valor_total": func["valor_bene"],
+                })
+
             lista_func.append({
                 "nome": func["nome"],
                 "cpf": func["cpf"],
@@ -787,7 +963,14 @@ def parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, admi
 
     # Se há erros acumulados (erros gerais, linhas com erro ou erros de condomínio),
     # retornamos o payload focado nos erros.
-    if result["errors"] or result["linhas_com_erro"] or result["erros_condominios"]:
+    # Exceção: CPF_DUPLICADO_DIVERGENTE não derruba a planilha inteira — as
+    # linhas em conflito já foram excluídas do lote e seguem visíveis em
+    # linhas_com_erro para o aviso em tela; o restante do lote continua.
+    erros_fatais = [
+        l for l in result["linhas_com_erro"]
+        if l.get("tipo_erro") != "CPF_DUPLICADO_DIVERGENTE"
+    ]
+    if result["errors"] or erros_fatais or result["erros_condominios"]:
         mensagem_erro = "Planilha contém informações obrigatórias ausentes ou incorretas."
         if result["errors"]:
             mensagem_erro = "; ".join(result["errors"])

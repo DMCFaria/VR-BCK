@@ -140,6 +140,12 @@ class ConfirmVTView(views.APIView):
         except FileUpload.DoesNotExist:
             return Response({"detail": "Arquivo não encontrado."}, status=404)
 
+        # "houve_edicao" indica que o confirmado difere da planilha original
+        # (exclusão/edição manual na conferência). Só então a planilha editada
+        # é gerada. Default True: payload de SPA em cache antigo (sem a flag)
+        # mantém o comportamento legado de gerar sempre.
+        houve_edicao = bool(payload.get("houve_edicao", True))
+
         dados_validados = payload.get("dados_validados") or payload.get("movimentacoes_detalhada") or []
 
         if not dados_validados:
@@ -195,7 +201,8 @@ class ConfirmVTView(views.APIView):
             tipo_display = "Compra de Benefícios" if tipo_processamento == "compra" else "Faturamento"
 
             arquivo_s3_editado_url = None
-            if file_upload and file_upload.arquivo_s3:
+            logger.info(f"[CONFIRMACAO_VT] Verificando geração de planilha VT editada - houve_edicao: {houve_edicao}")
+            if houve_edicao and file_upload and file_upload.arquivo_s3:
                 logger.info("[CONFIRMACAO_VT] Iniciando geração de planilha VT editada")
                 data_competencia = None
                 if competencia_mes and competencia_ano:

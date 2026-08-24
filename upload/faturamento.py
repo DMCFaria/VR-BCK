@@ -1,6 +1,7 @@
 import base64
 import io
 import logging
+import unicodedata
 from datetime import datetime
 from rest_framework import views, status
 from rest_framework.response import Response
@@ -9,11 +10,16 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.db import transaction
 
 from beneficios.models import Faturamento, Importacao
-from upload.pdf_reader import ler_boleto
+from upload.pdf_reader import ler_boleto, classificar_pdf_por_conteudo
 from core.fedhub.services.fedhub_service import FedhubService
 from .tasks import processar_faturamento
 
 logger = logging.getLogger(__name__)
+
+
+def _sem_acentos(texto):
+    """Nome de arquivo com acento ('NOTA DÉBITO') precisa casar com 'debito'."""
+    return unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode('ascii')
 
 
 class UploadFaturamentoView(views.APIView):
@@ -66,10 +72,15 @@ class UploadFaturamentoView(views.APIView):
 
         # MultiValueDict.items() retorna apenas o último arquivo de cada campo.
         # Use lists() para não descartar arquivos quando o usuário envia vários PDFs.
+        mode = request.data.get('mode', 'substituir')
+
+        nao_identificados = []
         for nome_campo, arquivos_campo in arquivos.lists():
             for arquivo in arquivos_campo:
-                nome_lower = nome_campo.lower()
-                real_name_lower = getattr(arquivo, 'name', '').lower()
+                # 1ª passada: pelo nome (campo ou arquivo), sem acentos —
+                # 'NOTA DÉBITO.pdf' precisa casar com 'debito'.
+                nome_lower = _sem_acentos(nome_campo.lower())
+                real_name_lower = _sem_acentos(getattr(arquivo, 'name', '').lower())
                 if (
                     'reciboq' in nome_lower
                     or 'boleto' in nome_lower
@@ -77,21 +88,41 @@ class UploadFaturamentoView(views.APIView):
                     or 'boleto' in real_name_lower
                 ):
                     arquivos_boleto.append(arquivo)
-                elif (
-                    'debito' in nome_lower
-                    or 'dédito' in nome_lower
-                    or 'debito' in real_name_lower
-                    or 'dédito' in real_name_lower
-                ):
+                elif 'debito' in nome_lower or 'debito' in real_name_lower:
                     arquivos_nota_debito.append(arquivo)
                 elif 'nf' in nome_lower or 'nf' in real_name_lower:
                     arquivos_nota_fiscal.append(arquivo)
+                else:
+                    # 2ª passada: pelo conteúdo do PDF — o nome do arquivo
+                    # deixa de ser obrigatório.
+                    tipo_conteudo = classificar_pdf_por_conteudo(arquivo)
+                    if tipo_conteudo == 'boleto':
+                        arquivos_boleto.append(arquivo)
+                    elif tipo_conteudo == 'nota_debito':
+                        arquivos_nota_debito.append(arquivo)
+                    elif tipo_conteudo == 'nota_fiscal':
+                        arquivos_nota_fiscal.append(arquivo)
+                    else:
+                        nao_identificados.append(getattr(arquivo, 'name', nome_campo))
 
+        # No modo 'adicionar' o pedido já tem documentos: aceita qualquer
+        # subconjunto (ex.: incluir só uma nota fiscal). Boleto + nota de
+        # débito continuam obrigatórios no fluxo de substituição/importação.
         erros = []
-        if not arquivos_boleto:
-            erros.append("Arquivo de BOLETO não encontrado. O nome deve conter 'RECIBOQ' ou 'BOLETO'.")
-        if not arquivos_nota_debito:
-            erros.append("Arquivo de NOTA DE DÉBITO não encontrado. O nome deve conter 'DEBITO'.")
+        if nao_identificados:
+            erros.append(
+                "Não foi possível identificar o tipo (boleto, nota de débito ou nota fiscal) "
+                f"pelo nome nem pelo conteúdo de: {', '.join(nao_identificados)}. "
+                "Verifique se o PDF está legível ou renomeie o arquivo indicando o tipo."
+            )
+        if mode == 'adicionar':
+            if not (arquivos_boleto or arquivos_nota_debito or arquivos_nota_fiscal):
+                erros.append("Nenhum arquivo de boleto, nota de débito ou nota fiscal reconhecido.")
+        else:
+            if not arquivos_boleto:
+                erros.append("Arquivo de BOLETO não encontrado entre os enviados.")
+            if not arquivos_nota_debito:
+                erros.append("Arquivo de NOTA DE DÉBITO não encontrado entre os enviados.")
 
         if erros:
             return Response(
@@ -99,37 +130,37 @@ class UploadFaturamentoView(views.APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Validação síncrona do boleto: extrai fatura e verifica se existe no Fedhub
-        try:
-            boleto_bytes = arquivos_boleto[0].read()
-            arquivos_boleto[0].seek(0)
-            boleto_io = io.BytesIO(boleto_bytes)
-            resultado_boleto = ler_boleto(boleto_io)
+        # Validação síncrona do boleto: extrai fatura e verifica se existe no
+        # Fedhub. Só quando há boleto no envio (modo adicionar pode não ter).
+        if arquivos_boleto:
+            try:
+                boleto_bytes = arquivos_boleto[0].read()
+                arquivos_boleto[0].seek(0)
+                boleto_io = io.BytesIO(boleto_bytes)
+                resultado_boleto = ler_boleto(boleto_io)
 
-            fatura_previa = None
-            for pagina in resultado_boleto.get('paginas', []):
-                if pagina.get('fatura'):
-                    fatura_previa = pagina.get('fatura')
-                    break
+                fatura_previa = None
+                for pagina in resultado_boleto.get('paginas', []):
+                    if pagina.get('fatura'):
+                        fatura_previa = pagina.get('fatura')
+                        break
 
-            if not fatura_previa:
-                return Response(
-                    {"detail": "Não foi possível identificar o número da fatura no boleto. Verifique o arquivo enviado."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+                if not fatura_previa:
+                    return Response(
+                        {"detail": "Não foi possível identificar o número da fatura no boleto. Verifique o arquivo enviado."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
 
-            fedhub = FedhubService()
-            boletos_previa = fedhub.buscar_todos_boletos_por_fatura(fatura_previa)
+                fedhub = FedhubService()
+                boletos_previa = fedhub.buscar_todos_boletos_por_fatura(fatura_previa)
 
-            if not boletos_previa:
-                return Response(
-                    {"detail": f"Nenhum boleto encontrado no sistema para a fatura {fatura_previa}. A emissão foi bloqueada."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        except Exception as e:
-            logger.warning(f"Falha na validação prévia do boleto: {e}")
-
-        mode = request.data.get('mode', 'substituir')
+                if not boletos_previa:
+                    return Response(
+                        {"detail": f"Nenhum boleto encontrado no sistema para a fatura {fatura_previa}. A emissão foi bloqueada."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            except Exception as e:
+                logger.warning(f"Falha na validação prévia do boleto: {e}")
 
         try:
             with transaction.atomic():

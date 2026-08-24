@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from .serializers import FileUploadSerializer
-from .utils import convert_decimals_to_json_safe, get_beneficiary_summary, get_movimentacoes_detalhada, validar_extensao_arquivo
+from .utils import convert_decimals_to_json_safe, get_beneficiary_summary, get_movimentacoes_detalhada, validar_extensao_arquivo, mensagem_erro_arquivo
 from datetime import datetime
 import boto3   
 from django.conf import settings
@@ -72,7 +72,7 @@ class UploadView(views.APIView):
                     parsed_data = parse_ahreas_layout(file_path, upload_instance.id, valor_max_beneficio=valor_max)
                 else:
                     return self._handle_error(upload_instance, f"Layout TXT '{import_mode}' não reconhecido.")
-                logger.info(f"Parsed data: {parsed_data}")
+                logger.info(f"Parsed data ({import_mode}): summary={parsed_data.get('summary')}")
             elif extension in ['.xlsx', '.xlsm']:
                 import_mode = None
                 validacao = validar_dimensoes_planilha(file_path)
@@ -84,7 +84,9 @@ class UploadView(views.APIView):
                     valor_max_beneficio=valor_max,
                     administradora_cnpj=administradora_cnpj
                 )
-                logger.info(f"Parsed data (FUT): {parsed_data}")
+                # Não logar o payload inteiro: em planilhas grandes são MB de
+                # string por upload (custo de CPU/log). O summary basta.
+                logger.info(f"Parsed data (FUT): summary={parsed_data.get('summary')}")
             
             else:
                 return self._handle_error(upload_instance, f"Extensão {extension} não permitida.")
@@ -153,8 +155,15 @@ class UploadView(views.APIView):
             # Verificar se há informações faltando ou linhas com erro
             erros_condominios = parsed_data.get("erros_condominios", [])
             linhas_com_erro = parsed_data.get("linhas_com_erro", [])
-            
-            tem_erros = len(erros_condominios) > 0 or len(linhas_com_erro) > 0
+
+            # CPF_DUPLICADO_DIVERGENTE não marca o upload como falho: as linhas
+            # em conflito já foram excluídas do lote e o front exibe o aviso;
+            # o restante da planilha segue o fluxo normal.
+            erros_fatais = [
+                l for l in linhas_com_erro
+                if l.get("tipo_erro") != "CPF_DUPLICADO_DIVERGENTE"
+            ]
+            tem_erros = len(erros_condominios) > 0 or len(erros_fatais) > 0
             
             if tem_erros:
                 status_processamento = "ERRO"
@@ -199,6 +208,8 @@ class UploadView(views.APIView):
                 "data_to_backend": data_to_backend_safe,
                 "linhas_com_erro": linhas_com_erro,
                 "erros_condominios": erros_condominios,
+                # Avisos não bloqueantes (ex.: linhas somadas do mesmo CPF)
+                "avisos": convert_decimals_to_json_safe(parsed_data.get("avisos", [])),
                 "detail": detail_msg,
             }
             if import_mode:
@@ -210,9 +221,10 @@ class UploadView(views.APIView):
             )
 
         except Exception as e:
+            logger.error(f"Erro no processamento do upload: {e}", exc_info=True)
             if os.path.exists(file_path):
                 os.remove(file_path)
-            return self._handle_error(upload_instance, f"Erro inesperado: {str(e)}")
+            return self._handle_error(upload_instance, mensagem_erro_arquivo(e))
 
     def _handle_error(self, instance, message):
         """Helper para padronizar falhas"""

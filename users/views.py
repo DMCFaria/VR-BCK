@@ -10,7 +10,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from core.fedhub.services.fedhub_service import FedhubService
 from .models import CustomUser
 from .serializers import CustomUserSerializer, UserRegistrationSerializer
-from .permissions import IsAdminUserType
+from .permissions import PodeGerenciarUsuarios, TIPOS_GERENCIAVEIS_PELO_SUP
 from entidades.models import Administradora
 import logging
 
@@ -30,12 +30,30 @@ class UserRegistrationAPIView(generics.CreateAPIView):
     """
     queryset = CustomUser.objects.all()
     serializer_class = UserRegistrationSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminUserType]
+    permission_classes = [permissions.IsAuthenticated, PodeGerenciarUsuarios]
 
     def create(self, request, *args, **kwargs):
         logger.info(f"Recebendo criacao de usuario. Payload: {request.data}")
 
         administradoras_ids = request.data.get('administradoras', [])
+
+        # Supervisor: só cria usuário na própria administradora. Se o payload
+        # não trouxer vínculo, assume a administradora ativa do supervisor.
+        if getattr(request.user, 'tipo', None) == 'sup':
+            proprias = set(request.user.administradoras.values_list('id', flat=True))
+            if not administradoras_ids:
+                if not request.user.administradora_ativa_id:
+                    return Response(
+                        {"detail": "Supervisor sem administradora ativa."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                administradoras_ids = [request.user.administradora_ativa_id]
+            elif not {int(i) for i in administradoras_ids}.issubset(proprias):
+                return Response(
+                    {"detail": "Supervisor só pode vincular usuários à própria administradora."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
         administradoras = []
         for admin_id in administradoras_ids:
             try:
@@ -129,6 +147,13 @@ class UserListView(generics.ListAPIView):
     def get_queryset(self):
         queryset = CustomUser.objects.all()
 
+        # Perfis de administradora só enxergam usuários das próprias
+        # administradoras (dev/fat continuam vendo tudo).
+        if getattr(self.request.user, 'tipo', None) not in ('dev', 'fat'):
+            queryset = queryset.filter(
+                administradoras__in=self.request.user.administradoras.all()
+            ).distinct()
+
         administradora_id = self.request.query_params.get('administradora')
         if administradora_id:
             try:
@@ -163,7 +188,7 @@ class UserDetailUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
     """
     queryset = CustomUser.objects.all()
     serializer_class = CustomUserSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminUserType]
+    permission_classes = [permissions.IsAuthenticated, PodeGerenciarUsuarios]
     http_method_names = ['get', 'put', 'patch', 'delete'] 
 
     def update(self, request, *args, **kwargs):
@@ -178,18 +203,49 @@ class UserDetailUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
     def perform_update(self, serializer):
         serializer.save()
 
+def _bloqueio_vinculo_para_sup(request, user_alvo, administradora_id):
+    """
+    Guarda das views de vínculo para o supervisor: só usuários adm/dep e só
+    a própria administradora; operações em massa (sem administradora_id)
+    são exclusivas de dev/fat. Retorna Response de erro ou None.
+    """
+    if getattr(request.user, 'tipo', None) != 'sup':
+        return None
+    if user_alvo.tipo not in TIPOS_GERENCIAVEIS_PELO_SUP:
+        return Response(
+            {"detail": "Supervisor só pode gerenciar usuários adm e dep."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+    if not administradora_id:
+        return Response(
+            {"detail": "Informe a administradora (operação em massa é exclusiva da Fedcorp)."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+    proprias = set(request.user.administradoras.values_list('id', flat=True))
+    if int(administradora_id) not in proprias:
+        return Response(
+            {"detail": "Supervisor só pode operar vínculos da própria administradora."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+    return None
+
+
 class VincularAdministradoraView(APIView):
     """
     Endpoint para vincular/desvincular um usuario a uma administradora (M2M).
     POST com administradora_id = vincula (adiciona a M2M).
     POST sem administradora_id = desvincula todas.
     """
-    permission_classes = [permissions.IsAuthenticated, IsAdminUserType]
+    permission_classes = [permissions.IsAuthenticated, PodeGerenciarUsuarios]
 
     def post(self, request, pk):
         try:
             user = CustomUser.objects.get(pk=pk)
             administradora_id = request.data.get('administradora_id')
+
+            bloqueio = _bloqueio_vinculo_para_sup(request, user, administradora_id)
+            if bloqueio:
+                return bloqueio
 
             if administradora_id:
                 try:
@@ -227,12 +283,16 @@ class DesvincularAdministradoraView(APIView):
     POST com administradora_id = remove daquela administradora.
     POST sem administradora_id = remove de todas.
     """
-    permission_classes = [permissions.IsAuthenticated, IsAdminUserType]
+    permission_classes = [permissions.IsAuthenticated, PodeGerenciarUsuarios]
 
     def post(self, request, pk):
         try:
             user = CustomUser.objects.get(pk=pk)
             administradora_id = request.data.get('administradora_id')
+
+            bloqueio = _bloqueio_vinculo_para_sup(request, user, administradora_id)
+            if bloqueio:
+                return bloqueio
 
             if administradora_id:
                 try:
@@ -566,14 +626,22 @@ class GoogleLoginView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # cria ou pega usuário
-            user, created = CustomUser.objects.get_or_create(
-                email=email,
-                defaults={
-                    "username": email,
-                    "nome": nome,
-                }
-            )
+            # O Google só AUTENTICA usuários já cadastrados pela Fedcorp.
+            # A auto-criação anterior (get_or_create) permitia que qualquer
+            # conta Google do mundo virasse usuário 'adm' — cadeia de
+            # escalação registrada na revisão da demanda do perfil supervisor.
+            try:
+                user = CustomUser.objects.get(email=email)
+            except CustomUser.DoesNotExist:
+                logger.warning(f"Login Google recusado para conta não cadastrada: {email}")
+                return Response(
+                    {"detail": "Conta não cadastrada no portal. Solicite acesso à Fedcorp."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            if nome and not user.nome:
+                user.nome = nome
+                user.save(update_fields=["nome"])
 
             # gera jwt
             refresh = RefreshToken.for_user(user)

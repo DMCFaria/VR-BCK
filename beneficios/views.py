@@ -18,6 +18,23 @@ from .serializers import (
 
 logger = logging.getLogger(__name__)
 
+
+def aplicar_visibilidade_importacoes(queryset, user):
+    """
+    Visibilidade de importações para perfis de administradora:
+    - adm: não vê importações feitas por dep, dev e sup;
+    - dep: não vê importações feitas por adm, dev e sup;
+    - sup: vê tudo da administradora (união de adm + dep + ele mesmo);
+    - dev/fat: sem filtro (escopo global é tratado pelo chamador).
+    Regra única para os pontos de listagem/última importação/detalhe.
+    """
+    if user.tipo == "adm":
+        return queryset.exclude(usuario__tipo__in=["dep", "dev", "sup"])
+    if user.tipo == "dep":
+        return queryset.exclude(usuario__tipo__in=["adm", "dev", "sup"])
+    return queryset
+
+
 class ProdutoViewSet(viewsets.ModelViewSet):
     """
     ViewSet para listar, criar, atualizar e deletar Produtos.
@@ -269,8 +286,12 @@ class MarcarResponsavelView(views.APIView):
         user = request.user
         acao = request.data.get('acao', 'marcar')
 
+        # Dev passa por cima da trava de responsável: pode assumir ou liberar
+        # pedido que está com outro usuário (suporte/destravamento).
+        eh_dev = getattr(user, 'tipo', None) == 'dev'
+
         if acao == 'marcar':
-            if importacao.responsavel and importacao.responsavel != user:
+            if importacao.responsavel and importacao.responsavel != user and not eh_dev:
                 return Response(
                     {"detail": f"Importação já está sendo processada por {importacao.responsavel.nome or importacao.responsavel.email}.",
                      "responsavel": importacao.responsavel.id,
@@ -286,7 +307,7 @@ class MarcarResponsavelView(views.APIView):
             }, status=status.HTTP_200_OK)
 
         elif acao == 'desmarcar':
-            if importacao.responsavel and importacao.responsavel != user:
+            if importacao.responsavel and importacao.responsavel != user and not eh_dev:
                 return Response(
                     {"detail": "Apenas o responsável pode desmarcar."},
                     status=status.HTTP_403_FORBIDDEN
@@ -363,10 +384,7 @@ class UltimaImportacaoMovimentacoesView(views.APIView):
             administradora=administradora,
             status__in=['COMPLETED', 'FATURADO']
         )
-        if user.tipo == "adm":
-            ultima_importacao = ultima_importacao.exclude(usuario__tipo__in=["dep", "dev"])
-        if user.tipo == "dep":
-            ultima_importacao = ultima_importacao.exclude(usuario__tipo__in=["adm", "dev"])
+        ultima_importacao = aplicar_visibilidade_importacoes(ultima_importacao, user)
         ultima_importacao = ultima_importacao.order_by('-data_importacao').first()
    
    
@@ -467,10 +485,7 @@ class UltimaMovimentacaoDashboard(views.APIView):
         ultima_importacao = Importacao.objects.filter(
             administradora=administradora
         )
-        if user.tipo == "adm":
-            ultima_importacao = ultima_importacao.exclude(usuario__tipo__in=["dep", "dev"])
-        if user.tipo == "dep":
-            ultima_importacao = ultima_importacao.exclude(usuario__tipo__in=["adm", "dev"])
+        ultima_importacao = aplicar_visibilidade_importacoes(ultima_importacao, user)
         ultima_importacao = ultima_importacao.order_by('-data_importacao').first()
         
         if not ultima_importacao:
@@ -620,10 +635,7 @@ class ImportacaoListView(views.APIView):
             ).select_related(
                 'file_upload', 'usuario', 'administradora'
             )
-            if user.tipo == "adm":
-                queryset = queryset.exclude(usuario__tipo__in=["dep", "dev"])
-            if user.tipo == "dep":
-                queryset = queryset.exclude(usuario__tipo__in=["adm", "dev"])
+            queryset = aplicar_visibilidade_importacoes(queryset, user)
             importacoes = queryset.order_by('-data_importacao')
 
         documentos_prefetch = Prefetch(
@@ -673,17 +685,34 @@ class ImportacaoListView(views.APIView):
 
 class PedidoCartaoView(views.APIView):
     """
-    Cria e lista pedidos de cartão do usuário da administradora.
+    Cria e lista pedidos de cartão da administradora.
+    Exclusivo do supervisor (sup) — o adm não deve acessar; dev/fat usam
+    a visão operacional (PedidoCartaoOperacionalView). Antes não havia
+    checagem de tipo: qualquer autenticado com administradora criava pedido.
     POST: cria pedido (força administradora do user logado)
     GET: lista pedidos da administradora do user logado
     """
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
+    TIPOS_PERMITIDOS = ('sup', 'dev', 'fat')
+
+    def _tipo_negado(self, user):
+        if getattr(user, 'tipo', None) not in self.TIPOS_PERMITIDOS:
+            return Response(
+                {'detail': 'Acesso não autorizado para o seu perfil.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return None
+
     def post(self, request):
         from beneficios.serializers import PedidoCartaoSerializer
 
         user = request.user
+        negado = self._tipo_negado(user)
+        if negado:
+            return negado
+
         administradora = getattr(user, 'administradora_ativa', None)
 
         if not administradora:
@@ -703,6 +732,10 @@ class PedidoCartaoView(views.APIView):
         from beneficios.serializers import PedidoCartaoSerializer
 
         user = request.user
+        negado = self._tipo_negado(user)
+        if negado:
+            return negado
+
         administradora = getattr(user, 'administradora_ativa', None)
 
         if not administradora:
@@ -833,10 +866,7 @@ class ImportacaoDetailView(views.APIView):
                     administradora=administradora,
                     id=pk
                 ).select_related('file_upload', 'usuario', 'administradora')
-                if user.tipo == "adm":
-                    queryset = queryset.exclude(usuario__tipo__in=["dep", "dev"])
-                if user.tipo == "dep":
-                    queryset = queryset.exclude(usuario__tipo__in=["adm", "dev"])
+                queryset = aplicar_visibilidade_importacoes(queryset, user)
             importacao = queryset.first()
 
             if not importacao:
@@ -1670,7 +1700,14 @@ class ConsultarBoletosView(views.APIView):
         except (TypeError, ValueError):
             limit = 50
 
-        if user.tipo == 'adm':
+        # Allowlist: só dev/fat escolhem a administradora via query param.
+        # Qualquer outro perfil (adm, dep, sup, cli...) recebe escopo forçado
+        # da própria administradora ativa — sem isso, um usuário de
+        # administradora conseguia consultar boletos de outra via
+        # ?administradora_id= (vazamento entre administradoras).
+        if user.tipo in ('dev', 'fat'):
+            pass  # administradora_id do query param é respeitado (ou None = todas)
+        else:
             administradora_ativa = getattr(user, 'administradora_ativa', None)
             if not administradora_ativa:
                 return Response(
@@ -1678,8 +1715,6 @@ class ConsultarBoletosView(views.APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             administradora_id = administradora_ativa.id
-        elif user.tipo in ('dev', 'fat'):
-            administradora_id = None
 
         hoje = date.today()
         corte_pago = hoje - timedelta(days=30)

@@ -55,6 +55,79 @@ def extrair_cnpj_nota_fiscal(texto):
     return match_digits.group(1) if match_digits else None
 
 
+def classificar_pdf_por_conteudo(pdf_file, max_paginas=2):
+    """
+    Classifica um PDF como 'boleto', 'nota_debito' ou 'nota_fiscal' pelo TEXTO
+    das primeiras páginas — fallback para quando o nome do arquivo não segue o
+    padrão. Retorna None quando não reconhece (ou o PDF é ilegível).
+
+    A comparação é feita sobre o texto COMPACTADO (sem acentos, espaços ou
+    pontuação): o extract_text do pypdf frequentemente devolve títulos com o
+    espaçamento quebrado ('N O T A DE DÉBITO', 'NOTADEDEBITO'), e a comparação
+    com espaços literais deixava de reconhecer documentos legítimos.
+    """
+    import logging
+    import re
+    import unicodedata
+
+    logger = logging.getLogger(__name__)
+    nome_arquivo = getattr(pdf_file, 'name', '?')
+
+    try:
+        pdf_file.seek(0)
+        reader = PdfReader(pdf_file)
+        texto = ''
+        for page in reader.pages[:max_paginas]:
+            texto += (page.extract_text() or '') + '\n'
+    except Exception as e:
+        logger.warning(f"[CLASSIFICAR_PDF] Falha ao ler '{nome_arquivo}': {e}")
+        return None
+    finally:
+        try:
+            pdf_file.seek(0)
+        except Exception:
+            pass
+
+    sem_acentos = unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode('ascii').upper()
+    compacto = re.sub(r'[^A-Z0-9]', '', sem_acentos)
+
+    if not compacto:
+        # PDF sem camada de texto (escaneado como imagem) — nada a comparar.
+        logger.warning(f"[CLASSIFICAR_PDF] '{nome_arquivo}' não tem texto extraível (PDF de imagem?).")
+        return None
+
+    # Ordem importa: títulos são mais específicos que marcadores genéricos
+    # (um boleto pode citar "nota fiscal" nas instruções de pagamento).
+    if 'NOTADEDEBITO' in compacto or 'NOTADEBITO' in compacto:
+        return 'nota_debito'
+
+    marcadores_boleto = (
+        'FICHADECOMPENSACAO',
+        'LINHADIGITAVEL',
+        'LOCALDEPAGAMENTO',
+        'NOSSONUMERO',
+        'PAGAVELEMQUALQUERBANCO',
+    )
+    if any(m in compacto for m in marcadores_boleto):
+        return 'boleto'
+
+    marcadores_nf = (
+        'NFSE',
+        'NOTAFISCALDESERVICO',
+        'NOTAFISCALELETRONICA',
+        'DANFE',
+        'NOTAFISCAL',
+    )
+    if any(m in compacto for m in marcadores_nf):
+        return 'nota_fiscal'
+
+    logger.warning(
+        f"[CLASSIFICAR_PDF] '{nome_arquivo}' tem texto ({len(compacto)} caracteres) "
+        f"mas nenhum marcador conhecido. Início do texto: {sem_acentos[:200]!r}"
+    )
+    return None
+
+
 def ler_boleto(pdf_file):
     """
     Lê o conteúdo do PDF de Boleto e exibe no terminal.
