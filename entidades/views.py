@@ -92,10 +92,55 @@ class CondominioViewSet(viewsets.ModelViewSet):
             logger.exception(f'[CondominioViewSet] Erro no get_queryset: {str(e)}')
             return Condominio.objects.none()
 
+    def _administradora_para_vinculo(self, request):
+        """Administradora do payload (`administradora`) ou a ativa do usuário."""
+        adm_id = request.data.get('administradora') or getattr(
+            request.user, 'administradora_ativa_id', None
+        )
+        if not adm_id:
+            return None
+        try:
+            return Administradora.objects.get(id=adm_id)
+        except (Administradora.DoesNotExist, ValueError, TypeError):
+            return None
+
     def create(self, request, *args, **kwargs):
-        # logger.info(
-        #     f'[CondominioViewSet] Payload recebido: {request.data}'
-        # )
+        administradora = self._administradora_para_vinculo(request)
+        cnpj_digitos = ''.join(filter(str.isdigit, str(request.data.get('cnpj', ''))))
+
+        # Um condomínio pode migrar de uma administradora para outra sem que
+        # sejamos avisados (ADR-0006). Usuário comum só enxerga condomínios
+        # vinculados à própria administradora, então o CNPJ já cadastrado por
+        # OUTRA parece "não existir" na tela. O cadastro "duplicado" é
+        # legítimo: atualiza os dados com o que foi digitado (a nova
+        # administradora é quem tem a informação atual) e vincula. Vínculos
+        # anteriores são mantidos — não removemos nada em silêncio.
+        existente = Condominio.objects.filter(cnpj=cnpj_digitos).first() if cnpj_digitos else None
+        if existente:
+            serializer = self.get_serializer(existente, data=request.data, partial=True)
+            if not serializer.is_valid():
+                logger.error(
+                    f'[CondominioViewSet] Erros serializer (CNPJ existente): {serializer.errors}'
+                )
+                return Response(serializer.errors, status=400)
+
+            try:
+                serializer.save()
+                if administradora:
+                    VinculoCondominio.objects.get_or_create(
+                        administradora=administradora,
+                        condominio=existente,
+                    )
+            except Exception as e:
+                logger.exception(
+                    f'[CondominioViewSet] Erro ao atualizar/vincular condomínio existente: {str(e)}'
+                )
+                return Response({'erro': str(e)}, status=500)
+
+            # Para o usuário é um cadastro normal: ele não precisa saber que o
+            # CNPJ já existia em outra administradora (ADR-0006). Resposta
+            # idêntica à de criação, sem `detail` distinto.
+            return Response(serializer.data, status=200)
 
         serializer = self.get_serializer(data=request.data)
 
@@ -112,9 +157,18 @@ class CondominioViewSet(viewsets.ModelViewSet):
         try:
             self.perform_create(serializer)
 
-            # logger.info(
-            #     f'[CondominioViewSet] Condomínio criado com sucesso: {serializer.data}'
-            # )
+            # Sem o vínculo o condomínio recém-criado não aparece na lista de
+            # quem o cadastrou (get_queryset filtra por vinculocondominio).
+            if administradora:
+                VinculoCondominio.objects.get_or_create(
+                    administradora=administradora,
+                    condominio=serializer.instance,
+                )
+            else:
+                logger.warning(
+                    f'[CondominioViewSet] Condomínio {serializer.instance.cnpj} criado sem '
+                    f'administradora para vincular (user={request.user.id}).'
+                )
 
             return Response(
                 serializer.data,
