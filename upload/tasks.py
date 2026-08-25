@@ -316,53 +316,23 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
         if mode != 'adicionar':
             _limpar_prefixo_s3(s3_client, bucket_name, s3_base_key)
 
-        def parse_date_safe(date_str):
-            if not date_str:
-                return None
-            try:
-                return datetime.strptime(str(date_str), '%Y-%m-%d').date()
-            except ValueError:
-                try:
-                    return datetime.strptime(str(date_str), '%d/%m/%Y').date()
-                except ValueError:
-                    return None
-
-        for dados_boleto in boletos_data:
-            cnpj_cobrado_raw = dados_boleto.get("cnpj_cobrado") or ""
-            cnpj_cobrado_limpo = re.sub(r'[^0-9]', '', str(cnpj_cobrado_raw))
-            condominio_exists = Condominio.objects.filter(cnpj=cnpj_cobrado_limpo).exists()
-
-            doc_num = dados_boleto.get("documento")
-            if doc_num:
-                Boleto.objects.update_or_create(
-                    documento=doc_num,
-                    defaults={
-                        "faturamento": faturamento,
-                        "fatura": fatura_num,
-                        "dt_emissao": parse_date_safe(dados_boleto.get("dt_emissao")),
-                        "codigo_de_barra": dados_boleto.get("codigo_de_barra"),
-                        "qr_code": dados_boleto.get("qr_code"),
-                        "qr_imagem": dados_boleto.get("qr_imagem"),
-                        "vencimento": parse_date_safe(dados_boleto.get("vencimento")),
-                        "nome_cobrado": dados_boleto.get("nome_cobrado"),
-                        "cnpj_cobrado": cnpj_cobrado_limpo or cnpj_cobrado_raw,
-                        "cedente": dados_boleto.get("cedente"),
-                        "cnpj_cedente": dados_boleto.get("cnpj_cedente"),
-                        "valor": dados_boleto.get("valor"),
-                        "deducoes": dados_boleto.get("deducoes"),
-                        "status": dados_boleto.get("status"),
-                        "nosso_numero": dados_boleto.get("nosso_numero"),
-                        "identificador": dados_boleto.get("identificador"),
-                        "baixa": bool(dados_boleto.get("baixa", False)),
-                        "dt_baixa": parse_date_safe(dados_boleto.get("dt_baixa")),
-                        "obs_baixa": dados_boleto.get("obs_baixa"),
-                        "NFs_id": dados_boleto.get("nfs_id"),
-                        "Numero_nota": dados_boleto.get("numero_nota"),
-                        "url_nota": dados_boleto.get("url_nota") or None,
-                        "match": condominio_exists,
-                    }
-                )
-        logger.info(f"Boletos para a fatura {fatura_num} validados e criados com sucesso antes do upload.")
+        # Gravação centralizada em upload/boletos_sync.py (mesma lógica do
+        # comando `sincronizar_boletos`). Se nenhum boleto for gravado — ex.:
+        # FedHub devolveu itens sem 'documento' — o faturamento NÃO pode
+        # concluir como se tivesse boletos: a consulta ficaria vazia em
+        # silêncio (caso do faturamento 447 / fatura 175826).
+        from upload.boletos_sync import gravar_boletos_fedhub
+        stats_boletos = gravar_boletos_fedhub(faturamento, fatura_num, boletos_data)
+        if stats_boletos['gravados'] == 0:
+            raise ValueError(
+                f"FedHub devolveu {stats_boletos['total']} boleto(s) para a fatura {fatura_num}, "
+                f"mas nenhum tinha número de documento — nada foi gravado. "
+                f"Verifique a fatura no FedHub e reprocesse (ou rode 'manage.py sincronizar_boletos')."
+            )
+        logger.info(
+            f"Boletos para a fatura {fatura_num} validados e criados com sucesso antes do upload "
+            f"({stats_boletos['gravados']}/{stats_boletos['total']})."
+        )
 
         # --- UPLOADS S3 (só executa se a validação dos boletos passou) ---
         for arquivo_indice, (arquivo, resultado) in enumerate(zip(arquivos_boleto, resultados_boleto), start=1):
