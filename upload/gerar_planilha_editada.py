@@ -66,7 +66,17 @@ def editar_planilha_original(file_path, dados_modificados, data_competencia=None
         logger.info("[EDITAR_PLANILHA] Editando sheet Local de Entrega")
         _editar_sheet_local_entrega(wb, dados_modificados)
         logger.info("[EDITAR_PLANILHA] Editando sheet Beneficiario")
-        _editar_sheet_beneficiario(wb, dados_modificados)
+        nao_escritos = _editar_sheet_beneficiario(wb, dados_modificados)
+        if nao_escritos:
+            # Editada com valores faltando é pior que nenhuma: o faturamento a
+            # prioriza sobre a original (RF-FAT-001). Sem editada, os
+            # consumidores caem na original, que está íntegra.
+            logger.error(
+                f"[EDITAR_PLANILHA] {nao_escritos} valor(es) de benefício sem coluna na planilha — "
+                f"planilha editada NÃO será gerada (a original permanece como referência)."
+            )
+            wb.close()
+            return None
 
         logger.info("[EDITAR_PLANILHA] Salvando planilha editada")
         output = io.BytesIO()
@@ -447,15 +457,33 @@ def _editar_sheet_beneficiario(wb, dados_modificados):
     ws = wb['Beneficiario']
     logger.debug("[EDITAR_PLANILHA] Editando sheet 'Beneficiario'")
 
-    col_produtos = _ler_headers_produtos(ws)
+    # Template atual: cabeçalho de produtos na linha 2, dados a partir da 3.
+    # Template antigo (ainda em uso por algumas administradoras): cabeçalho na
+    # linha 1, dados a partir da 2. As colunas por código são as mesmas.
+    header_row = _detectar_linha_header_produtos(ws)
+    data_start = header_row + 1
+    logger.debug(f"[EDITAR_PLANILHA] Beneficiario - header na linha {header_row}, dados a partir da {data_start}")
+
+    col_produtos = _ler_headers_produtos(ws, header_row)
     logger.debug(f"[EDITAR_PLANILHA] Headers de produtos mapeados: {col_produtos}")
 
-    max_row = ws.max_row
-    if max_row > 2:
-        ws.delete_rows(3, max_row - 2)
-        logger.debug(f"[EDITAR_PLANILHA] Beneficiario - {max_row - 2} linhas antigas removidas")
+    # Resolução PRIMÁRIA da coluna pelo CÓDIGO do produto, usando o layout
+    # posicional do template VR (colunas J..Z fixas, mesmo mapa do parser).
+    # Localizar pelo nome era frágil: parser, catálogo e cabeçalho usam
+    # vocabulários diferentes ('VR Multi VR+VA' × 'Multi - Auxílio VR+VA' ×
+    # 'Multi Auxílio VR+VA'), o que deixava valores sem coluna (pedido 473:
+    # editada com todos os valores vazios) ou na coluna errada por casamento
+    # parcial ('Auxílio Alimentação' caindo em 'Alimentação').
+    from upload.EXCEL.reader2 import COLUNAS_POSICAO
+    col_por_codigo = {str(info['codigo']): col for col, info in COLUNAS_POSICAO.items()}
+    nao_escritos = 0
 
-    row_num = 3
+    max_row = ws.max_row
+    if max_row >= data_start:
+        ws.delete_rows(data_start, max_row - data_start + 1)
+        logger.debug(f"[EDITAR_PLANILHA] Beneficiario - {max_row - data_start + 1} linhas antigas removidas")
+
+    row_num = data_start
     for condo in dados_modificados.get('condominios', []):
         cnpj = ''.join(filter(str.isdigit, str(condo.get('cnpj', ''))))
 
@@ -484,27 +512,60 @@ def _editar_sheet_beneficiario(wb, dados_modificados):
             logger.debug(f"[EDITAR_PLANILHA] Beneficiario - linha {row_num}: cpf={cpf}, cnpj={cnpj}, nome={func.get('nome', '')}, matricula={func.get('matricula', '')}, data_nasc={data_nasc}")
 
             for mov in func.get('movimentacoes', []):
-                # Usa sempre o tipo normalizado para encontrar a coluna.
                 prod_nome = mov.get('tipo') or mov.get('produto', '')
+                codigo = str(mov.get('codigo_produto') or mov.get('codigo') or '').strip()
                 valor = mov.get('valor', 0)
 
-                col_idx = _encontrar_coluna_produto(col_produtos, prod_nome)
+                # 1) pelo código, se a planilha segue o template (há cabeçalho
+                #    de produto na coluna esperada); 2) fallback pelo nome.
+                col_idx = col_por_codigo.get(codigo)
+                if col_idx and ws.cell(row=header_row, column=col_idx).value in (None, ''):
+                    col_idx = None
+                if not col_idx:
+                    col_idx = _encontrar_coluna_produto(col_produtos, prod_nome)
+
                 if col_idx:
                     _set_cell_value(ws, row=row_num, column=col_idx, value=float(valor))
-                    logger.debug(f"[EDITAR_PLANILHA] Beneficiario - produto '{prod_nome}' na coluna {col_idx}, valor {valor}")
+                    logger.debug(f"[EDITAR_PLANILHA] Beneficiario - produto '{prod_nome}' (cod {codigo}) na coluna {col_idx}, valor {valor}")
                 else:
-                    logger.warning(f"[EDITAR_PLANILHA] Beneficiario - produto '{prod_nome}' não encontrado nas colunas mapeadas")
+                    nao_escritos += 1
+                    logger.error(
+                        f"[EDITAR_PLANILHA] Beneficiario - produto '{prod_nome}' (cod '{codigo}') sem coluna: "
+                        f"valor {valor} do CPF {cpf} NÃO foi escrito"
+                    )
 
             row_num += 1
 
-    logger.info(f"[EDITAR_PLANILHA] Beneficiario atualizado: {row_num - 3} funcionarios")
+    logger.info(
+        f"[EDITAR_PLANILHA] Beneficiario atualizado: {row_num - data_start} funcionarios"
+        + (f" — {nao_escritos} valor(es) SEM coluna" if nao_escritos else "")
+    )
+    return nao_escritos
 
 
-def _ler_headers_produtos(ws):
+def _detectar_linha_header_produtos(ws):
+    """
+    Linha do cabeçalho de produtos: 2 no template atual, 1 no antigo. Decide
+    pela presença de texto de produto ('Valor do crédito' ou nome conhecido)
+    nas colunas J.. da linha. Padrão: 2.
+    """
+    for linha in (2, 1):
+        for col in range(10, min(ws.max_column, 30) + 1):
+            val = ws.cell(row=linha, column=col).value
+            if val is None:
+                continue
+            texto = str(val)
+            primeira = texto.split('\n')[0].strip()
+            if 'valor do cr' in texto.lower() or primeira in COLUNAS_PRODUTO:
+                return linha
+    return 2
+
+
+def _ler_headers_produtos(ws, linha_header=2):
     col_produtos = {}
-    header_row = list(ws.iter_rows(min_row=2, max_row=2, values_only=True))
+    header_row = list(ws.iter_rows(min_row=linha_header, max_row=linha_header, values_only=True))
     if not header_row:
-        logger.warning("[EDITAR_PLANILHA] Nenhum header de produto encontrado na linha 2 do sheet 'Beneficiario'")
+        logger.warning(f"[EDITAR_PLANILHA] Nenhum header de produto encontrado na linha {linha_header} do sheet 'Beneficiario'")
         return col_produtos
 
     header_row = header_row[0]
