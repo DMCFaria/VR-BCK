@@ -218,6 +218,7 @@ class FaturamentoArquivo(models.Model):
         ('boleto', 'Boleto'),
         ('nota_debito', 'Nota de débito'),
         ('nota_fiscal', 'Nota fiscal'),
+        ('fatura', 'Fatura'),
     ]
 
     faturamento = models.ForeignKey(

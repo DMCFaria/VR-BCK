@@ -300,39 +300,61 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
             if fatura_num:
                 break
 
-        if not fatura_num:
-            raise ValueError("Não foi possível extrair o número da fatura do boleto. Verifique o arquivo PDF.")
-
         from core.fedhub.services.fedhub_service import FedhubService
         from beneficios.models import Boleto
         from entidades.models import Condominio
 
-        fedhub_service = FedhubService()
-        boletos_data = fedhub_service.buscar_todos_boletos_por_fatura(fatura_num)
+        if arquivos_boleto:
+            if not fatura_num:
+                raise ValueError("Não foi possível extrair o número da fatura do boleto. Verifique o arquivo PDF.")
 
-        if not boletos_data:
-            raise ValueError(f"Nenhum boleto encontrado no sistema para a fatura {fatura_num}. Processamento bloqueado.")
+            fedhub_service = FedhubService()
+            boletos_data = fedhub_service.buscar_todos_boletos_por_fatura(fatura_num)
 
-        if mode != 'adicionar':
-            _limpar_prefixo_s3(s3_client, bucket_name, s3_base_key)
+            if not boletos_data:
+                raise ValueError(f"Nenhum boleto encontrado no sistema para a fatura {fatura_num}. Processamento bloqueado.")
 
-        # Gravação centralizada em upload/boletos_sync.py (mesma lógica do
-        # comando `sincronizar_boletos`). Se nenhum boleto for gravado — ex.:
-        # FedHub devolveu itens sem 'documento' — o faturamento NÃO pode
-        # concluir como se tivesse boletos: a consulta ficaria vazia em
-        # silêncio (caso do faturamento 447 / fatura 175826).
-        from upload.boletos_sync import gravar_boletos_fedhub
-        stats_boletos = gravar_boletos_fedhub(faturamento, fatura_num, boletos_data)
-        if stats_boletos['gravados'] == 0:
-            raise ValueError(
-                f"FedHub devolveu {stats_boletos['total']} boleto(s) para a fatura {fatura_num}, "
-                f"mas nenhum tinha número de documento — nada foi gravado. "
-                f"Verifique a fatura no FedHub e reprocesse (ou rode 'manage.py sincronizar_boletos')."
+            if mode != 'adicionar':
+                _limpar_prefixo_s3(s3_client, bucket_name, s3_base_key)
+
+            # Gravação centralizada em upload/boletos_sync.py (mesma lógica do
+            # comando `sincronizar_boletos`). Se nenhum boleto for gravado — ex.:
+            # FedHub devolveu itens sem 'documento' — o faturamento NÃO pode
+            # concluir como se tivesse boletos: a consulta ficaria vazia em
+            # silêncio (caso do faturamento 447 / fatura 175826).
+            from upload.boletos_sync import gravar_boletos_fedhub
+            stats_boletos = gravar_boletos_fedhub(faturamento, fatura_num, boletos_data)
+            if stats_boletos['gravados'] == 0:
+                raise ValueError(
+                    f"FedHub devolveu {stats_boletos['total']} boleto(s) para a fatura {fatura_num}, "
+                    f"mas nenhum tinha número de documento — nada foi gravado. "
+                    f"Verifique a fatura no FedHub e reprocesse (ou rode 'manage.py sincronizar_boletos')."
+                )
+            logger.info(
+                f"Boletos para a fatura {fatura_num} validados e criados com sucesso antes do upload "
+                f"({stats_boletos['gravados']}/{stats_boletos['total']})."
             )
-        logger.info(
-            f"Boletos para a fatura {fatura_num} validados e criados com sucesso antes do upload "
-            f"({stats_boletos['gravados']}/{stats_boletos['total']})."
-        )
+        elif mode == 'adicionar':
+            # Inclusão só de notas (débito/fiscal), sem boleto novo: não há
+            # fatura para validar no FedHub nem boletos para regravar — a
+            # exigência de boleto derrubava o faturamento inteiro (caso do
+            # pedido 302, 28/08/2026). Recupera a fatura de um envio anterior
+            # apenas para nomear os arquivos originais.
+            fatura_num = (
+                FaturamentoArquivo.objects
+                .filter(faturamento=faturamento, tipo='boleto')
+                .exclude(fatura_num='')
+                .order_by('-criado_em')
+                .values_list('fatura_num', flat=True)
+                .first()
+            ) or ''
+            logger.info(
+                f"[FATURAMENTO] Modo adicionar sem boleto novo: pulando validação FedHub "
+                f"(fatura anterior: '{fatura_num or 'desconhecida'}')."
+            )
+        else:
+            # Substituição sem boleto não deveria passar pela view; falha clara.
+            raise ValueError("Substituição de documentos exige o arquivo de boleto.")
 
         # --- UPLOADS S3 (só executa se a validação dos boletos passou) ---
         for arquivo_indice, (arquivo, resultado) in enumerate(zip(arquivos_boleto, resultados_boleto), start=1):
@@ -355,6 +377,10 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
                 resultado, 'nota_fiscal', condominios_encontrados, paginas_processadas, verificar_progresso,
                 arquivo_indice
             )
+
+        _consolidar_documentos_multiplos(
+            s3_client, bucket_name, s3_base_key, condominios_encontrados
+        )
 
         _upload_arquivos_originais(
             s3_client,
@@ -542,6 +568,61 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
         raise self.retry(exc=e)
 
 
+def _consolidar_documentos_multiplos(s3_client, bucket_name, s3_base_key, condominios):
+    """
+    Um condomínio pode receber mais de uma página do mesmo tipo de documento
+    (ex.: "nota de débito 1" e "nota de débito 2" no mesmo envio, ou uma nota
+    de duas páginas). Antes, a última página sobrescrevia a URL das demais no
+    FaturamentoDocumento. Aqui, quando há múltiplas, as páginas são mescladas
+    num único PDF por condomínio+tipo e a URL consolidada substitui a última.
+    As chaves internas '_<tipo>_urls' são removidas ao final.
+    """
+    from entidades.models import Condominio
+
+    s3_base_key = f"VR - DOCS/faturamentos/{s3_base_key}" if '/' not in str(s3_base_key) else s3_base_key
+    tipos_display = {'boleto': 'Boleto', 'nota_debito': 'Nota de débito', 'nota_fiscal': 'Nota Fiscal'}
+
+    for cnpj, docs in condominios.items():
+        for tipo, tipo_display in tipos_display.items():
+            urls = docs.pop(f'_{tipo}_urls', [])
+            if len(urls) <= 1:
+                continue
+
+            try:
+                writer = PdfWriter()
+                for url in urls:
+                    key = url.split('.amazonaws.com/', 1)[1]
+                    buf = io.BytesIO()
+                    s3_client.download_fileobj(bucket_name, key, buf)
+                    buf.seek(0)
+                    for page in PdfReader(buf).pages:
+                        writer.add_page(page)
+
+                merged = io.BytesIO()
+                writer.write(merged)
+                merged.seek(0)
+
+                try:
+                    condo_nome = Condominio.objects.get(cnpj=cnpj).nome
+                except Condominio.DoesNotExist:
+                    condo_nome = cnpj
+
+                nome_arquivo = f"CONSOLIDADO - {condo_nome} - {cnpj} - {tipo_display}.pdf"
+                s3_key = f"{s3_base_key}/{tipo}/{nome_arquivo}"
+                s3_client.upload_fileobj(
+                    merged, bucket_name, s3_key,
+                    ExtraArgs={'ContentType': 'application/pdf'}
+                )
+                docs[tipo] = f"https://{bucket_name}.s3.amazonaws.com/{s3_key}"
+                logger.info(
+                    f"[CONSOLIDAR] {tipo_display} do condomínio {cnpj}: {len(urls)} páginas "
+                    f"mescladas em '{nome_arquivo}'"
+                )
+            except Exception as e:
+                # Mantém a última URL (comportamento anterior) em vez de falhar o faturamento.
+                logger.error(f"[CONSOLIDAR] Falha ao mesclar {tipo} do condomínio {cnpj}: {e}")
+
+
 def _processar_e_upload_paginas(
     s3_client,
     bucket_name,
@@ -603,6 +684,11 @@ def _processar_e_upload_paginas(
         if cnpj_limpo not in condominios:
             condominios[cnpj_limpo] = {}
         condominios[cnpj_limpo][tipo] = url
+        # Rastro de TODAS as páginas deste condomínio/tipo (chave interna com
+        # '_'): quando houver mais de uma — duas notas de débito para o mesmo
+        # condomínio, por exemplo — _consolidar_documentos_multiplos mescla
+        # tudo num único PDF, em vez de a última página sobrescrever as demais.
+        condominios[cnpj_limpo].setdefault(f'_{tipo}_urls', []).append(url)
         if tipo == 'boleto' and fatura:
             condominios[cnpj_limpo]['fatura'] = fatura
 

@@ -166,9 +166,9 @@ class DownloadFaturamentoView(views.APIView):
             for fat in faturas:
                 admin_nome = fat.administradora.razao_social if fat.administradora else "Sem Administradora"
                 s3_prefix = f"{fat.id} - {admin_nome}"
-                for tipo in ['boleto', 'nota_debito', 'nota_fiscal']:
+                for tipo in ['boleto', 'nota_debito', 'nota_fiscal', 'fatura']:
                     prefix = f"VR - DOCS/faturamentos/{s3_prefix}/{tipo}/"
-                    tipo_display = {'boleto': 'Boleto', 'nota_debito': 'Nota de débito', 'nota_fiscal': 'Nota Fiscal'}.get(tipo, tipo)
+                    tipo_display = {'boleto': 'Boleto', 'nota_debito': 'Nota de débito', 'nota_fiscal': 'Nota Fiscal', 'fatura': 'Fatura'}.get(tipo, tipo)
                     baixar_pdfs_s3(s3, bucket, prefix, zf, f"fatura_{fat.id}/{tipo_display}")
 
         buffer.seek(0)

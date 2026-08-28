@@ -69,6 +69,7 @@ class UploadFaturamentoView(views.APIView):
         arquivos_boleto = []
         arquivos_nota_debito = []
         arquivos_nota_fiscal = []
+        arquivos_fatura = []
 
         # MultiValueDict.items() retorna apenas o último arquivo de cada campo.
         # Use lists() para não descartar arquivos quando o usuário envia vários PDFs.
@@ -92,6 +93,11 @@ class UploadFaturamentoView(views.APIView):
                     arquivos_nota_debito.append(arquivo)
                 elif 'nf' in nome_lower or 'nf' in real_name_lower:
                     arquivos_nota_fiscal.append(arquivo)
+                elif 'fatura' in nome_lower or 'fatura' in real_name_lower:
+                    # Fatura emitida pela VR (FATURA-<numero>.PDF, mesmo número
+                    # do boleto): quarto tipo de documento, guardado como
+                    # arquivo original do faturamento (EV-SES-006).
+                    arquivos_fatura.append(arquivo)
                 else:
                     # 2ª passada: pelo conteúdo do PDF — o nome do arquivo
                     # deixa de ser obrigatório.
@@ -116,8 +122,8 @@ class UploadFaturamentoView(views.APIView):
                 "Verifique se o PDF está legível ou renomeie o arquivo indicando o tipo."
             )
         if mode == 'adicionar':
-            if not (arquivos_boleto or arquivos_nota_debito or arquivos_nota_fiscal):
-                erros.append("Nenhum arquivo de boleto, nota de débito ou nota fiscal reconhecido.")
+            if not (arquivos_boleto or arquivos_nota_debito or arquivos_nota_fiscal or arquivos_fatura):
+                erros.append("Nenhum arquivo de boleto, nota de débito, nota fiscal ou fatura reconhecido.")
         else:
             if not arquivos_boleto:
                 erros.append("Arquivo de BOLETO não encontrado entre os enviados.")
@@ -218,6 +224,15 @@ class UploadFaturamentoView(views.APIView):
                         'content': base64.b64encode(arquivo.read()).decode('utf-8'),
                     }
                     for arquivo in arquivos_nota_fiscal
+                ]
+
+            if arquivos_fatura:
+                arquivos_data['fatura'] = [
+                    {
+                        'nome': arquivo.name,
+                        'content': base64.b64encode(arquivo.read()).decode('utf-8'),
+                    }
+                    for arquivo in arquivos_fatura
                 ]
 
             processar_faturamento.delay(
