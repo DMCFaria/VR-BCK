@@ -6,7 +6,7 @@ from .confirmed import ConfirmationView
 from .upload import UploadView
 from .EXCEL.template import baixar_template_VR, baixar_template_VT
 from .export import ExportTxtCompraView, ExportFaturamentoView, ExportVTCompraView, GetImportacaoSelectDataView, ListarTodosBoletosView
-from .faturamento import UploadFaturamentoView, StatusFaturamentoView
+from .faturamento import UploadFaturamentoView, StatusFaturamentoView, ExcluirArquivoFaturamentoView
 from .download_views import DownloadArquivoView, DownloadFaturamentoView, DownloadBoletosView, DownloadNotasDebitoView, DownloadNotasFiscaisView, DownloadBoletoOriginalView, DownloadNotaDebitoOriginalView, DownloadNotaFiscalOriginalView, DownloadTodosOriginaisView, DownloadNotasEmitidasView
 from .views_nfse import NfseWebhookView
 
@@ -31,6 +31,7 @@ urlpatterns = [
     # FATURAMENTO ROUTES
     path('faturamento/upload/', UploadFaturamentoView.as_view(), name='upload_faturamento'),
     path('faturamento/<int:faturamento_id>/status/', StatusFaturamentoView.as_view(), name='faturamento_status'),
+    path('faturamento/arquivo/<int:arquivo_id>/', ExcluirArquivoFaturamentoView.as_view(), name='faturamento_excluir_arquivo'),
 
     # DOWNLOAD ROUTES
     path('faturamento/<int:faturamento_id>/download/', DownloadFaturamentoView.as_view(), name='download_faturamento_all'),
