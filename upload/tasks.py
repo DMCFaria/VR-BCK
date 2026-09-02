@@ -291,14 +291,20 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
         s3_base_key = f"VR - DOCS/faturamentos/{faturamento.id} - {admin_nome}"
 
         # --- VALIDAÇÃO E CRIAÇÃO DE BOLETOS (antes de qualquer upload) ---
-        fatura_num = None
+        # Um envio pode conter boletos de MAIS DE UMA fatura (ex.: 176385 e
+        # 176386 no mesmo pedido). Extrai a fatura de CADA arquivo: todas são
+        # validadas/sincronizadas no FedHub e cada arquivo original é
+        # carimbado com a própria fatura; a primeira segue como principal.
+        fatura_por_arquivo = []
         for resultado in resultados_boleto:
+            fat_arq = None
             for pagina in resultado['paginas']:
                 if pagina.get('fatura'):
-                    fatura_num = pagina.get('fatura')
+                    fat_arq = pagina.get('fatura')
                     break
-            if fatura_num:
-                break
+            fatura_por_arquivo.append(fat_arq)
+        faturas_unicas = list(dict.fromkeys(f for f in fatura_por_arquivo if f))
+        fatura_num = faturas_unicas[0] if faturas_unicas else None
 
         from core.fedhub.services.fedhub_service import FedhubService
         from beneficios.models import Boleto
@@ -309,10 +315,20 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
                 raise ValueError("Não foi possível extrair o número da fatura do boleto. Verifique o arquivo PDF.")
 
             fedhub_service = FedhubService()
-            boletos_data = fedhub_service.buscar_todos_boletos_por_fatura(fatura_num)
+            boletos_por_fatura = {}
+            faturas_sem_boleto = []
+            for fat_n in faturas_unicas:
+                dados_fat = fedhub_service.buscar_todos_boletos_por_fatura(fat_n)
+                if dados_fat:
+                    boletos_por_fatura[fat_n] = dados_fat
+                else:
+                    faturas_sem_boleto.append(fat_n)
 
-            if not boletos_data:
-                raise ValueError(f"Nenhum boleto encontrado no sistema para a fatura {fatura_num}. Processamento bloqueado.")
+            if faturas_sem_boleto:
+                raise ValueError(
+                    f"Nenhum boleto encontrado no sistema para a(s) fatura(s) "
+                    f"{', '.join(faturas_sem_boleto)}. Processamento bloqueado."
+                )
 
             if mode != 'adicionar':
                 _limpar_prefixo_s3(s3_client, bucket_name, s3_base_key)
@@ -323,16 +339,20 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
             # concluir como se tivesse boletos: a consulta ficaria vazia em
             # silêncio (caso do faturamento 447 / fatura 175826).
             from upload.boletos_sync import gravar_boletos_fedhub
-            stats_boletos = gravar_boletos_fedhub(faturamento, fatura_num, boletos_data)
-            if stats_boletos['gravados'] == 0:
+            total_gravados = total_itens = 0
+            for fat_n, dados_fat in boletos_por_fatura.items():
+                stats_boletos = gravar_boletos_fedhub(faturamento, fat_n, dados_fat)
+                total_gravados += stats_boletos['gravados']
+                total_itens += stats_boletos['total']
+            if total_gravados == 0:
                 raise ValueError(
-                    f"FedHub devolveu {stats_boletos['total']} boleto(s) para a fatura {fatura_num}, "
-                    f"mas nenhum tinha número de documento — nada foi gravado. "
-                    f"Verifique a fatura no FedHub e reprocesse (ou rode 'manage.py sincronizar_boletos')."
+                    f"FedHub devolveu {total_itens} boleto(s) para a(s) fatura(s) "
+                    f"{', '.join(faturas_unicas)}, mas nenhum tinha número de documento — nada foi gravado. "
+                    f"Verifique no FedHub e reprocesse (ou rode 'manage.py sincronizar_boletos')."
                 )
             logger.info(
-                f"Boletos para a fatura {fatura_num} validados e criados com sucesso antes do upload "
-                f"({stats_boletos['gravados']}/{stats_boletos['total']})."
+                f"Boletos para a(s) fatura(s) {', '.join(faturas_unicas)} validados e criados "
+                f"com sucesso antes do upload ({total_gravados}/{total_itens})."
             )
         elif mode == 'adicionar':
             # Inclusão só de notas (débito/fiscal), sem boleto novo: não há
@@ -389,7 +409,10 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
             arquivos_data,
             faturamento.id,
             FaturamentoArquivo,
-            fatura_num,
+            # Com mais de uma fatura no envio, notas/documentos sem fatura
+            # própria ficam sem número (não dá para saber a qual pertencem).
+            fatura_num if len(faturas_unicas) <= 1 else '',
+            faturas_boleto=fatura_por_arquivo,
         )
 
         atualizar_progresso(faturamento.id, 90)
@@ -718,7 +741,11 @@ def _upload_arquivos_originais(
     faturamento_id,
     arquivo_model,
     fatura_num='',
+    faturas_boleto=None,
 ):
+    """`faturas_boleto`: fatura extraída de cada PDF de boleto, na mesma ordem
+    de arquivos_data['boleto'] — cada boleto é carimbado com a PRÓPRIA fatura
+    (um envio pode conter boletos de faturas diferentes)."""
     for tipo, dados in arquivos_data.items():
         if not dados:
             continue
@@ -727,6 +754,9 @@ def _upload_arquivos_originais(
             dados = [dados]
 
         for indice, arquivo in enumerate(dados, start=1):
+            fatura_arquivo = fatura_num
+            if tipo == 'boleto' and faturas_boleto and len(faturas_boleto) >= indice and faturas_boleto[indice - 1]:
+                fatura_arquivo = faturas_boleto[indice - 1]
             nome_original = str(arquivo.get('nome') or f'{tipo}.pdf').replace('/', '_').replace('\\', '_')
             conteudo = base64.b64decode(arquivo['content'])
             identificador = hashlib.sha256(conteudo).hexdigest()[:12]
@@ -746,7 +776,7 @@ def _upload_arquivos_originais(
                 defaults={
                     'faturamento_id': faturamento_id,
                     'tipo': tipo,
-                    'fatura_num': fatura_num,
+                    'fatura_num': fatura_arquivo,
                     'nome_arquivo': nome_original,
                     'url': f"https://{bucket_name}.s3.amazonaws.com/{s3_key}",
                 },

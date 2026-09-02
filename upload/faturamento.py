@@ -94,10 +94,11 @@ class UploadFaturamentoView(views.APIView):
                 elif 'nf' in nome_lower or 'nf' in real_name_lower:
                     arquivos_nota_fiscal.append(arquivo)
                 elif 'fatura' in nome_lower or 'fatura' in real_name_lower:
-                    # Fatura emitida pela VR (FATURA-<numero>.PDF, mesmo número
-                    # do boleto): quarto tipo de documento, guardado como
-                    # arquivo original do faturamento (EV-SES-006).
-                    arquivos_fatura.append(arquivo)
+                    # Fatura emitida pela VR (FATURA-<numero>.PDF): NÃO é
+                    # aceita no envio de documentos (decisão de 28/08/2026,
+                    # EV-SES-007) — detectamos só para rejeitar com mensagem
+                    # clara, em vez do genérico "tipo não identificado".
+                    arquivos_fatura.append(getattr(arquivo, 'name', nome_campo))
                 else:
                     # 2ª passada: pelo conteúdo do PDF — o nome do arquivo
                     # deixa de ser obrigatório.
@@ -115,6 +116,11 @@ class UploadFaturamentoView(views.APIView):
         # subconjunto (ex.: incluir só uma nota fiscal). Boleto + nota de
         # débito continuam obrigatórios no fluxo de substituição/importação.
         erros = []
+        if arquivos_fatura:
+            erros.append(
+                f"Arquivos de FATURA não são aceitos no envio de documentos: {', '.join(arquivos_fatura)}. "
+                "Remova-os da lista e envie apenas boleto, nota de débito e nota fiscal."
+            )
         if nao_identificados:
             erros.append(
                 "Não foi possível identificar o tipo (boleto, nota de débito ou nota fiscal) "
@@ -122,8 +128,8 @@ class UploadFaturamentoView(views.APIView):
                 "Verifique se o PDF está legível ou renomeie o arquivo indicando o tipo."
             )
         if mode == 'adicionar':
-            if not (arquivos_boleto or arquivos_nota_debito or arquivos_nota_fiscal or arquivos_fatura):
-                erros.append("Nenhum arquivo de boleto, nota de débito, nota fiscal ou fatura reconhecido.")
+            if not (arquivos_boleto or arquivos_nota_debito or arquivos_nota_fiscal):
+                erros.append("Nenhum arquivo de boleto, nota de débito ou nota fiscal reconhecido.")
         else:
             if not arquivos_boleto:
                 erros.append("Arquivo de BOLETO não encontrado entre os enviados.")
@@ -226,15 +232,6 @@ class UploadFaturamentoView(views.APIView):
                     for arquivo in arquivos_nota_fiscal
                 ]
 
-            if arquivos_fatura:
-                arquivos_data['fatura'] = [
-                    {
-                        'nome': arquivo.name,
-                        'content': base64.b64encode(arquivo.read()).decode('utf-8'),
-                    }
-                    for arquivo in arquivos_fatura
-                ]
-
             processar_faturamento.delay(
                 importacao_id=importacao_id,
                 competencia=competencia.isoformat(),
@@ -255,6 +252,61 @@ class UploadFaturamentoView(views.APIView):
                 {"detail": f"Erro ao iniciar processamento: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class ExcluirArquivoFaturamentoView(views.APIView):
+    """
+    Exclui um documento importado do faturamento (registro + arquivo no S3).
+    DELETE /api/upload/faturamento/arquivo/<arquivo_id>/
+
+    Restrito a dev/fat. Observação: as páginas por condomínio já derivadas
+    desse arquivo NÃO são recalculadas — para refazer o retrato por
+    condomínio, reenvie os documentos corretos (modo substituir).
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def delete(self, request, arquivo_id):
+        if getattr(request.user, 'tipo', None) not in ('dev', 'fat'):
+            return Response(
+                {'detail': 'Sem permissão para excluir documentos do faturamento.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        from django.conf import settings
+        from beneficios.models import FaturamentoArquivo
+
+        try:
+            arquivo = FaturamentoArquivo.objects.get(id=arquivo_id)
+        except FaturamentoArquivo.DoesNotExist:
+            return Response({'detail': 'Documento não encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+        info = {
+            'id': arquivo.id,
+            'nome': arquivo.nome_arquivo,
+            'tipo': arquivo.tipo,
+            'faturamento': arquivo.faturamento_id,
+            's3_key': arquivo.s3_key,
+        }
+
+        # Remove do S3 (best-effort: a exclusão do registro não pode ficar
+        # presa a uma falha transitória do S3; a chave fica no log).
+        try:
+            import boto3
+            s3 = boto3.client(
+                's3',
+                aws_access_key_id=getattr(settings, 'ACCESS_KEY_S3', ''),
+                aws_secret_access_key=getattr(settings, 'SECRET_KEY_S3', ''),
+                region_name='us-east-2',
+            )
+            s3.delete_object(Bucket=getattr(settings, 'BUCKET_S3', 'fedcorp-prod'), Key=arquivo.s3_key)
+        except Exception as e:
+            logger.warning(f"[EXCLUIR_ARQUIVO] Falha ao remover do S3 ({info['s3_key']}): {e}")
+
+        arquivo.delete()
+        logger.info(f"[EXCLUIR_ARQUIVO] user={request.user.id} ({request.user.tipo}) excluiu {info}")
+
+        return Response({'detail': f"Documento '{info['nome']}' excluído."})
 
 
 class StatusFaturamentoView(views.APIView):

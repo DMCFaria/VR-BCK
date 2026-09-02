@@ -934,6 +934,13 @@ def _parse_fut_template(file_path, file_upload_id, valor_max_beneficio=None, adm
                         missing_infos.append("CEP ausente")
 
             if missing_infos:
+                # O bloqueio é intencional (EV-SES-008): a responsabilidade de
+                # resolver é da administradora — cadastrar o condomínio na
+                # tela Condomínios ou completar os dados na planilha.
+                missing_infos.append(
+                    "Cadastre o condomínio na tela Condomínios (ou complete os "
+                    "dados na planilha) e importe novamente."
+                )
                 erros_condominios.append({
                     "cnpj": local["cnpj"],
                     "nome": local["nome"],

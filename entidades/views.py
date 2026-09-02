@@ -117,6 +117,15 @@ class CondominioViewSet(viewsets.ModelViewSet):
         # anteriores são mantidos — não removemos nada em silêncio.
         existente = Condominio.objects.filter(cnpj=cnpj_digitos).first() if cnpj_digitos else None
         if existente:
+            # Já vinculado à PRÓPRIA administradora não é migração: avisa o
+            # usuário (caso Pacífica 02/09: o pedido confirmado já tinha
+            # cadastrado o condomínio e o cadastro manual em seguida dizia
+            # "cadastrado com sucesso", induzindo a achar que foi o manual
+            # que criou). A migração de outra administradora segue silenciosa.
+            ja_vinculado_propria = bool(administradora) and VinculoCondominio.objects.filter(
+                administradora=administradora, condominio=existente
+            ).exists()
+
             serializer = self.get_serializer(existente, data=request.data, partial=True)
             if not serializer.is_valid():
                 logger.error(
@@ -139,8 +148,15 @@ class CondominioViewSet(viewsets.ModelViewSet):
 
             # Para o usuário é um cadastro normal: ele não precisa saber que o
             # CNPJ já existia em outra administradora (ADR-0006). Resposta
-            # idêntica à de criação, sem `detail` distinto.
-            return Response(serializer.data, status=200)
+            # idêntica à de criação, sem `detail` distinto — EXCETO quando o
+            # condomínio já estava vinculado à administradora dele.
+            data = dict(serializer.data)
+            if ja_vinculado_propria:
+                data['detail'] = (
+                    'Este condomínio já está cadastrado na sua administradora — '
+                    'os dados informados foram atualizados.'
+                )
+            return Response(data, status=200)
 
         serializer = self.get_serializer(data=request.data)
 
