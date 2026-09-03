@@ -320,6 +320,7 @@ class StatusFaturamentoView(views.APIView):
                 "faturamento_id": faturamento.id,
                 "status": faturamento.status,
                 "progresso": faturamento.progresso,
+                "erro_mensagem": faturamento.erro_mensagem,
                 "competencia": faturamento.competencia,
                 "criado_em": faturamento.criado_em
             })

@@ -199,6 +199,12 @@ class Faturamento(models.Model):
     criado_em = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING', verbose_name="Status")
     progresso = models.PositiveSmallIntegerField(default=0, verbose_name="Progresso (%)")
+    erro_mensagem = models.TextField(
+        blank=True,
+        default='',
+        verbose_name="Erro do processamento",
+        help_text="Motivo da última falha da task de faturamento; exibido ao faturista (PA-011).",
+    )
 
     class Meta:
         verbose_name = "Faturamento"
