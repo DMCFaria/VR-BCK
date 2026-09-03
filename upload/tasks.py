@@ -584,7 +584,11 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
         logger.exception(f"Erro ao processar faturamento: {str(e)}")
         
         try:
-            Faturamento.objects.filter(id=importacao_id).update(status='FAILED', progresso=0)
+            # Persistir o motivo: a falha era invisível em tela (PA-011) — o
+            # frontend consulta o status e exibe esta mensagem ao faturista.
+            Faturamento.objects.filter(id=importacao_id).update(
+                status='FAILED', progresso=0, erro_mensagem=str(e)[:2000]
+            )
         except Exception:
             logger.exception("Erro ao atualizar status para FAILED")
         
