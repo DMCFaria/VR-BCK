@@ -595,13 +595,131 @@ class UltimaMovimentacaoDashboard(views.APIView):
         return Response(response_data, status=status.HTTP_200_OK)
             
             
+# Status do frontend (ColaboradorDashboard.normalizarStatus) -> status do banco.
+# 'aprovado' é o fallback do frontend para qualquer status não mapeado, então
+# no servidor ele vira "tudo que NÃO está nos outros grupos".
+STATUS_FRONT_PARA_BACK = {
+    'em_faturamento': ['EM_FATURAMENTO'],
+    'faturado': ['FATURADO', 'BOLETO_VR_ENVIADO'],
+    'comprado': ['COMPRADO'],
+    'pago_parcialmente': ['PAGO_PARCIALMENTE'],
+    'cancelado': ['CANCELADO'],
+    'pendente': ['PENDING'],
+}
+_STATUS_MAPEADOS = [st for lista in STATUS_FRONT_PARA_BACK.values() for st in lista]
+
+# Chaves de ordenação do frontend -> campo do ORM.
+ORDENACAO_IMPORTACOES = {
+    'id': 'id',
+    'dataImportacao': 'data_importacao',
+    'nomeAdministradora': 'administradora__razao_social',
+    'dataVencimento': 'data_vencimento',
+    'mesUtilizacao': 'vigencia_inicio',
+    'dataRecebimento': 'data_recebimento',
+    'valorTotal': 'valor_total',
+    'status': 'status',
+}
+
+
 class ImportacaoListView(views.APIView):
     """
     Rota para listar o histórico de importações.
-    Suporta paginação via query params ?page=1&limit=20.
+
+    Paginação: ?page=1&limit=20
+    Filtros (todos opcionais, aplicados no banco):
+      - search: busca parcial por nº do pedido, nome da administradora ou nº da
+        fatura; quando informado, a janela de 30 dias NÃO é aplicada
+      - status: status do frontend (aprovado, em_faturamento, faturado, comprado,
+        pago_parcialmente, cancelado, pendente) ou um status do banco;
+        'todos' exclui cancelados
+      - data_recebimento_inicio / data_recebimento_fim: YYYY-MM-DD
+      - ordering: chave do frontend (ver ORDENACAO_IMPORTACOES), prefixo '-' inverte
+    Retorna também `stats` com contagens por status do escopo do usuário
+    (antes de search/status/datas).
     """
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
+
+    def _aplicar_status(self, queryset, status_param):
+        status_param = (status_param or '').strip()
+        if not status_param:
+            return queryset
+        if status_param == 'todos':
+            return queryset.exclude(status='CANCELADO')
+        if status_param == 'aprovado':
+            return queryset.exclude(status__in=_STATUS_MAPEADOS)
+        if status_param in STATUS_FRONT_PARA_BACK:
+            return queryset.filter(status__in=STATUS_FRONT_PARA_BACK[status_param])
+        return queryset.filter(status=status_param.upper())
+
+    def _aplicar_search(self, queryset, search):
+        """
+        Busca parcial em: número do pedido (id), nome da administradora e número
+        da fatura do boleto. Ex.: "32" encontra os pedidos 32, 328, 329, 1032...
+        """
+        from django.db.models import CharField, Q
+        from django.db.models.functions import Cast
+
+        search = (search or '').strip()
+        if not search:
+            return queryset
+
+        queryset = queryset.annotate(id_texto=Cast('id', CharField()))
+        q = (
+            Q(id_texto__icontains=search)
+            | Q(administradora__razao_social__icontains=search)
+            | Q(administradora__nome_fantasia__icontains=search)
+            | Q(faturamentos__boletos_rel__fatura__icontains=search)
+        )
+        return queryset.filter(q).distinct()
+
+    def _aplicar_datas(self, queryset, inicio, fim):
+        from datetime import date
+
+        def parse(valor):
+            try:
+                return date.fromisoformat((valor or '').strip()[:10])
+            except ValueError:
+                return None
+
+        d_ini, d_fim = parse(inicio), parse(fim)
+        if d_ini:
+            queryset = queryset.filter(data_recebimento__gte=d_ini)
+        if d_fim:
+            queryset = queryset.filter(data_recebimento__lte=d_fim)
+        return queryset
+
+    def _aplicar_ordenacao(self, queryset, ordering):
+        from django.db.models import F
+
+        ordering = (ordering or '').strip()
+        if not ordering:
+            return queryset.order_by('-data_importacao')
+
+        desc = ordering.startswith('-')
+        chave = ordering.lstrip('-')
+        campo = ORDENACAO_IMPORTACOES.get(chave)
+        if not campo:
+            return queryset.order_by('-data_importacao')
+
+        expr = F(campo).desc(nulls_last=True) if desc else F(campo).asc(nulls_last=True)
+        # '-id' como desempate garante paginação estável.
+        return queryset.order_by(expr, '-id')
+
+    def _calcular_stats(self, queryset):
+        from django.db.models import Count, Q
+
+        agg = queryset.aggregate(
+            total=Count('id'),
+            em_faturamento=Count('id', filter=Q(status__in=STATUS_FRONT_PARA_BACK['em_faturamento'])),
+            faturados=Count('id', filter=Q(status__in=STATUS_FRONT_PARA_BACK['faturado'])),
+            comprado=Count('id', filter=Q(status__in=STATUS_FRONT_PARA_BACK['comprado'])),
+            pago_parcialmente=Count('id', filter=Q(status__in=STATUS_FRONT_PARA_BACK['pago_parcialmente'])),
+            cancelados=Count('id', filter=Q(status__in=STATUS_FRONT_PARA_BACK['cancelado'])),
+            pendentes=Count('id', filter=Q(status__in=STATUS_FRONT_PARA_BACK['pendente'])),
+            aprovados=Count('id', filter=~Q(status__in=_STATUS_MAPEADOS)),
+        )
+        return agg
 
     @extend_schema(operation_id='beneficios_importacoes_list')
     def get(self, request):
@@ -619,24 +737,32 @@ class ImportacaoListView(views.APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Filtro: últimos 30 dias
-        data_limite = timezone.now() - timedelta(days=30)
+        params = request.query_params
+        search = (params.get('search') or '').strip()
 
         if user.tipo == "dev" or user.tipo == "fat":
-            importacoes = Importacao.objects.filter(
-                data_importacao__gte=data_limite
-            ).select_related(
-                'file_upload', 'usuario', 'administradora'
-            ).order_by('-data_importacao')
+            escopo = Importacao.objects.all()
         else:
-            queryset = Importacao.objects.filter(
-                administradora=administradora,
-                data_importacao__gte=data_limite,
-            ).select_related(
-                'file_upload', 'usuario', 'administradora'
+            escopo = aplicar_visibilidade_importacoes(
+                Importacao.objects.filter(administradora=administradora), user
             )
-            queryset = aplicar_visibilidade_importacoes(queryset, user)
-            importacoes = queryset.order_by('-data_importacao')
+
+        # Sem busca: só os últimos 30 dias (listagem padrão e stats).
+        # Com busca: quem digita um nº de pedido/fatura quer achá-lo mesmo que
+        # seja antigo, então a janela de 30 dias não se aplica.
+        data_limite = timezone.now() - timedelta(days=30)
+        base = escopo.filter(data_importacao__gte=data_limite)
+        stats = self._calcular_stats(base)
+
+        importacoes = (escopo if search else base).select_related('file_upload', 'usuario', 'responsavel', 'administradora')
+        importacoes = self._aplicar_status(importacoes, params.get('status'))
+        importacoes = self._aplicar_datas(
+            importacoes,
+            params.get('data_recebimento_inicio'),
+            params.get('data_recebimento_fim'),
+        )
+        importacoes = self._aplicar_search(importacoes, search)
+        importacoes = self._aplicar_ordenacao(importacoes, params.get('ordering'))
 
         documentos_prefetch = Prefetch(
             'documentos',
@@ -656,11 +782,11 @@ class ImportacaoListView(views.APIView):
         importacoes = importacoes.prefetch_related(faturamentos_prefetch)
 
         try:
-            page = max(int(request.query_params.get('page', 1)), 1)
+            page = max(int(params.get('page', 1)), 1)
         except (TypeError, ValueError):
             page = 1
         try:
-            limit = max(int(request.query_params.get('limit', 20)), 1)
+            limit = min(max(int(params.get('limit', 20)), 1), 500)
         except (TypeError, ValueError):
             limit = 20
 
@@ -680,6 +806,7 @@ class ImportacaoListView(views.APIView):
             'page': page,
             'pages': pages,
             'limit': limit,
+            'stats': stats,
         })
 
 

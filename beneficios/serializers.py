@@ -116,21 +116,27 @@ class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
             return obj.responsavel.nome or obj.responsavel.email
         return None
 
+    # IMPORTANTE: estes métodos percorrem os dados já prefetchados
+    # (`faturamentos__boletos_rel`, `faturamentos__documentos`, `faturamentos__arquivos_originais`)
+    # em Python. Qualquer `.filter()/.exclude()/.values_list()/.select_related()` sobre
+    # o related manager ignora o prefetch e dispara uma query nova POR LINHA — foi isso
+    # que levou a listagem a ~3 queries por importação (e dezenas de segundos com 500).
     def get_numero_fatura(self, obj):
         try:
-            boleto = obj.faturamentos.values_list('boletos_rel__fatura', flat=True).exclude(
-                boletos_rel__fatura__isnull=True
-            ).exclude(
-                boletos_rel__fatura=''
-            ).first()
-            return boleto or ''
+            for fat in obj.faturamentos.all():
+                numero = self._get_fatura_number(fat)
+                if numero:
+                    return numero
+            return ''
         except Exception:
             return ''
 
     def _get_fatura_number(self, fat):
         try:
-            boleto = fat.boletos_rel.exclude(fatura__isnull=True).exclude(fatura='').first()
-            return boleto.fatura if boleto else ''
+            for boleto in fat.boletos_rel.all():
+                if boleto.fatura:
+                    return boleto.fatura
+            return ''
         except Exception:
             return ''
 
@@ -228,7 +234,7 @@ class ImportacaoComMovimentacoesSerializer(serializers.ModelSerializer):
                     for arquivo in arquivos
                 ])
             else:
-                for documento in fat.documentos.select_related('condominio').all():
+                for documento in fat.documentos.all():
                     dados_condominio = {
                         'condominio_nome': documento.condominio.nome if documento.condominio else '',
                         'condominio_cnpj': documento.condominio.cnpj if documento.condominio else '',
