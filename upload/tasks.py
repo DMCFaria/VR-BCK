@@ -472,15 +472,17 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
             from beneficios.models import Importacao, MovimentacaoBeneficio
             from upload.nfse_service import emitir_nfse_lote
 
-            condominios_novos = []
-            condominios_existentes = set()
-
-            if mode == 'adicionar':
-                condominios_existentes = set(
-                    FaturamentoDocumento.objects.filter(
-                        faturamento=faturamento
-                    ).values_list('condominio__cnpj', flat=True)
-                )
+            # "Já emitida" = o boleto do CNPJ já recebeu número de nota pelo
+            # webhook. Antes a checagem usava FaturamentoDocumento, mas o loop
+            # acima acaba de gravar um documento para cada CNPJ encontrado —
+            # logo, no mode='adicionar' TODOS eram considerados "já emitidos"
+            # e nenhuma NFSe saía.
+            cnpjs_com_nota = set(
+                Boleto.objects.filter(
+                    faturamento=faturamento,
+                    Numero_nota__isnull=False,
+                ).exclude(Numero_nota='').values_list('cnpj_cobrado', flat=True)
+            )
 
             dados_condominios = []
             for cnpj, docs in condominios_encontrados.items():
@@ -490,8 +492,8 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
                     logger.warning(f"NFSe: Condomínio {cnpj} não encontrado, pulando...")
                     continue
 
-                if mode == 'adicionar' and cnpj in condominios_existentes:
-                    logger.info(f"NFSe: Condomínio {cnpj} já possui NFSe, pulando reemissão")
+                if cnpj in cnpjs_com_nota:
+                    logger.info(f"NFSe: Condomínio {cnpj} já possui NFSe emitida, pulando reemissão")
                     continue
 
                 # PRIORIDADE 1: Buscar valor do boleto (Fedhub)
@@ -519,11 +521,29 @@ def processar_faturamento(self, importacao_id, competencia, arquivos_data, usuar
 
                 numero_fatura = docs.get('fatura', '') or str(faturamento.id)
 
+                if float(total_valor) <= 0:
+                    logger.warning(
+                        f"NFSe: Condomínio {cnpj} sem valor (boleto e movimentações zerados), "
+                        f"nota não será emitida"
+                    )
+                    continue
+
                 dados_condominios.append((condominio, float(total_valor), servico_discriminacao, numero_fatura))
 
             if dados_condominios:
-                emitir_nfse_lote(faturamento, dados_condominios)
-                logger.info(f"Lote NFSe enviado para {len(dados_condominios)} condomínios")
+                resultado_nfse = emitir_nfse_lote(faturamento, dados_condominios)
+                if resultado_nfse.get('ok'):
+                    logger.info(
+                        f"Lote NFSe enviado para {len(dados_condominios)} condomínios "
+                        f"(faturamento {faturamento.id})"
+                    )
+                else:
+                    logger.error(
+                        f"Lote NFSe NÃO aceito para faturamento {faturamento.id}: "
+                        f"{resultado_nfse.get('erro')}"
+                    )
+            else:
+                logger.info(f"NFSe: nenhum condomínio elegível para emissão no faturamento {faturamento.id}")
         except Exception:
             logger.exception("Erro ao emitir NFSe para condomínios")
 

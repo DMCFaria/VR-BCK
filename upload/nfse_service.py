@@ -33,6 +33,11 @@ def _build_nota_payload(faturamento, condominio, valor_servico, servico_discrimi
 
 
 def emitir_nfse_lote(faturamento, dados_condominios, servico_codigo=None):
+    """Envia o lote à API de NFSe e devolve {ok, erro, status_code, resposta}.
+
+    Nunca lança: falhas de rede ou HTTP voltam em `erro` para o chamador logar.
+    O número da nota chega depois, via webhook (NfseWebhookView).
+    """
     api_url = getattr(settings, 'NFSE_API_URL', 'https://fedcorp-nfs-e-django-ebh2e.ondigitalocean.app/api/nfse/emissao/vr/')
 
     notas_payload = []
@@ -46,7 +51,7 @@ def emitir_nfse_lote(faturamento, dados_condominios, servico_codigo=None):
 
     if not notas_payload:
         logger.warning("Nenhum condomínio para emitir NFSe.")
-        return []
+        return {"ok": False, "erro": "nenhuma nota no lote", "status_code": None, "resposta": None}
 
     payload = {"notas": notas_payload}
 
@@ -62,12 +67,29 @@ def emitir_nfse_lote(faturamento, dados_condominios, servico_codigo=None):
             headers=headers,
             timeout=60,
         )
-        response.raise_for_status()
-        logger.info(
-            f"NFSe lote enviado: {len(notas_payload)} notas, "
-            f"status_code={response.status_code}, faturamento={faturamento.id}"
-        )
     except requests.RequestException as e:
-        logger.error(f"Erro ao enviar lote NFSe para faturamento {faturamento.id}: {str(e)}")
+        logger.error(f"Erro de conexão ao enviar lote NFSe para faturamento {faturamento.id}: {e}")
+        return {"ok": False, "erro": str(e), "status_code": None, "resposta": None}
 
-    return []
+    try:
+        corpo = response.json()
+    except ValueError:
+        corpo = response.text
+
+    if response.ok:
+        logger.info(
+            f"NFSe lote aceito: {len(notas_payload)} notas, status_code={response.status_code}, "
+            f"faturamento={faturamento.id}, resposta={corpo}"
+        )
+        return {"ok": True, "erro": None, "status_code": response.status_code, "resposta": corpo}
+
+    logger.error(
+        f"NFSe lote rejeitado: status_code={response.status_code}, faturamento={faturamento.id}, "
+        f"resposta={corpo}"
+    )
+    return {
+        "ok": False,
+        "erro": f"HTTP {response.status_code}: {corpo}",
+        "status_code": response.status_code,
+        "resposta": corpo,
+    }
