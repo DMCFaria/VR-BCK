@@ -1088,10 +1088,14 @@ class BoletoBaixaView(views.APIView):
         from datetime import datetime
         from django.conf import settings
         
-        # Validação do token estático X-API-KEY
-        api_key = request.headers.get('X-API-KEY') or request.META.get('HTTP_X_API_KEY')
-        expected_key = getattr(settings, 'NFSE_X_API_KEY', 'fedcorp_static_token_secure_xyz123')
-        if api_key != expected_key:
+        # Validação do token estático X-API-KEY: chave dedicada do Fedcorp-Pay e,
+        # durante a convivência com o FINANC, a NFSE_X_API_KEY
+        import hmac
+        api_key = request.headers.get('X-API-KEY') or request.META.get('HTTP_X_API_KEY') or ''
+        aceitas = [getattr(settings, 'VRBCK_BOLETO_BAIXA_API_KEY', '')]
+        if getattr(settings, 'VRBCK_BOLETO_BAIXA_ACEITA_CHAVE_NFSE', True):
+            aceitas.append(getattr(settings, 'NFSE_X_API_KEY', 'fedcorp_static_token_secure_xyz123'))
+        if not any(chave and hmac.compare_digest(api_key, chave) for chave in aceitas):
             return Response(
                 {"detail": "Acesso não autorizado. Chave de API inválida ou ausente."},
                 status=status.HTTP_401_UNAUTHORIZED

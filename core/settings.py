@@ -307,6 +307,13 @@ NFSE_SERVICO_CODIGO = config('NFSE_SERVICO_CODIGO', default='100202')
 NFSE_TOMADOR_CODIGO_PADRAO = config('NFSE_TOMADOR_CODIGO_PADRAO', default='3550308')
 NFSE_X_API_KEY = config('NFSE_X_API_KEY', default='fedcorp_static_token_secure_xyz123')
 
+# Baixa de boleto (POST /api/beneficios/boletos/baixa/): chave dedicada do Fedcorp-Pay.
+# A NFSE_X_API_KEY segue aceita nessa rota só enquanto o FINANC notificar os boletos
+# FedBNK antigos (convivência ADR-0018 do FedHub); depois, desligar com
+# VRBCK_BOLETO_BAIXA_ACEITA_CHAVE_NFSE=False.
+VRBCK_BOLETO_BAIXA_API_KEY = config('VRBCK_BOLETO_BAIXA_API_KEY', default='')
+VRBCK_BOLETO_BAIXA_ACEITA_CHAVE_NFSE = config('VRBCK_BOLETO_BAIXA_ACEITA_CHAVE_NFSE', default=True, cast=bool)
+
 # BigDataCorp
 BIGDATA_ACCESS_TOKEN = config('BIGDATA_ACCESS_TOKEN', default='')
 BIGDATA_TOKEN_ID = config('BIGDATA_TOKEN_ID', default='')
